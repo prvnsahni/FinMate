@@ -1,0 +1,23 @@
+# ADR-015 — Backward-compatible authentication transition / old-mobile support
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TRANSITION · **Date:** 2026-08-12
+- **Decision:** During the auth transition, the **old refresh-token body path is retained** (dual-emit) until **all** hold: web cookie refresh works, native secure-storage header refresh works, minimum-supported mobile version is enforced, compatibility telemetry confirms the old path is unused, and the sunset condition is met. Body-token removal (SEC-003) is satisfied **only at sunset**. The sunset **calendar date is an `[ENGINEERING PARAMETER]`** finalized in implementation planning (OQ-17).
+- **Context:** Already-installed mobile apps read the refresh token from the body and cannot be force-updated instantly.
+- **Problem:** Removing the body path before both new transports exist and old clients age out would log users out / break native.
+- **Alternatives considered:** (a) Hard cutover (mass logout); (b) keep body forever (SEC-W3 never closes); (c) **dual-emit with a defined sunset condition**.
+- **Why selected:** (c) closes SEC-W3 without breaking un-updatable clients, and prevents the fix from being deferred indefinitely.
+- **Security impact:** SEC-W3/T-02 closes at sunset, not before.
+- **Privacy impact:** Neutral.
+- **Performance impact:** Negligible.
+- **Backward-compatibility impact:** HIGH — this ADR *is* the compatibility bridge.
+- **Migration impact:** Phased FE+BE+native + min-version enforcement.
+- **User impact:** None if phased; seamless for updated clients.
+- **Operational impact:** Compatibility telemetry to detect old-path usage; min-version gate.
+- **Rollback/reversal:** Extend dual-emit window / re-enable body emission.
+- **Dependencies:** ADR-013, ADR-014.
+- **Related SRS:** AUTH-005, SEC-003, OQ-17.
+- **Related Ledger items:** AU-4.
+- **Related Threat Model:** T-02, T-05 (old-mobile break).
+- **Related architecture docs:** Security & Privacy Architecture (#3); Current System Baseline (#11).
+- **Simple explanation:** We keep the old login method working until the new one works everywhere and old phone apps have updated — then we switch it off. We don't set a firm date yet.
+- **Technical explanation:** Dual-emit until a 5-condition sunset (web cookie + native header + min-version + telemetry + sunset); SEC-003 completes only at sunset; date parameterized.

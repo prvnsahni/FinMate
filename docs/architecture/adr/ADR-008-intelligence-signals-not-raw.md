@@ -1,0 +1,23 @@
+# ADR-008 — INTELLIGENCE receives signals, not raw databases
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** The INTELLIGENCE/personalization domain receives **small signals + provenance (source domain + opaque IDs) + confidence + date + reason + legal-basis/consent scope** — never raw copies of other domains, raw foreign keys, or domain keys. Correctness-critical cross-domain reads use synchronous projection-pull; personalization uses asynchronous signals via a durable outbox. Consent/legal-basis is enforced at the **point of combination**.
+- **Context:** Personalization needs cross-domain understanding; naive designs copy everything into one place.
+- **Problem:** A central store of all raw data recreates the "giant data lake" and becomes the single most attractive target; it also enables consent-laundering.
+- **Alternatives considered:** (a) INTELLIGENCE reads all domains directly; (b) INTELLIGENCE copies raw data; (c) **push/pull of minimized signals with provenance**.
+- **Why selected:** (a)/(b) defeat isolation and privacy; (c) keeps INTELLIGENCE's footprint bounded, auditable, and consent-aware.
+- **Security impact:** No god-module; minimal central exposure.
+- **Privacy impact:** Prevents consent-laundering (T-11); provenance enables deletion cascade.
+- **Performance impact:** Durable outbox adds async infra (transactional outbox, no heavy queue).
+- **Backward-compatibility impact:** Additive.
+- **Migration impact:** New domain + outbox; no change to finance.
+- **User impact:** Better tips without central data hoarding.
+- **Operational impact:** Outbox worker + idempotent consumers.
+- **Rollback/reversal:** Disable worker; signals queue.
+- **Dependencies:** ADR-007 (isolation), ADR-018 (states), ADR-019 (deletion).
+- **Related SRS:** INT-001..005, SEC-ISO-002.
+- **Related Ledger items:** ISO-2, ISO-3, ISO-4, INT-1/2, OUT-1.
+- **Related Threat Model:** T-11 (laundering), T-12 (suppression).
+- **Related architecture docs:** Security & Privacy Architecture (#3); AI Firewall (#5).
+- **Simple explanation:** The "tips brain" only gets small hints ("food up 18%") and where they came from — never a copy of your whole database or the keys.
+- **Technical explanation:** Signals carry provenance + consent scope; correctness-critical reads are synchronous projections, personalization is async via transactional outbox; combination is consent-gated; INTELLIGENCE has no raw FKs/keys.

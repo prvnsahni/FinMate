@@ -1,0 +1,23 @@
+# ADR-009 — Single AI egress privacy firewall
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET (CURRENT = thin `POST /ai/proxy`) · **Date:** 2026-08-12
+- **Decision:** All external AI access (and any future self-hosted model) passes through **one controlled egress firewall** — the sole audit and enforcement chokepoint. The pipeline is: intent → purpose → consent/legal-basis → classification → minimization → projection → sensitive-data check → provider policy → call → validate → return. The client sends **intent + parameters**, never a prompt/model.
+- **Context:** Today a thin proxy forwards a client-supplied prompt/model to OpenAI with only UUID redaction.
+- **Problem:** Without a single chokepoint, any module could leak raw data to a provider; client-controlled prompts are an injection/IP risk.
+- **Alternatives considered:** (a) Keep per-feature direct calls; (b) client owns prompts; (c) **single server-owned firewall**.
+- **Why selected:** (a)/(b) make "no raw data to AI" unenforceable; (c) makes minimization and auditing architectural, not conventional.
+- **Security impact:** One place to enforce/audit/rate-limit/kill; fail-closed.
+- **Privacy impact:** "External AI never receives FinMate's database."
+- **Performance impact:** Adds a projection/validation step; acceptable.
+- **Backward-compatibility impact:** Reworks the opt-in chatbot (feature-flaggable).
+- **Migration impact:** Replace proxy with intent/firewall; additive, phased.
+- **User impact:** AI still available (opt-in); explainable, bounded.
+- **Operational impact:** Central egress service + audit sink.
+- **Rollback/reversal:** Feature-flag old proxy off.
+- **Dependencies:** ADR-010 (projections), ADR-011 (consent), ADR-008.
+- **Related SRS:** AI-001, AI-003, AI-009.
+- **Related Ledger items:** AI-1, G-1, F-2.
+- **Related Threat Model:** T-08, T-13, T-27.
+- **Related architecture docs:** AI Data Access / Privacy Firewall (#5).
+- **Simple explanation:** There's exactly one guarded door between your data and any AI. Every request goes through the same checks; nothing takes a side door.
+- **Technical explanation:** A mandatory ordered egress gate; server owns model+prompt; client sends intent; any check failure fails closed; the only audited path to any AI provider.

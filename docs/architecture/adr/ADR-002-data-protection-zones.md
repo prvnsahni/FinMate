@@ -1,0 +1,23 @@
+# ADR-002 — Zone-based data protection model
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (partial) / TARGET (new zones) · **Date:** 2026-08-12
+- **Decision:** Classify data into zones: **1a** opaque E2EE free-text/blobs; **1b** sensitive-but-server-readable (needs analysis); **2** protected plaintext for computation; **3** isolated module data; plus CORE security secrets (hashed/encrypted). Protection follows the zone, using the least protective mechanism that safely satisfies the need (PRIN-1).
+- **Context:** FinMate handles very different data (amounts, free-text, future mood/photos). Treating all data identically is either too weak or breaks computation.
+- **Problem:** "Encrypt everything" broke computation historically (amounts were encrypted then reverted); "encrypt nothing" is unsafe.
+- **Alternatives considered:** (a) Encrypt every field; (b) encrypt nothing (rely on infra); (c) **zone-based, mechanism-per-zone**.
+- **Why selected:** (a) blocks server-side balances/analysis; (b) leaves free-text/sensitive data exposed; (c) matches each data type's real need — computation stays possible, sensitive free-text stays private.
+- **Security impact:** Right-sized protection; limits blast radius per zone.
+- **Privacy impact:** Strong for Zone 1a/1b; Zone 2 protected by authorization/isolation.
+- **Performance impact:** Zone 2 remains computable (no decrypt overhead for math).
+- **Backward-compatibility impact:** Existing zones (amounts=2, title/desc=1a) already match production.
+- **Migration impact:** New free-text fields move to 1a via mixed-state migration (ADR-016).
+- **User impact:** None; transparent.
+- **Operational impact:** Classification matrix maintained as living artifact.
+- **Rollback/reversal:** Per-field (see ADR-016 for E2EE fields).
+- **Dependencies:** ADR-003 (encryption classes), ADR-024 (Zone-2 protection).
+- **Related SRS:** DATA-001..005, Z-2/Z-3 requirements, FLD-1..7.
+- **Related Ledger items:** Z-1, Z-2, Z-3, PRIN-1, FLD-1..7.
+- **Related Threat Model:** T-10 (DB leak), T-08 (server key), T-19/OPS-1.
+- **Related architecture docs:** Data Classification & Encryption Matrix (#2).
+- **Simple explanation:** Not all information is equally private. Some is locked so only you can open it, some FinMate can read to do maths, some is guarded but usable. Each kind gets the right lock.
+- **Technical explanation:** Zones map data to protection mechanisms (E2EE / server-managed / plaintext-protected / hashed), choosing the weakest mechanism that meets the security need to avoid breaking functionality.

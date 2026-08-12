@@ -1,0 +1,23 @@
+# ADR-023 — No user-data training in V1, subject to provider verification
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** In V1, **no user data is used to train models** — internal or external. External providers must have a **verified no-training / ZDR configuration** before receiving any user data; a marketing claim is insufficient ("not used for training" ≠ "not processed"). Any future improvement dataset is separately designed, controlled, anonymized/aggregated, legally reviewed, and separately documented.
+- **Context:** AI features send projections to providers; users distrust silent training on their data.
+- **Problem:** Assuming a provider doesn't train on data (without verifying config/contract) risks unwanted use of personal data.
+- **Alternatives considered:** (a) Trust provider defaults/marketing; (b) **verified no-train/ZDR config + no internal training in V1**.
+- **Why selected:** (a) is unverified and risky; (b) is provable and conservative.
+- **Security impact:** Limits provider data reuse.
+- **Privacy impact:** Core stance; transfers/config `[COUNSEL REQUIRED]` (VEN-1).
+- **Performance impact:** Neutral.
+- **Backward-compatibility impact:** Additive.
+- **Migration impact:** Provider config verification before any egress.
+- **User impact:** Confidence that data isn't training a model.
+- **Operational impact:** Processor register + config verification (VEN-1).
+- **Rollback/reversal:** n/a.
+- **Dependencies:** ADR-009/010/011.
+- **Related SRS:** AI-008, FUT-004.
+- **Related Ledger items:** TRN-1, VEN-1.
+- **Related Threat Model:** T-08 (provider), K (provider compromise).
+- **Related architecture docs:** AI Firewall (#5); IP Policy (#6); Processing Register.
+- **Simple explanation:** FinMate doesn't feed your data into training any AI, and it only sends anything to an outside AI after checking that provider is set to *not* train on it — not just because they said so.
+- **Technical explanation:** No internal training on user data in V1; external egress only to verified no-train/ZDR configurations; future improvement datasets separately governed.

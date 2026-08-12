@@ -2504,3 +2504,50 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   errors.
 - **Next Actions:** Await explicit authorisation to run the production migration,
   then execute the runbook steps in order.
+
+## 2026-08-12 — Security/Privacy/Product Architecture Documentation Programme (docs only, no code)
+
+- **Summary:** Completed a multi-round discovery → decision → adversarial-review →
+  documentation programme establishing FinMate's target security, privacy, data,
+  AI, and product architecture. **Documentation only — no source code, database,
+  schema, migration, API, authentication, encryption, AI, frontend, mobile, or
+  production change was made.** Existing production functionality treated as a
+  protected baseline throughout ("secure the existing product without unnecessarily
+  breaking it").
+- **Changes Made (new documents under `docs/`):**
+  - `docs/architecture/FINMATE_DECISION_LEDGER.md` — frozen source-of-truth decisions
+    (79 items + §16 back-port addendum PRIN-1, FLD-1..FLD-7).
+  - `docs/architecture/FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md` — B-3 field
+    inventory + classification (FROZEN).
+  - `docs/architecture/FINMATE_SECURITY_PRIVACY_ARCHITECTURE.md`,
+    `FINMATE_KEY_MANAGEMENT_ARCHITECTURE.md`,
+    `FINMATE_AI_DATA_ACCESS_PRIVACY_FIREWALL.md`,
+    `FINMATE_IP_AI_CONFIDENTIALITY_POLICY.md`, `FINMATE_THREAT_MODEL.md`,
+    `FINMATE_PROCESSING_ACTIVITIES_REGISTER.md` (all FROZEN).
+  - `docs/architecture/FINMATE_CURRENT_SYSTEM_FUNCTIONALITY_BASELINE.md` — verified
+    current-system reality (CURRENT/PARTIAL/PLACEHOLDER/TARGET labels).
+  - `docs/architecture/FINMATE_SRS.md` — master requirements (~160), adversarially
+    reviewed (F-01..F-18 corrected, R1) then **FROZEN v1.0**; plus
+    `FINMATE_SRS_ADVERSARIAL_REVIEW.md`.
+  - `docs/architecture/adr/ADR-001..ADR-024` + `docs/architecture/ADR_INDEX.md` —
+    24 ADRs, each reflecting an already-frozen decision (no invented decisions).
+  - `docs/product/FINMATE_COMPETITIVE_LESSONS_PRODUCT_FAILURE_ANALYSIS.md`,
+    `FINMATE_PRODUCT_PRINCIPLES_AND_DIFFERENTIATORS.md`,
+    `FINMATE_USER_EXPERIENCE_AND_USER_JOURNEY_SPECIFICATION.md`.
+- **Artifacts Updated:** documentation set above only; no blueprint/DB/API contract
+  changed. This Progress Log entry.
+- **Decisions:** Two encryption classes (Class-A E2EE random-wrapped keys — no HKDF;
+  Class-B server-managed); zones 1a/1b/2/3 + PRIN-1 least-protective-mechanism;
+  single AI privacy firewall (numeric/enum-only projections); per-domain DB
+  principals with INTELLIGENCE holding no raw FKs; dual-transport auth (web
+  SameSite=Lax host-only cookie / native Keychain-Keystore) with sunset-gated
+  removal of the legacy body token; account deletion = personal erase + shared
+  anonymize-in-place; V1 = Helpful+Proactive (Personalized→V2); V1 in-app ranked
+  notifications (OS push deferred).
+- **Open security workstream (unchanged, still OPEN — not implemented):** P0 SEC-W1
+  (git-history blobs + secret scanning), SEC-W2 (tokens/email in logs), SEC-W3
+  (refresh token in body); P1 SEC-W6c, SEC-W7, OPS-1; P2 SEC-W5, SEC-W9, SEC-KI1.
+- **Next Actions:** Product-owner to resolve open questions (retention SLA, DPIA
+  timing, vendor transfers, AUTH-005 sunset date, bank-aggregation, etc.); then
+  module/data-ownership map, API/data contracts, migration plan, and implementation
+  roadmap. No implementation until approved.

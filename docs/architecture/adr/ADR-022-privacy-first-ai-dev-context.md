@@ -1,0 +1,23 @@
+# ADR-022 — Privacy-first AI development context and external-agent minimization
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET (governance) · **Date:** 2026-08-12
+- **Decision:** Development AI agents (Claude/Codex/Cursor/Copilot/etc.) are treated as **least-knowledge external collaborators**. They receive task-specific context only — never secrets, production data, unrelated confidential architecture, roadmap, or crown-jewel algorithm implementations. Controls: secret scanning + git-history purge, secretless working tree (the real boundary), AI-ignore files (best-effort), synthetic fixtures, business/enterprise no-train provider tiers, restricted-IP paths, and isolation of the 1–2 genuinely differentiating algorithms behind internal APIs. FinMate cannot guarantee an external AI never independently produces a similar idea; it minimizes disclosure of its specific implementation.
+- **Context:** Coding agents can vacuum whole repos; FinMate's IP and secrets must not leak.
+- **Problem:** Un-scoped agent context risks leaking secrets, production data, and proprietary design; ignore-files alone are bypassable by shell-capable agents.
+- **Alternatives considered:** (a) Trust ignore-files; (b) **secretless environment + minimized context + IP isolation**.
+- **Why selected:** (a) is a false boundary; (b) makes the environment (not a cooperating tool) the enforceable control.
+- **Security impact:** Prevents secret/production-data exposure to agents (SEC-W1).
+- **Privacy impact:** No customer PII to agents.
+- **Performance impact:** Neutral (dev workflow).
+- **Backward-compatibility impact:** Additive (dev process).
+- **Migration impact:** Secret scanning + history purge; restricted-IP paths.
+- **User impact:** None (internal).
+- **Operational impact:** Secret scanning in CI/pre-commit; synthetic fixtures.
+- **Rollback/reversal:** n/a.
+- **Dependencies:** ADR-023 (no training).
+- **Related SRS:** SEC-001 (secret scanning), IP requirements.
+- **Related Ledger items:** IP-1, IP-2, SEC-W1.
+- **Related Threat Model:** T-27 (IP leakage / dev-agent over-context).
+- **Related architecture docs:** IP / AI Confidentiality Policy (#6).
+- **Simple explanation:** Coding helpers only see what they need for the task — never passwords, real user data, or FinMate's secret recipes. And we can't promise no AI ever invents something similar; we just don't hand ours over.
+- **Technical explanation:** Least-knowledge agent access; secretless working tree as the enforceable boundary; secret scanning + history purge; crown-jewel isolation behind internal APIs; no guarantee against independent reproduction.

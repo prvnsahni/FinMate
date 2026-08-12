@@ -1,0 +1,23 @@
+# ADR-024 — Current production finance data remains protected even though some numeric data is server-readable
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT · **Date:** 2026-08-12
+- **Decision:** Financial numerics (amounts, dates, category, balances, splits, income, etc.) are **Zone 2 — plaintext-but-protected**: not field-encrypted (so the server can compute), but protected by TLS, encrypted storage, authorization, least-privilege, and audit. "Not field-encrypted" is **never** equated with "unprotected." A recorded residual (OPS-1) is that database/backend operators can read Zone-2 finance in plaintext; this is mitigated by least-privilege production credentials + access audit, not eliminated.
+- **Context:** FinMate must compute totals, balances, settlements, budgets — which requires server-readable numbers. Amounts were once encrypted then reverted for exactly this reason.
+- **Problem:** Encrypting amounts breaks computation; but leaving them "unprotected" is unacceptable.
+- **Alternatives considered:** (a) Field-encrypt amounts (breaks math); (b) treat amounts as public; (c) **plaintext-but-protected (Zone 2)**.
+- **Why selected:** (a) is non-functional (proven by the revert migration); (b) is unsafe; (c) enables computation while protecting via authz/isolation/audit.
+- **Security impact:** Protected by multiple layers; residual insider read is tracked (OPS-1).
+- **Privacy impact:** Financial personal data; handled per Processing Register; legal basis `[COUNSEL REQUIRED]`.
+- **Performance impact:** Enables efficient server-side calculation.
+- **Backward-compatibility impact:** CURRENT behaviour; unchanged.
+- **Migration impact:** None (access-tightening only for sensitive fields like income).
+- **User impact:** None; features work.
+- **Operational impact:** Least-privilege prod credentials + access audit (OPS-1 mitigation).
+- **Rollback/reversal:** n/a.
+- **Dependencies:** ADR-002 (zones), ADR-007 (isolation), ADR-017 (parity).
+- **Related SRS:** FIN-003, DATA-003, FLD-5, SEC-006.
+- **Related Ledger items:** Z-2, FLD-3/4/5, OPS-1.
+- **Related Threat Model:** T-10 (DB leak — amounts), T-19/OPS-1 (insider read).
+- **Related architecture docs:** Data Classification Matrix (#2); Threat Model (#7).
+- **Simple explanation:** FinMate can read your amounts because it needs them to do the maths — but they're still kept behind strong doors, and only the parts of FinMate that need them can get in. "Readable" is not the same as "unprotected."
+- **Technical explanation:** Zone-2 finance = plaintext-for-computation protected by TLS + at-rest encryption + authorization + least-privilege + audit; insider plaintext read (OPS-1) mitigated by credential least-privilege + audit, not eliminated.

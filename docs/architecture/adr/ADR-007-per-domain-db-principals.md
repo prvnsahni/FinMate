@@ -1,0 +1,23 @@
+# ADR-007 — Per-domain database principals / isolation
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET (CURRENT = single `public` schema, one datasource) · **Date:** 2026-08-12
+- **Decision:** New sensitive domains use dedicated schemas **plus genuinely separate database principals/credentials** (or an equivalently strong, architecture-approved mechanism such as RLS). No superuser-across-schemas. Existing CORE/FINANCE stay in `public`. INTELLIGENCE holds no raw FKs into other domains. Cross-domain access is via contracts/projections only.
+- **Context:** Today all tables are in one schema behind one ORM connection; there is no real isolation.
+- **Problem:** If one service is compromised, it can read everything. "Separate schemas" alone (same superuser) is cosmetic.
+- **Alternatives considered:** (a) Keep single schema; (b) separate databases per domain (heavy ops); (c) **one Postgres, schema-per-domain + per-domain roles**.
+- **Why selected:** (a) no isolation; (b) operational overkill; (c) real least-privilege with manageable operations — a domain principal cannot read another domain even with a bug.
+- **Security impact:** Contains blast radius (T-09); this is the load-bearing isolation control.
+- **Privacy impact:** Limits cross-domain exposure.
+- **Performance impact:** Multiple connection pools; minor.
+- **Backward-compatibility impact:** CURRENT finance tables untouched (stay in `public`).
+- **Migration impact:** Additive — new domains born in their own schema/role; no reshuffle of live finance.
+- **User impact:** None.
+- **Operational impact:** Per-domain credentials + connection management; CI test for cross-domain denial.
+- **Rollback/reversal:** Revert grants; new domains only.
+- **Dependencies:** ADR-008 (intelligence), ADR-002.
+- **Related SRS:** SEC-ISO-001, SEC-ISO-002, INT-001.
+- **Related Ledger items:** ISO-1, ISO-2.
+- **Related Threat Model:** T-09 (isolation bypass).
+- **Related architecture docs:** Security & Privacy Architecture (#3); Current System Baseline (#11).
+- **Simple explanation:** Different rooms get different keys. Even if a thief breaks into one room, the others stay locked — because each room has its own separate lock, not one master key for the whole house.
+- **Technical explanation:** Schema-per-domain with per-domain DB roles; the app connects with domain-scoped credentials; a domain role is tested to be denied cross-schema raw reads. Isolation holds even if one service is compromised.

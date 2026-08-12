@@ -1,0 +1,23 @@
+# ADR-013 — Web refresh-cookie + native secure-storage dual transport
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET (CURRENT = refresh token in response body) · **Date:** 2026-08-12
+- **Decision:** The refresh token is delivered by **platform-appropriate transport**: web = HttpOnly+Secure+SameSite=Lax host-only cookie; native (Capacitor) = iOS Keychain / Android Keystore, sent by header. The backend selects transport by **capability detection (never `if(iOS)`)**; a cookie-presented refresh always requires CSRF; the header path is never satisfiable by an ambient cookie. Rotation + Redis session hashing retained.
+- **Context:** Today the refresh token is returned in the response body (readable by JS, XSS-exfiltratable) and used identically on web and native.
+- **Problem:** A single body-token mechanism is insecure on web (XSS) and cookies don't behave reliably inside a Capacitor WebView.
+- **Alternatives considered:** (a) Cookie everywhere (breaks native WebView); (b) body token everywhere (XSS); (c) **dual transport by capability**.
+- **Why selected:** (c) is the only approach secure on both platforms — cookie protects web from XSS theft; secure storage protects native.
+- **Security impact:** Fixes SEC-W3/T-02; removes token from JS reach on web.
+- **Privacy impact:** Neutral.
+- **Performance impact:** Negligible.
+- **Backward-compatibility impact:** HIGH — changes the auth response contract on all clients.
+- **Migration impact:** Dual-emit transition (ADR-015); parameterized sunset.
+- **User impact:** None if phased; abrupt cutover would log users out.
+- **Operational impact:** Backend accepts two credential sources with identical rotation/revocation.
+- **Rollback/reversal:** Re-enable body emission (cookie is additive).
+- **Dependencies:** ADR-014 (cookie config), ADR-015 (transition).
+- **Related SRS:** AUTH-002, AUTH-004, SEC-003.
+- **Related Ledger items:** AU-1, AU-2, SEC-W3.
+- **Related Threat Model:** T-02 (token theft), T-N5 (transport bypass).
+- **Related architecture docs:** Security & Privacy Architecture (#3); Key Management (#4).
+- **Simple explanation:** On a browser, your "stay logged in" token is kept in a locked cookie the page can't read; on a phone it's kept in the device's secure vault. Same idea, different safe.
+- **Technical explanation:** Capability-detected refresh transport; web HttpOnly Lax host-only cookie + CSRF; native Keychain/Keystore header; identical rotation/revocation; header path not cookie-satisfiable.

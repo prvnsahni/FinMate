@@ -1,0 +1,23 @@
+# ADR-014 — SameSite=Lax + host-only cookie + CSRF + exact CORS for the current production topology
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** Production FE `finmate.prvnsahni.com` and API `finmate-api.prvnsahni.com` share the registrable domain `prvnsahni.com` → **schemefully same-site, cross-origin** → the web refresh cookie is **HttpOnly + Secure + SameSite=Lax + host-only** (no `Domain=.prvnsahni.com`) + path-scoped to `/api/v1/auth/refresh`. CORS is **exact-origin with credentials** (never `*`). A **double-submit CSRF token** protects the cookie-authed refresh. Recorded constraint: if the API ever moves to a different registrable domain, this flips to SameSite=None+Secure.
+- **Context:** Cookie behaviour depends on the real deployment topology, which was verified.
+- **Problem:** The wrong SameSite/CORS/CSRF choice either fails to send the cookie or opens CSRF/sibling-subdomain abuse.
+- **Alternatives considered:** (a) SameSite=None everywhere (needed only for cross-site; broader exposure); (b) **Lax + host-only + CSRF for the confirmed same-site topology**.
+- **Why selected:** (b) is correct and minimal for the actual same-site topology; CSRF + host-only cookie mitigate sibling-subdomain risk.
+- **Security impact:** Correct cookie scoping; CSRF + exact CORS close cross-site/subdomain abuse (T-21).
+- **Privacy impact:** Neutral.
+- **Performance impact:** Negligible.
+- **Backward-compatibility impact:** Part of the auth transition (HIGH, phased).
+- **Migration impact:** With ADR-013/015.
+- **User impact:** None.
+- **Operational impact:** Prod `CORS_ORIGINS` must equal the FE origin exactly; verify (`[ENGINEERING PARAMETER]`).
+- **Rollback/reversal:** Config revert.
+- **Dependencies:** ADR-013.
+- **Related SRS:** AUTH-003.
+- **Related Ledger items:** AU-2, AU-2a.
+- **Related Threat Model:** T-21 (XSS/CSRF/subdomain).
+- **Related architecture docs:** Security & Privacy Architecture (#3).
+- **Simple explanation:** Because the app and its API live on the same family domain, a "lax same-site" locked cookie works, plus a CSRF check so a bad neighbouring site can't misuse it.
+- **Technical explanation:** Same-site/cross-origin topology → Lax host-only path-scoped cookie + exact-origin credentialed CORS + double-submit CSRF; documented flip to None+Secure if the API domain changes.

@@ -1,0 +1,23 @@
+# ADR-012 — Wardrobe AI approved-provider baseline and fail-closed behavior
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** FUTURE · **Date:** 2026-08-12
+- **Decision:** Wardrobe vision routes **all** images through an **approved/ZDR provider configuration as the baseline**. Face/background minimization is an **additive** protection, **never** the condition that decides whether an unapproved provider may receive an image. If no approved path is available, the operation **fails closed** (image not sent). Hard prohibitions: no facial recognition, identity recognition, biometric profiling, sensitive-trait inference, or intentional face/background analysis.
+- **Context:** Styling suggestions require sending a clothing photo to a vision model; photos may contain faces/bodies.
+- **Problem:** Using "minimization succeeded" as the gate is fail-open: on-device face detection can false-negative and send a face to an unapproved provider.
+- **Alternatives considered:** (a) Minimize-then-send-anywhere; (b) **approved-provider baseline + fail-closed, minimization additive**.
+- **Why selected:** (a) leaks biometric-adjacent data on detection failure; (b) guarantees images only ever reach an approved, verified provider.
+- **Security impact:** No fail-open egress of images.
+- **Privacy impact:** Avoids Art. 9 biometric exposure `[COUNSEL REQUIRED]`.
+- **Performance impact:** Vision calls on demand only.
+- **Backward-compatibility impact:** New module; no impact on current product.
+- **Migration impact:** New isolated domain + object storage.
+- **User impact:** Styling help without identity analysis; if no safe path, no suggestion.
+- **Operational impact:** Approved-provider config + vendor review (VEN-1).
+- **Rollback/reversal:** Feature-flag off.
+- **Dependencies:** ADR-009/010 (firewall), ADR-023 (no training).
+- **Related SRS:** FUT-002.
+- **Related Ledger items:** WARD-1.
+- **Related Threat Model:** T-15 (wardrobe fail-open).
+- **Related architecture docs:** AI Firewall (#5); Security & Privacy Architecture (#3).
+- **Simple explanation:** Clothing photos only go to a trusted, approved AI. FinMate tries to crop out faces, but that's a bonus — if it can't send safely to an approved place, it simply doesn't send.
+- **Technical explanation:** Approved/ZDR provider is the baseline destination; minimization is best-effort additive; no-approved-path ⇒ fail-closed; biometric/identity/sensitive-trait inference prohibited.

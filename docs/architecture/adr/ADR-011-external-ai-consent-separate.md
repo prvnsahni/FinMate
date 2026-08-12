@@ -1,0 +1,23 @@
+# ADR-011 — External AI consent separate from normal application consent
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (aiOptIn gate) / TARGET (full consent model) · **Date:** 2026-08-12
+- **Decision:** Sending any data to an external AI provider requires an **explicit external-AI consent**, distinct from general app usage. Consent is recorded in a ledger (scope/version/timestamp/withdrawal). Withdrawal stops future processing, invalidates dependent derived data, revokes analysis-key access, **and invalidates cached/pending AI projections at the final egress gate** — but must **not** delete durable suppression/override preferences.
+- **Context:** Users may accept FinMate but not want their data sent to a third-party model.
+- **Problem:** Treating app consent as AI consent would send data to providers without permission; checking consent only at projection-build time allows a cached projection to leak after withdrawal.
+- **Alternatives considered:** (a) One global consent; (b) **separate external-AI consent, enforced at final egress**.
+- **Why selected:** (a) violates "user data ≠ AI data"; (b) gives users real, revocable control with no post-withdrawal leakage.
+- **Security impact:** Consent enforced at the egress chokepoint.
+- **Privacy impact:** Core GDPR consent posture; `[COUNSEL REQUIRED]` for legal basis details.
+- **Performance impact:** Minimal.
+- **Backward-compatibility impact:** `aiOptIn` already exists and is server-enforced.
+- **Migration impact:** Extend to a consent ledger + cache invalidation.
+- **User impact:** Clear AI on/off; withdrawing actually stops egress.
+- **Operational impact:** Consent ledger + cache/pending-egress invalidation hook.
+- **Rollback/reversal:** Consent model is additive.
+- **Dependencies:** ADR-009, ADR-018 (suppression preserved).
+- **Related SRS:** AI-005, AI-013, PRIV-004/006.
+- **Related Ledger items:** AI-5, CON-1, CON-3.
+- **Related Threat Model:** T-08, consent-bypass.
+- **Related architecture docs:** AI Firewall (#5); Processing Register.
+- **Simple explanation:** Saying yes to FinMate is not saying yes to an outside AI — that's a separate switch you control, and turning it off actually stops data from being sent, even things already queued.
+- **Technical explanation:** Distinct external-AI consent in a ledger; final-egress-gate enforcement; withdrawal invalidates cached/pending projections and revokes keys but preserves durable suppression/override state.

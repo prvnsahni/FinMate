@@ -1,0 +1,23 @@
+# ADR-001 — Protect existing production functionality as a hard baseline
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (governing principle) · **Date:** 2026-08-12
+- **Decision:** The existing production application (expenses, splits, refunds, household, carry-forward, spectator, settlements, People/P2P, recurring, import/export, authentication, existing E2EE, web/mobile behaviour) is a protected baseline. New work is additive; nothing is redesigned or replaced without a concrete security/legal/reliability reason, and never assumes clean-slate migration.
+- **Context:** FinMate is already live with real users and financial data. The architecture programme adds security, privacy, and product capability on top of a working system.
+- **Problem:** Ambitious new architecture could silently break working finance behaviour or corrupt production data.
+- **Alternatives considered:** (a) Greenfield rewrite — fastest to a clean design; (b) big-bang migration; (c) **additive, compatibility-first evolution**.
+- **Why selected:** (a)/(b) risk breaking correct financial calculations and orphaning production data with no rollback; (c) preserves correctness and allows incremental delivery — the only option consistent with "secure the existing product without unnecessarily breaking it."
+- **Security impact:** Positive — prevents "security" being used to justify unscoped rewrites; forces named threats (priority order).
+- **Privacy impact:** Neutral/positive — additive privacy controls, no loss of existing guarantees.
+- **Performance impact:** Neutral.
+- **Backward-compatibility impact:** This ADR *is* the backward-compatibility gate.
+- **Migration impact:** Every change must state current→target→migration→rollback; no clean-slate.
+- **User impact:** None negative; continuity preserved.
+- **Operational impact:** Slower but safer delivery; feature flags and phased rollout expected.
+- **Rollback/reversal:** n/a (governing principle).
+- **Dependencies:** Governs all other ADRs.
+- **Related SRS:** GOV-1/2, COMP-001..004, FIN-001..014, all "CUR" requirements.
+- **Related Ledger items:** GOV-1, GOV-2, GOV-3.
+- **Related Threat Model:** — (constrains all mitigations).
+- **Related architecture docs:** Decision Ledger; Current System Baseline (#11).
+- **Simple explanation:** FinMate already works. We add new things carefully, like renovating a house while people still live in it — we don't knock down the walls that hold it up.
+- **Technical explanation:** All new capability is delivered additively with explicit migration/rollback; the priority order is Security/legal → existing critical functionality → backward compatibility → new architecture → convenience, and "security" alone never justifies a redesign without a concrete threat.

@@ -1,0 +1,23 @@
+# ADR-016 — Mixed-state client-side encryption migration for existing plaintext data
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TRANSITION · **Date:** 2026-08-12
+- **Decision:** Existing plaintext `direct_ledger.note`, `settlement.note`, and `group.description` become E2EE via an **additive, non-destructive, mixed-state** migration: an explicit discriminator marks each row `legacy_plaintext` vs `encrypted`; new writes are encrypted; existing rows are re-encrypted by **client-side opportunistic backfill** (never server-side); mixed state is supported indefinitely (users who never return keep plaintext). **Backfill actor/key per field:** direct_ledger.note → per-entry key wrapped for both registered users, backfilled by the entry author; settlement.note → group-scoped key, backfilled by the settlement author; group.description → group data key, backfilled by an active member. **group.description migration is GATED until pre-join/invite display behaviour is verified (OQ-11).**
+- **Context:** These fields hold production data in plaintext today; the target is E2EE.
+- **Problem:** A destructive/server-side migration would break existing history, old clients, or require the server to read/hold keys it must not.
+- **Alternatives considered:** (a) Server-side bulk re-encryption (impossible — server has no keys); (b) hard cutover (breaks legacy rows); (c) **additive marker + client backfill + permanent mixed-state**.
+- **Why selected:** (c) preserves existing records, honours zero-knowledge (no forced server decryption), and never breaks old clients.
+- **Security impact:** Extends E2EE to shared free-text without weakening ZK.
+- **Privacy impact:** Protects previously-plaintext personal free-text going forward.
+- **Performance impact:** Backfill runs incrementally on the client.
+- **Backward-compatibility impact:** MEDIUM — readers/export/history must branch on the marker (avoids the KI-1 ciphertext-leak class).
+- **Migration impact:** Additive discriminator column + client backfill; no forced decryption.
+- **User impact:** None; some legacy rows stay plaintext permanently (documented).
+- **Operational impact:** Backfill orchestration + all read paths updated.
+- **Rollback/reversal:** Readers keep the plaintext branch; stop writing encrypted.
+- **Dependencies:** ADR-004 (keys), ADR-003, OQ-11 gate.
+- **Related SRS:** MIG-001/002/003/008, P2P-003/004, SET-002, GRP-005.
+- **Related Ledger items:** B-2, FLD-1, FLD-2.
+- **Related Threat Model:** SEC-KI1 (rotation/ciphertext display).
+- **Related architecture docs:** Data Classification Matrix (#2); Key Management (#4).
+- **Simple explanation:** Old notes written in plain text stay readable; new ones are locked; your device quietly re-locks the old ones next time you log in. Nothing is forced or lost.
+- **Technical explanation:** Additive discriminator + client-side opportunistic backfill with defined actor/key per field; permanent mixed-state; no server-side decryption; group.description gated on OQ-11.

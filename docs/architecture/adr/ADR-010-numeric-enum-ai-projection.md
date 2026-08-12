@@ -1,0 +1,23 @@
+# ADR-010 — Numeric/enum-only external AI projection
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** V1 external-AI projections contain **numeric values, controlled enums, safe derived statistics only — no stored user free-text**. Categories use a **fixed, finite, server-defined enum**; user-controlled text never becomes an enum value; unknown/custom → `OTHER`. Merchant-level AI is out of V1. An egress fuzz test proves no arbitrary user string can reach the provider.
+- **Context:** LLMs memorize/leak; free-text (notes, merchant names) is the main exfiltration vector.
+- **Problem:** A "controlled enum" without a fixed whitelist could smuggle raw merchant strings as "enum values."
+- **Alternatives considered:** (a) Allow free-text with delimiting; (b) **numeric/enum-only with a fixed whitelist**.
+- **Why selected:** (a) leaves an injection/leakage surface; (b) removes the vector cheaply for near-zero V1 product loss.
+- **Security impact:** Removes free-text egress + prompt-injection surface.
+- **Privacy impact:** Journals/notes/merchants never leave via AI.
+- **Performance impact:** Minimal.
+- **Backward-compatibility impact:** Changes chatbot payload (drops free-text/userName).
+- **Migration impact:** With ADR-009.
+- **User impact:** AI gives number-based insight, can't quote your text yet.
+- **Operational impact:** Maintain the enum whitelist; fuzz-test in CI.
+- **Rollback/reversal:** With firewall flag.
+- **Dependencies:** ADR-009.
+- **Related SRS:** AI-002, AI-004.
+- **Related Ledger items:** F-1, AI-2, AI-4.
+- **Related Threat Model:** T-13 (injection), T-08.
+- **Related architecture docs:** AI Firewall (#5).
+- **Simple explanation:** The AI only ever gets tidy numbers and a fixed set of category labels — never your typed words or shop names. Anything it doesn't recognise becomes "Other."
+- **Technical explanation:** Projections are numeric/enum/aggregate; category enum is a fixed server whitelist (custom→OTHER); a fuzz test asserts no user string reaches egress.

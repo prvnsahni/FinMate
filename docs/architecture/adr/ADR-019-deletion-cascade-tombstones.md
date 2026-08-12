@@ -1,0 +1,23 @@
+# ADR-019 — Deletion cascade + tombstones + backup-restoration protection
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** Account deletion **erases personal-scope data**, **crypto-shreds applicable personal domain keys**, revokes all sessions, clears device caches, and **anonymizes/tombstones the departed identity in shared finance/audit records** (existing NOT-NULL user FKs forbid row-delete). For derived data, deletion/change of a source **marks dependent aggregates stale → recompute or drop** (never per-record deletion from an aggregate), propagated over a **durable outbox**. Deletion/withdrawal **tombstones are replayed after any backup restore** so erased data cannot resurrect.
+- **Context:** Deletion is complicated by shared financial records that other users legitimately rely on, and by backups.
+- **Problem:** Naive deletion either corrupts other users' ledgers (row-delete) or leaves the user's own data behind, or gets resurrected by a restore.
+- **Alternatives considered:** (a) Hard-delete the user row (breaks FKs/others' ledgers); (b) delete only PII on the user row (leaves personal data); (c) **personal-scope erase + shared tombstone + derived cascade + tombstone replay**.
+- **Why selected:** (a)/(b) are wrong or incomplete; (c) satisfies erasure while preserving others' legitimate records and preventing resurrection.
+- **Security impact:** Complete, durable erasure.
+- **Privacy impact:** Art. 17 model; departed-user shared free-text redaction is `[COUNSEL REQUIRED]` (DEL-3).
+- **Performance impact:** Cascade + outbox processing.
+- **Backward-compatibility impact:** Additive; respects existing FK constraints.
+- **Migration impact:** New deletion service + outbox + tombstone replay.
+- **User impact:** "Delete" actually deletes personal data; friends' shared records survive with your identity blanked.
+- **Operational impact:** Backup retention policy + restore-replay procedure.
+- **Rollback/reversal:** n/a (new capability); worker can be disabled (events queue).
+- **Dependencies:** ADR-006 (shred/backups), ADR-008 (outbox), ADR-018.
+- **Related SRS:** DEL-001..006, DER-1.
+- **Related Ledger items:** DEL-1, DEL-2, DEL-3, DER-1, OUT-1.
+- **Related Threat Model:** T-23 (backup resurrection), T-24 (deletion completeness).
+- **Related architecture docs:** Security & Privacy Architecture (#3); Processing Register.
+- **Simple explanation:** Deleting your account erases your own data and blanks your name from shared money records others still need. Old backups can't secretly bring the data back, because deletion notes are re-applied after any restore.
+- **Technical explanation:** Personal-scope erase + key crypto-shred + shared anonymize/tombstone + mark-stale→recompute for aggregates via durable outbox + tombstone replay after restore.
