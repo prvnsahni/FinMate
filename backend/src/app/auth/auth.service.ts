@@ -18,6 +18,7 @@ import * as argon2 from 'argon2';
 import { randomUUID, createHash } from 'crypto';
 import { generateSecret, verifyTotp } from './utils/totp.util';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { redactSensitiveKeys } from '../common/log-redaction.util';
 
 const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 const PASSWORD_RESET_TTL_SECONDS = 60 * 60;
@@ -68,7 +69,10 @@ export class AuthService {
     userAgent?: string;
   }): Promise<void> {
     try {
-      const meta = { ...opts.metadata };
+      // SEC-W7: strip known-sensitive keys (email, tokens, secrets) so PII never
+      // lands in audit_logs.metadataJson. The actorUser FK already identifies the
+      // user, so no legitimate audit value is lost.
+      const meta = redactSensitiveKeys(opts.metadata);
       if (opts.userAgent) {
         meta.userAgent = opts.userAgent;
       }
@@ -352,7 +356,7 @@ export class AuthService {
       actorUser: user,
       action: 'auth.login_success',
       entityId: user.id,
-      metadata: { email: user.email },
+      // SEC-W7: email removed — actorUser FK already identifies the user
       ip: context?.ip,
       userAgent: context?.userAgent,
     });

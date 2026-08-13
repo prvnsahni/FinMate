@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { redactUrl, hashIp } from '../common/log-redaction.util';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -36,12 +37,13 @@ export class LoggingInterceptor implements NestInterceptor {
   private logRequest(req: any, res: any, error?: any) {
     const timestamp = new Date().toISOString();
     const method = req.method;
-    const url = req.originalUrl || req.url;
-    const ip =
-      req.ip ||
-      req.headers['x-forwarded-for'] ||
-      req.socket?.remoteAddress ||
-      null;
+    // SEC-W2: strip sensitive query-param values (tokens/email) from logged URLs
+    const url = redactUrl(req.originalUrl || req.url);
+    // SEC-W2: hash the client IP so raw addresses never enter request logs
+    // (same SHA-256 scheme as audit_logs.ipHash; SEC-W9 owns which IP is trusted)
+    const ip = hashIp(
+      req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress,
+    );
     const responseTime = req.startTime
       ? `${Date.now() - req.startTime}ms`
       : 'N/A';
