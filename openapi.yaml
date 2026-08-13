@@ -2616,6 +2616,104 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
+  # In-app ranked notifications (BATCH-12 / W-NOT-01). Computed & read-only; gated
+  # behind the notifications.inApp feature flag (returns an empty list when OFF).
+  /notifications:
+    get:
+      summary: List the caller's ranked in-app notifications
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: whileAway
+          in: query
+          required: false
+          description: When 'true', returns the smaller capped "while you were away" summary.
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Ranked notifications (empty when the feature flag is OFF)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        category:
+                          type: string
+                          enum: [security, recurring, settlement, reminder, finance]
+                        level: { type: integer, minimum: 1, maximum: 5 }
+                        title: { type: string }
+                        message: { type: string }
+                        actionable: { type: boolean }
+                        observedAt: { type: string, format: date-time }
+                  control:
+                    type: string
+                    enum: [quieter, standard, off]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /notifications/{id}/seen:
+    post:
+      summary: Mark a notification seen (or acted) for the caller
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                acted:
+                  type: boolean
+                  description: When true the item is "acted" (also suppressed).
+      responses:
+        '200':
+          description: Notification state updated
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /notifications/preferences:
+    put:
+      summary: Set the caller's 3-way notification control
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [control]
+              properties:
+                control:
+                  type: string
+                  enum: [quieter, standard, off]
+      responses:
+        '200':
+          description: Preference updated
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
 components:
   securitySchemes:
     bearerAuth:

@@ -112,7 +112,7 @@ An **API contract** is a written promise: *send exactly this, get exactly that b
 | CT-WELL-01 | WELLBEING `/wellbeing` | TARGET | Low | **High** | — | 003 | §19 |
 | CT-WARD-01 | WARDROBE `/wardrobe` | TARGET | Low | High | FUT-002 | 012 | §19 |
 | CT-OPP-01 | OPPORTUNITIES `/opportunities` | TARGET | Low | Med | — | — | §19 |
-| CT-NOT-01 | NOTIFICATIONS `/notifications` (in-app V1) | TARGET | Low | Med | NOT-001..007 | 021 | §19 |
+| CT-NOT-01 | NOTIFICATIONS `/notifications` (in-app ranked V1) — **BATCH-12: computed, read-only, flag-gated (`notifications.inApp`)** | CURRENT | Low | Med | NOT-001/003/004/006/007, UX-007 | 021 | §19 |
 | CT-NOTES-01 | NOTES `/notes` (openapi PLACEHOLDER, no controller) | PLACEHOLDER | Low | High | — | 002/003 | §2.4 |
 
 ---

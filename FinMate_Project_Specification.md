@@ -2990,3 +2990,38 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (gated OFF; legacy path unchanged).
   DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration).
   PUSH: NO.
+
+## 2026-08-13 — BATCH-12: In-App Ranked Notifications (W-NOT-01) — CODE CHANGE (computed, no migration, no packages)
+
+- **Scope (SRS NOT-001/003/004/006/007 + UX-007 + ADR-021):** V1 **in-app, ranked, computed, read-only**
+  notifications. **No OS push, no AI, no external provider, no engagement/streak, no daily nag.** Gated
+  behind BATCH-04 `notifications.inApp` (default OFF → inert). **No DB table / no migration / no schema
+  change** (approved computed/migration-free architecture).
+- **Architecture (clean provider/ranking boundary):** `NotificationCandidateProvider` interface + DI
+  token → concrete `SecurityEventNotificationProvider` (read-only over `audit_logs`, user-scoped, opaque
+  `sec-<hash>` ids, excludes benign/noisy events for anti-nag). Pure deterministic ranker
+  (`notification-ranking.ts`: importance→L1–L5, urgency-promote/low-confidence-demote, control filter,
+  critical-security survives "off", stable tie-break). `NotificationStateService` (Redis seen/acted +
+  3-way control pref; bounded to MAX_SEEN_IDS + TTL'd; default `standard`). `NotificationsService`
+  orchestrates (flag gate → gather → suppress seen/acted → rank → cap; WYWA cap for `?whileAway=true`).
+  The API contract is decoupled from candidate generation so the engine can be swapped without FE/API
+  changes.
+- **API (additive):** `GET /notifications` (ranked list / WYWA), `POST /notifications/:id/seen`,
+  `PUT /notifications/preferences` — all `JwtAuthGuard` + throttled, `SuccessResponse` envelope, scoped to
+  the caller. `openapi.yaml` + `API_CONTRACT_INDEX.md` (CT-NOT-01 → CURRENT) updated additively.
+- **Files:** NEW `backend/src/app/notifications/` (types, ranking constants + pure ranker, provider
+  interface + security-event provider, state service, service, controller, dto, module) + 5 specs; EDIT
+  `app.module.ts` (register module, 2 lines), `openapi.yaml`, `API_CONTRACT_INDEX.md`. **No shared/entity/
+  migration change.**
+- **Verification:** `nx test backend` → **51 suites / 653 tests pass** (+5 suites, +29 tests): flag OFF
+  inert; L1–L5 + deterministic ordering/tie-break; quieter/standard/off; critical-security survives off;
+  seen/acted suppression; Redis TTL + bounded state; WYWA cap; anti-nag exclusion; authz-scoped; opaque
+  ids; **provider read-only (no `save`)**; no metadata/email leak; response minimization. Build passes;
+  notifications files lint clean (0 errors).
+- **Security/privacy:** first-party display of the caller's own data; no AI, no external provider/egress,
+  no cross-domain raw reads, no E2EE plaintext; **generation strictly read-only — no finance writes**
+  (protects FIN-002). No OS push (NOT-005 remains TARGET, ADR-021). **SEC-KI1 untouched.**
+- **Compatibility/production:** additive; flag OFF by default → zero production surface. No existing
+  behaviour/API/schema changed. **Rollback:** flag stays OFF (inert) or remove the module + registration.
+- **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (flag OFF; additive). DATABASE: NO.
+  MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.
