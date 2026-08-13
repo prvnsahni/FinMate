@@ -2551,3 +2551,302 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   timing, vendor transfers, AUTH-005 sunset date, bank-aggregation, etc.); then
   module/data-ownership map, API/data contracts, migration plan, and implementation
   roadmap. No implementation until approved.
+
+## 2026-08-13 — Module & Data Ownership Map (Document #15, docs only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_MODULE_DATA_OWNERSHIP_MAP.md`,
+  bridging CURRENT repository → CURRENT module ownership → TARGET domain ownership →
+  database/API/AI ownership → future implementation boundary. Ownership was **read
+  from the repository first** (not designed from scratch), then mapped CURRENT→TARGET
+  against the frozen SRS/architecture. **Read-only discovery + documentation — no
+  code, schema, migration, API, encryption, auth, frontend, mobile, config, or frozen
+  decision was changed.**
+- **Changes Made:** 1 new document (13 parts + reconciliation + final report):
+  Part 1 current module inventory (17 backend areas, 5 frontend features, entities in
+  `shared/data-models/src/lib/*`); Part 2 per-entity ownership (27 entities); Part 3
+  current ownership diagram; Part 4 eight target domains (CORE/FINANCE/GOALS/PRIVATE/
+  WELLBEING/WARDROBE/OPPORTUNITIES/INTELLIGENCE); Part 5 cross-domain ALLOW/DENY/
+  CONDITIONAL matrix; Part 6 DB isolation (schema ≠ isolation; role is the boundary);
+  Part 7 API ownership; Part 8 AI/INTELLIGENCE boundaries; Part 9 security-operation
+  ownership; Part 10 backward-compatibility; Part 11 student-level "who owns what";
+  Part 12 13 CURRENT-RISK red flags; Part 13 implementation boundary (may-build-now
+  vs must-wait).
+- **Artifacts Updated:** the new ownership map + this Progress Log entry. No blueprint,
+  DB, API contract, or frozen document modified.
+- **Decisions:** none new — restates frozen ISO-1/2/3/4, K-1..4, AI-1..5, INT, FLD-1..7,
+  DEL-1, AU-1/4, ADR-007/008/009/010/016/019; all TARGET domains/roles labelled TARGET;
+  CORE/FINANCE stay in `public`.
+- **Reconciliation:** no contradiction requiring STOP-and-report; the six known
+  CURRENT↔TARGET gaps (CONFLICT-1..6 from the Baseline) restated as intended future
+  work, not errors.
+- **Next Actions:** Per Doc #15 boundary — API/data contracts and migration plan next;
+  no implementation until approved.
+
+## 2026-08-13 — API & Data Contracts (Document #16, docs only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_API_DATA_CONTRACTS.md` +
+  `docs/architecture/API_CONTRACT_INDEX.md`. Defined how existing and future modules
+  communicate while preserving production behaviour, per the principle "define
+  contracts around the existing product before changing the implementation." CURRENT
+  contracts were **read from the repository** (routes, error filter, auth/expense/people
+  DTOs, throttle profiles); TARGET contracts mapped from the frozen SRS/architecture as
+  **additive/transition**, never breaking replacements. **Read-only — no code, entity,
+  controller, service, DB, migration, auth, encryption, AI, Angular, Capacitor, config,
+  package, or production change.**
+- **Changes Made:** 2 new documents (25-section contract spec + index). Covered: current
+  API inventory (~88 routes/15 controllers); protected APIs (auth, expenses, groups,
+  settlements, People/P2P, recurring, import/export, AI); financial contracts (FIN-002
+  preserved — deterministic/validation/concurrency/refund/idempotency); encrypted-field
+  contracts (plaintext/server-encrypted/E2EE); auth transport CURRENT→TRANSITION→TARGET
+  (body → cookie/header + CSRF, dual-emit); error contract (repo-verified envelope +
+  code catalogue); authorization/IDOR; AI firewall + intelligence contracts; import/export;
+  pagination; idempotency; rate-limiting; versioning; response minimization; mobile/web;
+  migration-sensitive fields; TARGET future domains; 10 Mermaid diagrams; traceability;
+  backward-compat; adversarial review (20 probes).
+- **Repository findings (spec drift, recorded not fixed):** `openapi.yaml` documents
+  `/notes` + `/goals` CRUD though **no controllers exist** (PLACEHOLDER, matches Baseline);
+  `openapi` `POST /expenses` omits `payments[]`/`transactionType` present in the code DTO;
+  `/friends` missing from `openapi`; `openapi` error schema lacks the real
+  `{success,data,errorId}` envelope. Code is authoritative; regenerate openapi before GA.
+- **Artifacts Updated:** the two new contract docs + this Progress Log entry. No blueprint,
+  DB, API contract, or frozen document modified.
+- **Decisions:** none new — restates FIN-002/ADR-017, AU-1/4/ADR-013-015, K-1/3/FLD-1/2,
+  B-1/2, AI-1..5/ADR-009-011/023, ISO-2/INT/ADR-008/018, ADR-016, DEL-1/ADR-019, NOT-1/
+  ADR-021. Error contract, throttle profiles, and E2EE-field opacity documented from repo.
+- **Open engineering parameters:** exact throttle limits per profile; idempotency key
+  header + window; dedicated AI throttle; auth sunset date (AU-4); sort defaults.
+- **Reconciliation / adversarial:** no contradiction with frozen docs; no STOP-and-report;
+  20 adversarial probes all stopped by an existing/TARGET contract; 3 known gaps
+  (create idempotency, IDOR test coverage, AI throttle) already TARGET — no new product
+  decision required.
+- **Next Actions:** Migration plan next (Document #17). No implementation, no migrations,
+  no tickets until approved.
+
+## 2026-08-13 — Backward Compatibility & Migration Plan (Document #17, docs only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_BACKWARD_COMPATIBILITY_MIGRATION_PLAN.md`
+  + `docs/architecture/MIGRATION_PLAN_INDEX.md`. Defines **how** migration should eventually
+  happen (not performing it) under the rule "secure and improve the existing product without
+  unnecessarily breaking it." CURRENT state read from the repository; TARGET from frozen
+  SRS/architecture. **Read-only — no code, entity, controller, service, DB, migration file,
+  migration execution, auth, encryption, frontend, mobile, config, package, deployment,
+  production change, or implementation ticket.**
+- **Changes Made:** 2 new documents (28-section plan + index). Covered: current→target master
+  map; production-data inventory (KNOWN/UNKNOWN/REQUIRES-PROD-VERIFICATION); 10-question safety
+  rule; 8-phase model; **E2EE mixed-state** migrations (P2P/settlement notes, group.description —
+  additive marker + client backfill, server never key-holds); auth transition (dual-emit → cookie/
+  header + CSRF); attachment/originalName (SEC-W6c); invited-email retention (FLD-7); DB isolation
+  (new domains only, CORE/FINANCE stay in public); AI proxy→firewall (flagged); import/export
+  round-trip; mobile; **financial-correctness gate (FIN-002 golden fixtures before/after)**;
+  backup/restore + tombstone replay; feature flags; observability (no secrets/plaintext logged);
+  rollback classes (Safe / Roll-forward-only / Irreversible-after-checkpoint); dependency-aware
+  order (P0 security first); rollout pipeline; user impact; 15-row migration matrix (M-AUTH …
+  M-DOMAINS); 10 Mermaid diagrams; adversarial review (20 probes); traceability; reconciliation.
+- **⚠️ Contradiction found (STOP-and-report, frozen docs NOT modified):** the repository already
+  **honors the group-key `versionId` end-to-end** — `groups.service.getMyGroupKey` returns the
+  per-version wrapped key (rejects REVOKED); the frontend caches keys per `groupId:versionId`
+  and passes `expense.groupKeyVersionId` on decrypt. This **contradicts** the frozen Baseline/
+  Security/Matrix which list **SEC-KI1 ("versionId ignored")** as OPEN. Reclassified as
+  **VERIFY-only (M-KEYVER)** — no historical re-encryption. Residual open item: behaviour when a
+  version is **REVOKED** (throws NotFound) — is that intended crypto-shred (ROT-1) or a residual?
+  **[PRODUCT/SECURITY DECISION REQUIRED]** + recommended status back-port to the frozen docs
+  (same mechanism as the pending PRIN-1/FLD-1..7 back-port). Surfaced, not silently resolved.
+- **Artifacts Updated:** the two new migration docs + this Progress Log entry. No blueprint, DB,
+  API contract, or frozen document modified.
+- **Decisions:** none new — restates ADR-013-016/007/009-011/019/023, FIN-002/ADR-017, AU-1/4,
+  B-2/FLD-1/2, ISO-1/2, K-4/DEL-1..3, NOT-1, ROT-1.
+- **Adversarial:** 20 probes; all stopped by an existing/TARGET clause; hardened atomicity of
+  marker+ciphertext, concurrent backfill (optimistic lock), rollback-after-partial, and the
+  no-history-re-encrypt rule. Only decision-requiring finding = the SEC-KI1 discrepancy above.
+- **Next Actions:** Reconcile SEC-KI1 (verify + back-port); then, only after approval, an
+  implementation roadmap. No implementation, migrations, schema, production change, or tickets.
+
+## 2026-08-13 — SEC-KI1 Discrepancy Verification (read-only, no code change)
+
+- **Summary:** Verified the SEC-KI1 contradiction raised in Document #17 by tracing the full
+  group-key flow in the repository (creation → rotation → version storage → expense stamping →
+  `getMyGroupKey(versionId)` → client cache → decryption) and checking tests. **Findings recorded
+  in `docs/architecture/FINMATE_SEC_KI1_VERIFICATION.md` (additive; no frozen doc or code touched).**
+- **Status = B (PARTIALLY VALID, dangerous interpretation RESOLVED):** the literal SEC-KI1 claim
+  ("versionId ignored → rotated historical expense data undecryptable") is **OBSOLETE for the
+  primary path** — versionId is honored end-to-end and normal rotation does not orphan expense
+  data. **Fixed 2026-07-17** (branch `Expense-module0a`; `gap-tracker.md` ENC-002/EXP-002/EXP-003 =
+  Done). Rotation marks old versions **SUPERSEDED** (still served), preserves old wrapped keys, and
+  the write path stamps the **declared** version (defends rotation-racing-write). Unit tests exist
+  (`groups.service.spec.ts:1289/1210/1335/1344`).
+- **Residuals (distinct, pre-existing, NOT data-loss):** GRP-007 (Low, Pending) — group history log
+  renders ciphertext titles from `audit_logs.metadataJson` with no version stamp → post-rotation
+  entries show a placeholder (display-only; canonical expense still decryptable). GRP-005 (Medium,
+  Pending) — leaver retains cached wrapped key; revocation semantics undefined. Case L (UNKNOWN) —
+  legacy NULL-`groupKeyVersionId` group expenses; REQUIRES PRODUCTION VERIFICATION.
+- **REVOKED:** never set by any code path (only SUPERSEDED on rotation); NotFound-on-REVOKED is
+  consistent with intentional crypto-shred (K-4), not a rotation bug — **[PRODUCT/SECURITY DECISION
+  REQUIRED]** if REVOKED is ever used (e.g. on member leave, GRP-005).
+- **Consequence:** M-KEYVER → VERIFY-ONLY, verification complete; **no code change and no
+  historical re-encryption warranted.** Recommended additive dated status correction to the frozen
+  docs (Ledger, Matrix, Security, Baseline, Key Mgmt, Threat, Register, SRS, plus #15/#16/#17) —
+  NOT edited in this task (governance action).
+- **Confirmation:** NO CODE changed; read-only verification only.
+
+## 2026-08-13 — SEC-KI1 Governance Back-Port (docs only, no code, no migration)
+
+- **Summary:** Applied the recommended **additive dated status corrections** for SEC-KI1 across the
+  frozen documentation stack and my planning docs, preserving all historical statements (no
+  rewrite/deletion). Distinguishes HISTORICAL FINDING → IMPLEMENTATION VERIFICATION → CURRENT STATUS.
+  **This is a status correction, not a new architecture decision. NO code, entity, migration,
+  production, encryption, API, or frontend change.**
+- **Verified status recorded:** SEC-KI1 canonical `versionId` path = **MITIGATED/VERIFIED** (fixed
+  2026-07-17; `getMyGroupKey` honors versionId, SUPERSEDED served, REVOKED rejected, caller-scoped
+  wrapped keys; historical expenses decrypt after normal rotation). **M-KEYVER = VERIFY-ONLY,
+  COMPLETE, no migration / no re-encryption / no rollback.** Invariant "historical encrypted data
+  must remain decryptable after normal rotation" remains REQUIRED and is satisfied.
+- **Documents modified (additive dated notes; historical text preserved):** Decision Ledger (SEC-KI1
+  entry + ROT-1 pointer), Data Classification Matrix (§17/§18), Security & Privacy Architecture (§18),
+  Key Management (§6 prerequisite), Threat Model (SEC-KI1/T-28 status row + note), Processing Register,
+  Current System Baseline (§25 "no remediation in repo" superseded), SRS (SEC-009 OPEN→VERIFIED;
+  KEY-005 →PARTIAL versionId VERIFIED; invariant preserved), Migration Plan #17 (§8 resolved,
+  M-KEYVER COMPLETE), Migration Plan Index, Ownership Map #15 (RF-3 + Part 9 row), API Contracts #16
+  (§3/§18/§22 rows) + API Contract Index (CT-GRP-05), ADR-016 (status note; rationale unchanged).
+- **Not decided (left open, as required):** (A) whether REVOKED should be used for member departure;
+  (B) whether GRP-007 history entries should become decryptable; (C) whether legacy NULL-`versionId`
+  records exist in production — all **[PRODUCT/SECURITY DECISION REQUIRED]** / REQUIRES PRODUCTION
+  VERIFICATION. GRP-005 and GRP-007 remain distinct tracked issues; GRP-007 is display-only, not
+  canonical data loss.
+- **ADR check:** only ADR-016 references SEC-KI1 (as related context, not a fix ADR) → status note
+  added, original rationale preserved. No other ADR required correction.
+- **Reconciliation:** all 14 target docs carry a 2026-08-13 correction marker; remaining "ignored/
+  undecryptable" strings are either explicitly labelled historical (with a same-doc correction) or in
+  the out-of-scope pre-ADR roadmap (`implementation-roadmap-pre-adr.md`, historical) / already-correct
+  `ARCHITECTURE.md:88`. No stale statement asserts that normal rotation *currently* makes canonical
+  historical expenses undecryptable. `gap-tracker.md` already recorded the 2026-07-17 fix (Done).
+- **Confirmation:** NO CODE changed; NO migration created or executed.
+
+## 2026-08-13 — Implementation Roadmap & Work Breakdown (Document #18, docs only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_IMPLEMENTATION_ROADMAP.md` +
+  `docs/architecture/IMPLEMENTATION_ROADMAP_INDEX.md` — the bridge from the frozen SRS/architecture to
+  future implementation. Dependency- and risk-ordered (security/legal > existing critical functionality
+  > backward compat > new architecture > convenience); explicitly **not** a clean-slate rewrite.
+  **Read-only — no source, entity, controller, service, DB, migration, API, encryption, package,
+  production, or deployment change, and no implementation tickets.**
+- **Changes Made:** 2 new documents (27-section roadmap + index). 9 phases (0 security → 8 future
+  domains); 11 workstreams (WS-SEC/PLAT/AUTH/ENC/ISO/FIN/GOAL/NOT/AI/INT/MOB/DOM); ~45 concrete,
+  independently reviewable units (W-SEC-01…W-DOM-04, no tickets); Phase-0 security table (SEC-W1/W2/W3/
+  W6c/W7/W5/W9/OPS-1 all OPEN — none claimed fixed); auth transition; E2EE mixed-state migrations;
+  DB isolation (new domains only, CORE/FINANCE stay in public); **financial-core protection (golden-
+  fixture parity, SAME INPUT = SAME RESULT)**; V1 product (capture/dashboard/goals/notifications;
+  Personalized=V2, push=TARGET, bank-aggregation not V1); AI firewall (incremental, no more data than
+  proxy without security review); V2 intelligence (no raw FK, three states, suppression survives);
+  mobile (native features TARGET, not claimed present); observability; testing roadmap; feature flags
+  ([PROPOSED FLAG]); dependency graph; releases R0–R7 (no dates); risk-based STOP conditions;
+  traceability; 9 Mermaid diagrams; adversarial review (17 probes).
+- **SEC-KI1 handling:** recorded as **MITIGATED/VERIFIED**, **M-KEYVER = COMPLETE/VERIFY-ONLY, no
+  migration/no re-encryption**; appears only as a met prerequisite + regression-test guard. GRP-007
+  (display-only, ENG), GRP-005 (PRODUCT/SEC), legacy NULL-versionId (VERIFICATION), REVOKED semantics
+  (PRODUCT/SEC) kept distinct — must not become a group-key rewrite.
+- **Decisions:** none new — restates FIN-002/ADR-017, AU-1/4/ADR-013-015, ADR-016, ISO-1/2/ADR-007/008,
+  AI-1..5/ADR-009-011/023, INT/ADR-018, NOT-1/ADR-021, ADR-020 (Personalized→V2).
+- **Unresolved (carried, tagged):** RET-1, AUTH-005 sunset, OQ-11, CNT-1, DEL-3, VEN-1, DPIA-1,
+  AI-memory retention, investment-AI, perf baselines, SCA tooling, legacy NULL-versionId, REVOKED,
+  GRP-005, GRP-007, bank aggregation.
+- **Adversarial:** 17 probes; all stopped by an existing clause (out-of-order phases, finance-calc
+  change, old-mobile break, firewall bypass, cross-domain raw read, SEC-KI1 re-encryption, clean-slate
+  rewrite); no new decision required; no contradiction. No frozen document modified.
+- **Confirmation:** NO CODE changed; no migrations/tickets/production change.
+
+## 2026-08-13 — Pre-Implementation Execution Plan (Document #19, read-only verification, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_PRE_IMPLEMENTATION_EXECUTION_PLAN.md` +
+  `docs/architecture/PRE_IMPLEMENTATION_EXECUTION_INDEX.md`. **Verified every roadmap work item against
+  the actual repository** and classified READY/BLOCKED/etc., converted the roadmap into 16 batches
+  behind 11 hard gates, and listed production-only unknowns. **Read-only — no source, entity, DB,
+  migration (created or executed), production, API, encryption, package, frontend, or mobile change;
+  no tickets/commits/pushes.**
+- **Repository-verified findings (exact files):** SEC-W2 `logging.interceptor.ts:39-44` (full URL +
+  raw IP); SEC-W5 `main.ts:22-28` CSP `unsafe-inline` + `:74` Swagger `/docs` ungated; SEC-W9
+  `main.ts:46` trust-proxy unconditional; SEC-W1 `ci.yml` no secret scanning + 4 root blobs; SEC-W7
+  `auth.service.ts:82` `metadataJson: meta`; SEC-W3 `frontend/core/auth/auth.state.ts:56-58` **both
+  tokens in localStorage**; auth CORS `credentials:true` but **no CSRF/cookie**; **no encryption-marker
+  columns** on note/description entities; **finance unit tests exist but NO golden-fixture parity
+  harness**; AI `ai.service.ts` thin proxy (client prompt+**model**, `redactUuids` only, no projection/
+  consent-ledger/ZDR/validation); mobile only `@capacitor/core`+`cli` (no native plugins). All SEC
+  gaps remain **OPEN**; **SEC-KI1 ALREADY-IMPLEMENTED (no work)**.
+- **Batches & gates:** 16 batches (BATCH-01…16); 11 gates (GATE-FIN/SEC/E2EE/AUTH/AUTHZ/AI/MIG/DEL/
+  MOBILE/PROD). Ready: BATCH-01/02/03/04/05/11/12. Blocked: 07/08 (parity+REC-1+prod-rows), 10 (infra),
+  13 (projections+consent), 14/15/16 (native/V2/future).
+- **Reported order discrepancy (roadmap NOT modified):** finance parity harness (W-FIN-02/BATCH-05)
+  must run **before** any finance-touching batch (incl. Phase-2 settlement-note E2EE) — earlier than
+  Roadmap #18's Phase 4. Reported per instruction; roadmap unchanged.
+- **Production unknowns (no guessing):** prod CORS, deployed refresh storage, attachment/notes/recurring
+  row counts, legacy NULL-versionId, SW cache groups, IDOR coverage, prod config, perf baselines.
+- **SEC-KI1:** MITIGATED/VERIFIED; M-KEYVER COMPLETE/VERIFY-ONLY; GRP-007/GRP-005/NULL-versionId/REVOKED
+  kept separate — not a group-key rewrite.
+- **Adversarial:** 14 probes; all stopped by a gate/classification; plan hardened on parity-first
+  ordering; no new decision; no contradiction.
+- **Confirmation:** NO CODE / DB / MIGRATION (created or executed) / PRODUCTION change; NO packages,
+  tickets, commits, or pushes.
+
+## 2026-08-13 — BATCH-01: Security/Logging Foundation (SEC-W2 + SEC-W7) — CODE CHANGE
+
+- **Summary:** First controlled implementation batch. Scoped strictly to the two repository-verified
+  log-hygiene issues (SEC-W2 log redaction, SEC-W7 auth audit metadata). Smallest additive/backward-
+  compatible change; no API/schema/migration/auth-behaviour change.
+- **Root cause:** (SEC-W2) `logging.interceptor.ts` logged `req.originalUrl` (query strings → reset/
+  verify tokens, `?email=`) and raw IP; the exception filter logged `request.url`/IP too. (SEC-W7)
+  `auth.service.ts` login-success wrote `metadata: { email: user.email }` into `audit_logs.metadataJson`.
+- **Files changed:** NEW `backend/src/app/common/log-redaction.util.ts` (`redactUrl` — name-based
+  query-value redaction; `redactSensitiveKeys` — audit-key minimization; `hashIp` — SHA-256 matching
+  existing `audit_logs.ipHash`) + spec; EDIT `interceptors/logging.interceptor.ts` (redact URL + hash
+  IP); EDIT `filters/http-exception.filter.ts` (redact URL in the two **logged** paths; client-facing
+  error `path` left unchanged for API compat); EDIT `auth/auth.service.ts` (`redactSensitiveKeys` guard
+  in `writeAuditLog` + removed redundant `email` from login audit) + spec assertion; NEW
+  `interceptors/logging.interceptor.spec.ts`.
+- **Scoping decision (reported):** URL query-value redaction applied to all logged paths; IP hashed in
+  the always-on request-logging interceptor. The exception-filter rate-limit log's **raw IP left as-is**
+  (targeted security-abuse log); full IP-source/trust policy belongs to **SEC-W9 / BATCH-03** and was
+  deliberately not pulled in. SEC-W1/W3/W5/W9/OPS-1 untouched.
+- **Verification:** `npx nx test backend` → **36 suites / 538 tests pass** (incl. 2 new specs +
+  extended auth spec); changed files lint clean (`npx eslint` exit 0); the 3 initial lint errors were
+  in the new interceptor spec and were fixed. Git diff = 4 code files edited + 3 new; **migrations dir
+  untouched; no config/production change.**
+- **Compatibility:** login/refresh/reset/verify/2FA/expenses/groups/P2P/settlements/recurring/import-
+  export/E2EE all unaffected; no API contract or DB schema change. **Rollback:** revert the 3 edits +
+  delete the util (log format keys preserved; behaviour reverts to raw URL/IP + email-in-metadata).
+- **SEC-KI1 untouched** (group-key rotation not modified; no migration; no re-encryption).
+- **Confirmation:** CODE CHANGED: YES (scoped). DATABASE: NO. MIGRATION CREATED/EXECUTED: NO.
+  PRODUCTION: NO. PACKAGES: NO. COMMIT: NO. PUSH: NO.
+
+## 2026-08-13 — BATCH-02: Repository Secret / History Security (SEC-W1) — CODE CHANGE (no packages)
+
+- **Summary:** Investigated repository secret exposure and added a dependency-free, high-precision,
+  fail-closed secret scanner + CI workflow. No secret values were ever printed. No package installed.
+- **Assessment (classified; no values shown):**
+  - `.env` — **NOT tracked** and **gitignored** (`.gitignore:42`). Only `.env.example` tracked, values
+    are **PLACEHOLDERS** (TEST/SAMPLE).
+  - `docker-compose.yml`, `backend/uat-p2p.ts`, `backend/verify-p2p-migration.ts` — **local-dev default
+    credentials** (`finmate_user:finmate_password`, dev JWT secrets), explicitly localhost-only.
+    Classification **TEST/SAMPLE**; **not live production secrets → no rotation required.** Hygiene note:
+    avoid hardcoding even dev JWT secrets long-term.
+  - Tracked-file scan for private keys / AWS / GitHub / Slack / Google / Stripe / OpenAI / Resend
+    tokens → **0 findings.** No live production credential discovered.
+  - **4 root `.jpg` blobs** — filenames are **JWE compact tokens** (`{"alg":"dir","enc":"A256GCM"}`),
+    i.e. **ENCRYPTED/CIPHERTEXT** artifacts; **orphaned** (no code reference); added accidentally in
+    commit `940d024` (an unrelated frontend style commit). **Content = UNKNOWN** (decryption not
+    attempted; no direct key found in tracked files). **Belongs in git = No.**
+- **Files added:** `scripts/secret-scan.mjs` (Node built-ins only; scans tracked text files; never
+  prints values; documented path allowlist for templates/binaries/the JWE fixtures/lockfiles),
+  `scripts/secret-scan.test.mjs` (8 `node:test` cases), `.github/workflows/secret-scan.yml` (runs
+  self-tests + scan on push/PR; installs nothing).
+- **Verification:** scanner self-tests 8/8 pass; full scan **646 tracked files, 0 findings, exit 0**;
+  backend suite **36/538 still pass**. Adversarial: detects dummy secret in a new file / private key /
+  PAT / Stripe key; does NOT flag placeholder env, dev-default creds, token-shaped identifiers, or the
+  encrypted fixtures. Acknowledged limitation: high-precision patterns won't catch obfuscated/encoded
+  secrets or deep history — deeper history scanning (gitleaks/trufflehog) recommended but **requires a
+  new dependency → NOT added (pending approval).**
+- **STOP-and-report items (NOT auto-remediated):** (1) purging the 4 orphaned JWE blobs requires a
+  **git-history rewrite** — needs explicit approval + force-push coordination; their content is UNKNOWN
+  so they must not be blindly deleted. (2) Deeper history scanner (gitleaks) = new dependency, awaiting
+  approval.
+- **Production impact:** none. **Rotation required:** none (no live secret found). **SEC-KI1 untouched.**
+- **Confirmation:** CODE CHANGED: YES (scripts/CI only). DATABASE: NO. MIGRATION CREATED/EXECUTED: NO.
+  PRODUCTION: NO. PACKAGES INSTALLED: NO. COMMIT: (this iteration — see below). PUSH: NO.
