@@ -2882,3 +2882,39 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   separate frontend concern, not in this backend batch.
 - **Confirmation:** CODE CHANGED: YES. DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO.
   PACKAGES INSTALLED: NO. COMMIT: (this iteration — see git). PUSH: NO.
+
+## 2026-08-13 — BATCH-05: Financial Golden-Fixture Parity Harness (FIN-002/013/014) — TESTS ONLY
+
+- **Summary:** Built the mandatory reusable finance regression gate. It exercises the **REAL production
+  calculation code** against **independently hand-computed** golden expectations in **integer cents** —
+  no reinvented calculator, no tolerance, no new rounding policy. **No production code changed** (only
+  test files + fixtures + a README were added).
+- **Real code under test (authoritative CURRENT path):** `calculateDeterministicSplits` (`@finmate/utils`
+  via `expenses/split-calculator.util`), `simplifyLedgerDebts` (`@finmate/data-models` via
+  `common/ledger-debt-simplifier`), `ExpenseEditPolicyService` (clock-injected). Refund net = split
+  calculator + the documented `signedAmount` (`refund ? -value : value`) sign rule.
+- **Files created (all under `backend/src/app/expenses/finance-golden/`):** `golden-fixtures.ts`,
+  `split-parity.spec.ts`, `settlement-parity.spec.ts`, `refund-parity.spec.ts`,
+  `month-lock-parity.spec.ts`, `spectator-invariant.spec.ts`, `README.md` (the gate doc).
+- **Coverage:** 23 data fixtures + cases — splits (equal/fixed/percent/share, multi-payer remainder
+  priority, fractional-cent rounding, percent-remainder), 5 invalid-input rejections, settlements +
+  P2P netting + tie-breaks + zero-tolerance, multi-currency (independent per-currency, no FX), refunds
+  (full/partial/composed, unrelated-participant isolation), FIN-013 month-lock (current/prev-grace/
+  post-grace/older/rollover/adminOverride/lockedBefore/boundary-flip), FIN-014 spectator (calc is
+  participant-driven; service enforces `EXP_SPECTATOR_SPLIT`). Adversarial probes in each suite prove
+  the gate FAILS on changed payer/amount/split/refund/currency/participant, and a deliberately-wrong
+  expectation is asserted to NOT match (independent oracle).
+- **Money representation:** compared in cents via `toCents = Math.round((x+EPSILON)*100)` (app-faithful);
+  exact equality; splits asserted to reconcile exactly to the total.
+- **Harness caught real behaviour (not a bug):** the backend `split-calculator.util` wraps the shared
+  `SplitCalculationError` as a NestJS `BadRequestException({errorCode:'VAL_INVALID_INPUT', message})`;
+  the invalid-input assertions were aligned to that actual production throw.
+- **Verification:** `nx test backend` → **42 suites / 594 tests pass** (+5 suites, +45 tests); new files
+  lint clean (0 issues); `nx build backend` typecheck passes. Git status: only the new `finance-golden/`
+  dir — no production/service/entity/shared/migration change.
+- **No existing financial bug discovered.** No STOP condition triggered. **Unsupported scenarios** were
+  labelled as invalid-input rejections, not invented. SEC-KI1 untouched.
+- **Compatibility/DB/migration/production impact:** NONE (test infrastructure only).
+- **Run the gate:** `npx nx test backend --testPathPattern=finance-golden` (or the full `nx test backend`).
+- **Confirmation:** CODE CHANGED: YES (tests only). PRODUCTION CODE CHANGED: NO. DATABASE: NO. MIGRATION
+  CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES INSTALLED: NO. COMMIT: (this iteration). PUSH: NO.
