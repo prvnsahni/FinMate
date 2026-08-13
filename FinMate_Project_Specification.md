@@ -3025,3 +3025,34 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   behaviour/API/schema changed. **Rollback:** flag stays OFF (inert) or remove the module + registration.
 - **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (flag OFF; additive). DATABASE: NO.
   MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-13 — Goal Engine Architecture & Contract (design only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_GOAL_ENGINE_ARCHITECTURE.md` +
+  `docs/architecture/GOAL_ENGINE_CONTRACT_INDEX.md` — the stable boundary for a future Goal Engine that
+  can evolve deterministic → model-informed → population-informed **without changing the Goal module,
+  API, or frontend**. **Design/contract only — no code, schema, migration, API, ML, training pipeline,
+  package, external-AI provider, production, or user-data-collection change.**
+- **Current reality (verified):** goals = **PLACEHOLDER** — `goal.entity.ts` (title `varchar(160)`
+  plaintext → B-1 born-E2EE target; targetAmount/savedAmount/currency/targetDate/status/@VersionColumn),
+  **no goals controller/service/module**, `dashboard-goals` frontend placeholder. Goal Engine does not
+  exist. No contradiction with frozen docs.
+- **Designed (marked CURRENT/V1/V2/FUTURE/UNKNOWN):** `GoalEngine` interface (`project`/`capabilities`,
+  name/version/kind/contractVersion); `GoalProjectionInput` (numeric/enum only — **no free-text/keys/
+  PII**); `GoalProjectionResult` (projection + confidence + explanation + provenance + failure status);
+  scenario contract (read-only what-ifs); confidence/uncertainty; explainability metadata; failure
+  states; versioning/model replacement. **V1 = deterministic, explainable, no AI** ("projected
+  completion ~X; +₹Y/month fixes it" — no shame, no advice claim, no accuracy promise).
+- **Boundaries held:** minimized projection only (never E2EE title/journal/contacts/keys/dumps/PII);
+  GOALS↔FINANCE via projection-pull; INTELLIGENCE signals-not-raw (ISO-2); any external step passes the
+  AI firewall (numeric/enum + consent + ZDR); engine algorithms/models are IP-confidential (VEN-1).
+  **Runtime inference ≠ evaluation ≠ training; runtime data never silently becomes training data.**
+- **Explicitly NOT decided (open PRODUCT/ENGINEERING/COUNSEL — GE-1..GE-11):** whether user data may
+  train, dataset/legal-basis/retention/DP/federated/provider, investment-recommendation policy (PRODUCT
+  DECISION REQUIRED), confidence/accuracy/drift thresholds, supported goal types, priority semantics,
+  evaluation-record location. Portfolio/Asset integration documented as a **future numeric projection
+  source** only (no investment functionality, no recommendations).
+- **Reconciliation:** no frozen decision changed; no contradiction between repo and frozen docs; no
+  STOP-and-report triggered.
+- **Files:** created the two docs above + this Progress Log entry. **NO code/schema/DB/migration/package/
+  production change.**
