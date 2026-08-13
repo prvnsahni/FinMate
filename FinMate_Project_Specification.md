@@ -2850,3 +2850,35 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Production impact:** none. **Rotation required:** none (no live secret found). **SEC-KI1 untouched.**
 - **Confirmation:** CODE CHANGED: YES (scripts/CI only). DATABASE: NO. MIGRATION CREATED/EXECUTED: NO.
   PRODUCTION: NO. PACKAGES INSTALLED: NO. COMMIT: (this iteration — see below). PUSH: NO.
+
+## 2026-08-13 — BATCH-03: Web Security / Proxy Foundation (SEC-W5 + SEC-W9) — CODE CHANGE (no packages)
+
+- **Summary:** Hardened `main.ts` bootstrap security without touching business logic. Extracted pure,
+  tested helpers. Backend confirmed **API-only** (no `ServeStatic`/SPA serving) → the CSP `unsafe-inline`
+  existed solely for Swagger UI, so removing it where Swagger is gated off is safe.
+- **SEC-W5 (CSP):** `buildCspDirectives(swaggerEnabled)` — production (Swagger off) now emits a **strict
+  CSP with NO `unsafe-inline`** in `scriptSrc`/`styleSrc`; the looser Swagger-compatible CSP is used only
+  when Swagger is mounted (non-prod). CURRENT: unconditional `unsafe-inline`. TARGET: strict in prod.
+- **SEC-W5 (Swagger):** `isSwaggerEnabled(env)` — `/docs` is mounted only when `NODE_ENV != production`
+  (or explicit `ENABLE_SWAGGER=true` for a locked UAT). No new auth system. CURRENT: `/docs` ungated.
+- **SEC-W9 (trust proxy):** `parseTrustProxy(TRUST_PROXY)` replaces the unconditional `true`. **Default
+  when unset = `1`** (trust exactly one hop — a client can no longer spoof its IP via `X-Forwarded-For`).
+  Accepts `false|true|<int hops>|<CSV of IP/CIDR>`. Satisfies the invariant "client cannot spoof source
+  IP by supplying forwarding headers" by default.
+- **Files:** EDIT `backend/src/main.ts`; NEW `backend/src/app/common/security-config.util.ts` (+spec, 11
+  cases); EDIT `.env.example` (documented `TRUST_PROXY`, `ENABLE_SWAGGER`).
+- **Verification:** backend suite **37 suites / 549 tests pass** (+1 suite, +11 tests); `nx build backend`
+  typecheck **passes** (fixed a `SwaggerEnv` index-signature typing so `process.env` is accepted); changed
+  files lint clean (0 errors; 4 pre-existing `any`/unused-`err` warnings in main.ts left untouched).
+- **Compatibility:** CORS (`credentials:true`, origin) unchanged; auth/CSRF/E2EE/group-keys/finance/import-
+  export/AI/mobile unchanged; BATCH-01 log redaction unchanged; SEC-KI1 untouched. No API/schema change.
+- **Production impact (honest):** **NONE** — no production config was changed. Prod hardening takes effect
+  only on the next deploy of this build, and full SEC-W9 closure requires ops to set `TRUST_PROXY` to the
+  real proxy chain's hop count/CIDR (unresolved infra parameter — reported, not guessed).
+- **Rollback:** revert `main.ts` + delete the util (restores unconditional CSP `unsafe-inline`, ungated
+  Swagger, `trust proxy = true`).
+- **Unresolved parameters (no guessing):** exact prod `TRUST_PROXY` value (proxy topology); prod
+  `ENABLE_SWAGGER` policy; SW-cache exclusion (SEC-W5 frontend `ngsw-config`, groups UNKNOWN) is a
+  separate frontend concern, not in this backend batch.
+- **Confirmation:** CODE CHANGED: YES. DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO.
+  PACKAGES INSTALLED: NO. COMMIT: (this iteration — see git). PUSH: NO.
