@@ -2949,3 +2949,44 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (additive infra only; no existing
   behaviour changed). DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO.
   COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-13 — BATCH-06: Backward-Compatible Auth Transport Transition (W-AUTH) — CODE CHANGE (no packages)
+
+- **Scope (execution plan line 250):** W-AUTH-01..04 dual-emit cookie/header + CSRF. **Backend mechanism
+  only**, gated behind the BATCH-04 `auth.dualTransport` flag (**default OFF → production unchanged**).
+- **CURRENT transport (verified):** login/refresh/logout carry the refresh token in the **body**; FE
+  stores it in `localStorage` (`auth.state.ts:56-58`, SEC-W3); CORS `credentials:true` exact-origin;
+  **no cookie/CSRF**. **TARGET (AU-2a):** refresh in an HttpOnly+Secure+SameSite=Lax+**host-only** cookie
+  path-scoped to `/api/v1/auth/refresh`; CSRF double-submit (HttpOnly CSRF cookie + `X-CSRF-Token` header
+  echoing a token delivered in the login body — defends the same-site sibling-origin threat that Lax
+  alone does not).
+- **Implementation:** new `auth/auth-transport.util.ts` (cookie option builders — host-only, no Domain;
+  manual `parseCookies`; `generateCsrfToken`; constant-time `csrfMatches`). `auth.controller` now injects
+  `FeatureFlagsService` and uses `@Res({passthrough:true})`:
+  - **flag OFF (default):** behaviour is **byte-for-byte the legacy body-token flow** — no cookies.
+  - **flag ON:** login sets refresh + CSRF cookies and **dual-emits** (body still has the refresh token +
+    a `csrfToken`); refresh via cookie **requires CSRF** (403 `AUTH_CSRF_INVALID`), rejects conflicting
+    cookie+body tokens (400 `AUTH_TOKEN_AMBIGUOUS`), rotates cookies, and returns **no refresh token in
+    the body**; no-cookie requests fall back to the legacy body path; logout clears both cookies.
+  - `AuthService` untouched (Argon2/JWT/rotation/Redis/2FA/reset unchanged). Shared `RefreshTokenDto`
+    loosened to **optional** `refreshToken` (backward-compatible; presence enforced in the controller) so
+    cookie-only refresh/logout validate. FE does not reference the DTO → zero FE impact.
+- **Files:** EDIT `auth.controller.ts`, `shared/.../dto/auth.dto.ts`; NEW `auth-transport.util.ts` (+spec),
+  `auth.controller.spec.ts` (transport matrix). **No `main.ts`/CORS change, no `AuthService` change, no
+  migration, no frontend change, no package.**
+- **Verification:** `nx test backend` → **46 suites / 624 tests pass** (+2 suites, +19 tests covering the
+  flag-OFF legacy path, cookie attributes, CSRF present/missing/invalid, conflicting-token rejection,
+  no-refresh-in-body, logout cookie clearing); `nx build backend` typecheck passes; changed files lint
+  clean (0 errors; test-mock `as any` warnings match repo spec convention).
+- **Compatibility:** old/new web + wrapped-mobile all keep working (flag OFF = legacy; flag ON = dual-emit).
+  CORS unchanged (exact-origin + credentials). **Prod CORS origin remains an [ENGINEERING VERIFICATION]
+  item**; **auth sunset date / min-version = [ENGINEERING PARAMETER]** (not decided).
+- **Coordinated activation (NOT this batch, documented to avoid a broken half-state):** turning the flag
+  ON must land **together** with the FE changes (send `withCredentials`, echo `X-CSRF-Token`, stop storing
+  the refresh token in `localStorage`) + prod-CORS verification + min-version/telemetry. Doing one without
+  the other would break refresh, so both are deferred to the activation step. SEC-W3 fully closes then.
+- **Production impact:** NONE (flag OFF). **Rollback:** flag stays OFF (no-op), or revert the controller +
+  util + DTO. **SEC-KI1 untouched.** **BATCH-06 backend mechanism = COMPLETE; FE + flag activation deferred.**
+- **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (gated OFF; legacy path unchanged).
+  DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration).
+  PUSH: NO.
