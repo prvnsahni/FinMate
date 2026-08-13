@@ -297,9 +297,11 @@ Severity: P0 (immediate/critical open) · P1 (before sensitive-data release) · 
 | **OPS-1** insider Zone-2 read | P1 | OPEN (policy-only) |
 | **SEC-W5** Swagger/CSP/SW cache | P2 | OPEN |
 | **SEC-W9** trust proxy | P2 | OPEN |
-| **SEC-KI1** group-key versionId bug | P2 | OPEN |
+| **SEC-KI1** group-key versionId bug | P2 | ~~OPEN~~ → **MITIGATED 2026-08-13** (verified fix landed 2026-07-17; residual GRP-007 display-only) |
 
 None is closed by documentation. Each remains OPEN until a verified technical fix lands.
+
+> **⟳ SEC-KI1 / T-28 STATUS CORRECTION — 2026-08-13 (additive; T-28 and the "OPEN" history above are preserved).** Repository verification ([FINMATE_SEC_KI1_VERIFICATION.md](FINMATE_SEC_KI1_VERIFICATION.md)) — **historical implementation concern:** OPEN at time of discovery. **Current repository status:** **MITIGATED / VERIFIED** — `getMyGroupKey` honors `versionId` (fixed 2026-07-17; SUPERSEDED served, REVOKED rejected, caller-scoped wrapped keys); **historical canonical expenses remain decryptable after normal rotation** (a verified technical fix, not a documentation closure). **T-28 (availability) does not materialize for canonical expense data.** **Residual:** GRP-007 — group history-log ciphertext-title placeholder after rotation, **display-only, not a cryptographic data-loss issue**. Separate open items: GRP-005 (leaver-key), legacy NULL-`versionId` (REQUIRES PRODUCTION VERIFICATION), REVOKED semantics — [PRODUCT/SECURITY DECISION REQUIRED]. **M-KEYVER = VERIFY-ONLY, no migration.**
 
 ---
 

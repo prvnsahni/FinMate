@@ -559,6 +559,8 @@ FinMate must be careful that private details don't leak into places people forge
 
 ---
 
+> **⟳ SEC-KI1 STATUS CORRECTION — 2026-08-13 (additive; the §18 row "group-key rotation … versionId ignored → history undecryptable … SEC-KI1" and the §5 ROT-1 prerequisite note are preserved as historical).** Repository verification ([FINMATE_SEC_KI1_VERIFICATION.md](FINMATE_SEC_KI1_VERIFICATION.md)) established that `GET /groups/:id/keys/me?versionId=` **honors the requested version** (fixed 2026-07-17): SUPERSEDED versions remain available, REVOKED is rejected, caller-specific wrapped keys are returned, and the write path stamps the client-declared version. **Historical canonical expenses remain decryptable after normal rotation** → **MITIGATED/VERIFIED** (was P2 OPEN at discovery); the ROT-1 "fix versionId first" prerequisite is **satisfied**. **M-KEYVER = VERIFY-ONLY — no migration, no re-encryption, no production change.** Residual (display-only, not data loss): **GRP-007** history-log ciphertext-title placeholder. Separate open items: GRP-005, legacy NULL-`versionId` (needs prod verification), REVOKED semantics — [PRODUCT/SECURITY DECISION REQUIRED].
+
 ## 19. Existing production compatibility (mandatory)
 
 ### Simple explanation

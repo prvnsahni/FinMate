@@ -213,9 +213,11 @@ Isolation: per-domain DB principals (ISO-1); INTELLIGENCE no raw FKs (ISO-2); si
 | Audit | email in metadata | P1 | SEC-W7 |
 | Attachments | plaintext filename dup | P1 | SEC-W6c |
 | Web | Swagger/CSP; subdomain under same-site cookie | P1/P2 | T-21 / SEC-W5 |
-| Rotation | group-key versionId bug | P2 | SEC-KI1 |
+| Rotation | group-key versionId bug | P2 | SEC-KI1 → **MITIGATED 2026-08-13** (see note) |
 
 All existing SEC/OPS items remain **OPEN** until fixed and verified.
+
+> **⟳ SEC-KI1 STATUS CORRECTION — 2026-08-13 (additive; row above preserved as historical).** Repository verification ([FINMATE_SEC_KI1_VERIFICATION.md](FINMATE_SEC_KI1_VERIFICATION.md)): the group-key `versionId` path is honored end-to-end (verified fix landed 2026-07-17) → **MITIGATED/VERIFIED** (was P2 OPEN). Historical canonical expenses decrypt after normal rotation. **M-KEYVER = VERIFY-ONLY, no migration.** Residual: **GRP-007** (history-log display placeholder, not data loss). Open: GRP-005, legacy NULL-`versionId`, REVOKED semantics — [PRODUCT/SECURITY DECISION REQUIRED].
 
 ---
 

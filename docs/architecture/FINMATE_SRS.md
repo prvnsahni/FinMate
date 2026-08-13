@@ -232,7 +232,7 @@ Authoritative source #4; **no HKDF-derived domain keys**.
 | KEY-002 | MUST | P1 | TARGET | **[F-08]** Class-B keys held **separately from the protected data** in an independently protected key store, with **authorization separate from data access** (not the global EncryptionService) | per-user shred + compromise isolation | K-2 | additive | **a database dump MUST NOT contain usable Class-B keys**; per-user key destroyable |
 | KEY-003 | MUST | P1 | TARGET | Shared P2P/settlement content key wrapped for both registered users | shared read | B-2/FLD-1 | additive | both parties decrypt; no unauthorized decrypt |
 | KEY-004 | MUST | P1 | TARGET | Recovery mandatory/strongly-gated before storing E2EE data | data-loss | REC-1 | onboarding | E2EE store blocked without recovery setup |
-| KEY-005 | MUST | P2 | TARGET | Event-driven rotation; immutable version history; no retroactive-revocation claim; fix versionId serving | rotation | ROT-1/SEC-KI1 | additive | requested version served (SEC-KI1 fixed) |
+| KEY-005 | MUST | P2 | PARTIAL — **versionId serving VERIFIED 2026-08-13** | Event-driven rotation; immutable version history; no retroactive-revocation claim; fix versionId serving | rotation | ROT-1/SEC-KI1 | additive | requested version served (SEC-KI1 fixed) |
 | KEY-006 | MUST | P1 | TARGET | Crypto-shred = destroy key + revoke sessions + clear device caches + tombstones; **not** claimed instant while backups exist | honest erasure | K-4 | additive | deletion completes after cache clear + backup rotation |
 
 ## §18. Authentication (AUTH)
@@ -268,11 +268,13 @@ Authoritative source #4; **no HKDF-derived domain keys**.
 | SEC-006 | MUST | P1 | workstream | Least-privilege prod DB credentials + prod-access audit; no routine access | OPS-1/T-19 | **OPEN** | prod access audited; policy + technical control |
 | SEC-007 | MUST | P2 | workstream | Gate/remove Swagger in prod; harden CSP (drop unsafe-inline); exclude sensitive endpoints from SW cache | SEC-W5/T-21 | **OPEN** | Swagger gated; CSP blocks inline |
 | SEC-008 | MUST | P2 | workstream | Condition `trust proxy` on a known proxy | SEC-W9 | **OPEN** | XFF trusted only behind proxy |
-| SEC-009 | MUST | P2 | workstream | Fix group-key versionId serving | SEC-KI1/T-28 | **OPEN** | rotated-history decrypts for new members |
+| SEC-009 | MUST | P2 | workstream | Fix group-key versionId serving | SEC-KI1/T-28 | ~~**OPEN**~~ → **VERIFIED 2026-08-13** | rotated-history decrypts for new members |
 | SEC-010 | MUST | P1 | TARGET | Systematic per-resource ownership/authorization checks (IDOR) | T-17 | design | cross-user access denied in tests |
 | SEC-011 | SHOULD | P1 | TARGET | Dependency/supply-chain scanning + provenance | T-20 | `[ENGINEERING PARAMETER]` | SCA in CI (tool TBD) |
 | SEC-012 | MUST | P1 | TARGET | Security failures fail closed; errors never expose secrets/keys/sensitive data | threat model | design | error responses leak nothing |
 | SEC-013 | MUST | P1 | CUR | **[F-17]** Preserve existing request throttling/rate limiting (Redis-backed) | brute-force/DoS (T-01/T-25) | CURRENT | none | rate limits enforced as today |
+
+> **⟳ SEC-009 / KEY-005 (SEC-KI1) STATUS CORRECTION — 2026-08-13 (additive; the requirement text, `Src`, and `Acceptance` above are preserved unchanged — only the `Scope`/status field is annotated).** Repository verification ([FINMATE_SEC_KI1_VERIFICATION.md](FINMATE_SEC_KI1_VERIFICATION.md)): **SEC-009 is VERIFIED** — `getMyGroupKey` honors the requested `versionId` (fixed 2026-07-17; SUPERSEDED served, REVOKED rejected, caller-scoped wrapped keys; write path stamps the client-declared version; unit-tested). **KEY-005** is **PARTIAL**: the *versionId-serving* clause is VERIFIED; the broader event-driven rotation model exists in code (`rotateGroupKey`) but has no UI entry point yet, so KEY-005 stays open on that clause. **The security invariant — *"historical encrypted data must remain decryptable after normal key rotation"* — remains REQUIRED** and is verified satisfied for canonical expense data. **Residual GRP-007** (history-log ciphertext-title display placeholder) is display-only and does **not** relax any invariant. Separate open items: GRP-005, legacy NULL-`versionId` (needs prod verification), REVOKED semantics — [PRODUCT/SECURITY DECISION REQUIRED]. **M-KEYVER = VERIFY-ONLY, no migration.**
 
 ## §21. Data lifecycle, deletion, consent (DATA/DEL)
 | ID | M | Pri | Scope | Requirement | Reason | Src | Acceptance |

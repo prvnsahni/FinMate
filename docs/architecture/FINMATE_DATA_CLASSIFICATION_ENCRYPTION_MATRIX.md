@@ -541,6 +541,8 @@ SEC-W1 (git-history blobs) · SEC-W2 (tokens/email/IP in logs) · SEC-W3 (refres
 - **P2:** SEC-W5, SEC-W9, SEC-KI1.
 (Definitions and full fields in the Decision Ledger §14.)
 
+> **⟳ SEC-KI1 STATUS CORRECTION — 2026-08-13 (additive; §17/§18 lines above preserved as historical).** Repository verification ([FINMATE_SEC_KI1_VERIFICATION.md](FINMATE_SEC_KI1_VERIFICATION.md)): the canonical group-key `versionId` path is **honored end-to-end** (fixed 2026-07-17; `getMyGroupKey` serves the requested version, SUPERSEDED served, REVOKED rejected, caller-specific wrapped keys). **Historical canonical expenses remain decryptable after normal rotation** → **MITIGATED/VERIFIED** (was P2 OPEN at discovery). **M-KEYVER = VERIFY-ONLY, no migration/re-encryption.** The §5.19 "ciphertext titles without a version stamp" caveat is the **display-only GRP-007** residual (group history-log snapshot in `audit_logs.metadataJson`) — **not** canonical expense data loss. Separate open items: GRP-005 (leaver-key), legacy NULL-`versionId` (REQUIRES PRODUCTION VERIFICATION), REVOKED semantics — [PRODUCT/SECURITY DECISION REQUIRED].
+
 ## 19. Unknowns requiring engineering verification [ENG-UNKNOWN]
 
 1. Exact columns of `recurring_expense_splits` and all `*_versions` tables (assumed to mirror parents).
