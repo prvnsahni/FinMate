@@ -2918,3 +2918,34 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Run the gate:** `npx nx test backend --testPathPattern=finance-golden` (or the full `nx test backend`).
 - **Confirmation:** CODE CHANGED: YES (tests only). PRODUCTION CODE CHANGED: NO. DATABASE: NO. MIGRATION
   CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES INSTALLED: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-13 — BATCH-04: Platform Foundation — feature flags + observability (W-PLAT-01/02) — CODE CHANGE (no packages)
+
+- **Scope (from the execution plan, not the batch number):** BATCH-04 = **W-PLAT-01 feature-flag
+  framework** + **W-PLAT-02 migration/observability (secret-free)** — a new module, greenfield/additive,
+  GATE-SEC, traceability GOV-2 + SEC-W2. Repository verification: **no prior flag/observability code
+  existed → both items OPEN** (now implemented). The prompt's conditional Steps 4–7 (auth transport,
+  auth security, IDOR, DB isolation) are **NOT in BATCH-04** (they belong to BATCH-06 / BATCH-10) and
+  were not touched.
+- **W-PLAT-01:** `FeatureFlagsService.isEnabled(flag)` + a typed registry (`feature-flags.constants.ts`)
+  of the 11 roadmap flags (`auth.dualTransport`, `enc.*`, `dbIsolation`, `ai.firewall`, `feature.goals`,
+  `notifications.inApp`, `mobile.*`, `domain.intelligence`), each env-overridable (`FEATURE_*`) with a
+  **safe OFF default**. Nothing reads them yet → **zero current behavioural effect**; they exist for
+  later batches to gate rollout.
+- **W-PLAT-02:** `ObservabilityService.record(event, metadata, level)` — one structured JSON line per
+  event via NestJS Logger, **metadata sanitized through BATCH-01's `redactSensitiveKeys`** (SEC-W2/W7,
+  so email/tokens/secrets can never enter a signal). No new package; the external metrics/dashboard
+  **backend choice is a deferred infra decision** (not built here).
+- **Files:** NEW `backend/src/app/platform/` — `feature-flags.constants.ts`, `feature-flags.service.ts`
+  (+spec), `observability.service.ts` (+spec), `platform.module.ts` (`@Global`); EDIT `app.module.ts`
+  (2 additive lines: import + register); EDIT `.env.example` (FEATURE_* convention).
+- **Verification:** `nx test backend` → **44 suites / 605 tests pass** (+2 suites, +11 tests);
+  `nx build backend` typecheck passes; platform files lint clean (the one remaining warning is a
+  pre-existing `any` in `app.module.ts:70` throttler config, untouched).
+- **Compatibility/DB/migration/production impact:** NONE. Adding a `@Global` module with side-effect-free
+  providers that nothing consumes yet changes no existing behaviour, API, or schema. **Rollback:** remove
+  `PlatformModule` import + the `platform/` dir.
+- **SEC-KI1 untouched.** No new contradiction. **BATCH-04 = COMPLETE.**
+- **Confirmation:** CODE CHANGED: YES. PRODUCTION CODE CHANGED: NO (additive infra only; no existing
+  behaviour changed). DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO.
+  COMMIT: (this iteration). PUSH: NO.

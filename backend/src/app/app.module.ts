@@ -25,6 +25,7 @@ import { PeopleModule } from './people/people.module';
 import { ImportModule } from './import/import.module';
 import { AiModule } from './ai/ai.module';
 import { EmailModule } from './email/email.module';
+import { PlatformModule } from './platform/platform.module';
 import { Note, Goal, AuditLog } from '@finmate/data-models';
 import { ThrottlerConfigModule } from './throttler/throttler-config.module';
 import { ThrottlePolicyResolver } from './throttler/throttle-policy.resolver';
@@ -179,6 +180,7 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
     ImportModule,
     AiModule,
     EmailModule,
+    PlatformModule,
   ],
   controllers: [AppController],
   providers: [
