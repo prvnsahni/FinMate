@@ -3219,3 +3219,39 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   (currently surfaces a clear message) is a small optional follow-up. No [PRODUCT]/[COUNSEL] items.
 - **Confirmation:** CODE CHANGED: YES (frontend only). BACKEND/SCHEMA/MIGRATION/API-CONTRACT/FROZEN-DOCS:
   NO. PACKAGES: NO. PRODUCTION: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — Document Intelligence + Dynamic Taxonomy — READINESS ASSESSMENT (docs only, no code)
+
+- **Summary:** Produced a **read-only** repository-grounded readiness/architecture assessment for the next
+  major capability (receipt/PDF/invoice/credit-card extraction, itemization, dynamic taxonomy, shared/global
+  taxonomy, population learning). Complements the earlier *parking* doc with an **evidence-backed CURRENT
+  baseline**, feasibility analysis, stable-contract sketches, and the decisions/gates that must precede any
+  implementation. **No implementation; nothing authorised.**
+- **Key findings (CURRENT/VERIFIED, evidence-cited):** substrate exists — `attachments` (per-file
+  `encryptedFileKey` wrapped under scope key, `encryptedOriginalName` E2EE) + `receipt_versions`; tabular
+  import `POST /import/expenses` (CSV/XLSX via SheetJS); category-based reporting `analytics/categories` on
+  the **server-readable plaintext `category`** (Zone-2) — the precedent for reporting-without-decryption;
+  **E2EE-safe dedup** `findPotentialDuplicates` (amount+date+currency+scope, title excluded); replaceable
+  `GoalEngine` + FIN-002 parity harness. **Intelligence does NOT exist** — no OCR, no line items, no
+  tags/taxonomy, no classifier, no statement parser, no population learning.
+- **Direction (TARGET):** freeze two interfaces — `DocumentExtractionEngine` + `ClassificationEngine` —
+  mirroring `GoalEngine`; extraction/classification produce **candidates**, never a mutation path into
+  finance; Total-only stays first-class (≈already supported via attachments); itemization is explicit
+  opt-in with `sum(items) ≤ total` reconciliation surfaced (preserves **FIN-002**); taxonomy is a parallel
+  **classified** metadata layer (no E2EE free-text backdoor); Goal Engine consumes only numeric/enum
+  projections. External OCR/AI blocked until AI-Firewall TARGET controls exist; on-device class avoids that
+  gate. **No OCR provider selected** (repo/frozen docs mandate none).
+- **Boundaries preserved:** FIN-002, E2EE, AI Firewall, REC-1, Goal Engine contract, SEC-KI1 — all intact,
+  unmodified. Frozen stack (SRS v1.0, Decision Ledger, ADRs, API contracts, OpenAPI, Data-Classification
+  Matrix, Threat Model, Ownership/Migration/Roadmap) **untouched**.
+- **Decisions surfaced, not resolved:** `[PRODUCT]` taxonomy shape/governance/editability, line-items
+  entity-vs-metadata, learning-signal propagation; `[ENGINEERING]` OCR class/hosting, confidence +
+  reconciliation thresholds, dedup fuzz, promotion counts; `[COUNSEL]` population-learning legal basis +
+  consent + retention + DP/federated + classification of every new derived field.
+- **Files:** created `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (35-section assessment)
+  + this Progress Log entry. **No blueprint/SRS/Ledger/ADR/API/OpenAPI/entity/service/controller/frontend/
+  migration/config change.**
+- **Checks:** read-only inspection only (entities, controllers, import/AI/analytics services, Matrix). No
+  build/test run required (no code changed); prior QA green baseline unchanged.
+- **Confirmation:** CODE CHANGED: NO. SCHEMA/DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES: NO.
+  PRODUCTION: NO. FROZEN DOCS: NO. COMMIT: (this iteration, docs only). PUSH: NO.
