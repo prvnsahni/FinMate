@@ -3139,3 +3139,46 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   OFF; migration not executed). **SEC-KI1 untouched** (no group-key/rotation/versionId change).
 - **Confirmation:** CODE CHANGED: YES. DATABASE/SCHEMA (live): NO. MIGRATION CREATED: YES (authorized);
   EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — Document Intelligence & Dynamic Taxonomy (FUTURE / PARKED, docs only, no code)
+
+- **Summary:** Authored `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md`
+  — a **parking document** for capabilities discussed but **intentionally NOT added to the frozen
+  SRS v1.0**: receipt/document intelligence + OCR itemization (user-chosen TOTAL-ONLY vs ITEMIZED),
+  financial reconciliation (`sum(items) ≤ total`, unallocated surfaced), a **global** dynamic taxonomy
+  with an OBSERVED→CANDIDATE→CONFIRMED→ACTIVE→(MERGED|DEPRECATED) lifecycle, multi-dimensional tagging,
+  classification provenance, privacy-bounded cross-user learning, personal-vs-global knowledge,
+  structured search/reporting, and future statement extraction. Everything labelled **CURRENT** (only
+  §1) vs **TARGET/FUTURE** (§2–§16, none implemented). **Read-only — no code, entity, controller,
+  service, DTO, DB, migration, API contract, model, training, package, or production change; no SRS or
+  frozen document modified.**
+- **CURRENT reality captured (repo-verified, §1):** expenses carry a **single flat** `category
+  varchar(64)`; **attachments + receipt versioning** exist (`receipt_versions`); **no OCR / document
+  intelligence / taxonomy / tags / line-items** anywhere in `backend/src`, `frontend/src`, `shared`;
+  AI is the opt-in `POST /ai/proxy` (projection firewall still TARGET); deterministic Goal Engine
+  behind the frozen `GoalEngine` interface. The document explicitly forbids citing itself as evidence
+  that OCR/taxonomy/document-intelligence exists.
+- **Boundaries held (restated, not changed):** **FIN-002** financial-correctness parity — OCR/
+  classification MUST NOT silently modify payer/amount/split/refund/settlement/currency/balances;
+  extraction/classification is a **descriptive metadata layer**, never a mutation path. E2EE free-text
+  (title/description/notes) stays private per the frozen Matrix — **no server-side decryption backdoor**;
+  structured metadata is a parallel, classified, queryable layer only where the Matrix already permits.
+  Cross-user improvement is bounded: *"better classification across users does not mean silently
+  training on private user data"*; runtime inference ≠ evaluation ≠ training. Engine boundaries mirror
+  the Goal Engine: replaceable `DocumentExtractionEngine` / `ClassificationEngine` behind stable
+  contracts; Expense module depends on the contract, not on any OCR vendor/ML framework/model. Taxonomy
+  feeds the Goal Engine only via minimized numeric/enum projections (ADR-008 signals-not-raw).
+- **Artifacts Updated:** 1 new document + this Progress Log entry. **No blueprint, SRS, Decision Ledger,
+  ADR, API contract (`openapi.yaml`/index), DB, or frozen document modified.**
+- **Reconciliation (§21):** SRS v1.0 remains FROZEN 2026-08-12; Decision Ledger, ADRs, and API
+  contracts untouched; no code/schema/migration/package change; no implementation started; CURRENT vs
+  TARGET distinguished. **No contradiction found** — two consistency notes recorded: SRS already scopes
+  statement import as **V1 OPTIONAL** (not promoted here); the flat `category` field is unchanged
+  (future hierarchy/tags sit beside it). Status: *"Future design / parked pending SRS v1.0 closure."*
+- **Decisions:** none new — all 22 open items remain `[OPEN QUESTION]`/`[PRODUCT DECISION REQUIRED]`/
+  `[ENGINEERING PARAMETER]`/`[COUNSEL]`. No SRS revision begun; a formal impact review is required
+  after the current implementation/version closes before any of this may enter an SRS R2+.
+- **Next Actions:** none authorised from this document. Do **not** start OCR, taxonomy, classification,
+  Goal Engine, statement-import, migration, or SRS-revision work solely because this document exists.
+- **Confirmation:** CODE CHANGED: NO. DATABASE/SCHEMA: NO. MIGRATION: NO. API CONTRACT: NO. SRS/FROZEN
+  DOCS: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: YES (docs-only). PUSH: NO.
