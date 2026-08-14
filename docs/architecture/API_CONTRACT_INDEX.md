@@ -107,7 +107,7 @@ An **API contract** is a written promise: *send exactly this, get exactly that b
 
 | ID | Domain / base | Status | Compat | Sec | SRS | ADR | Ref |
 |---|---|---|---|---|---|---|---|
-| CT-GOAL-01 | GOALS `/goals` (openapi PLACEHOLDER, no controller) | PLACEHOLDER/TARGET | Low | High | FUT-001 | 003 | §19 |
+| CT-GOAL-01 | GOALS `/goals` (+`/{id}`, `/{id}/projection`) — **BATCH-11: born-E2EE, owner-scoped, flag-gated (`feature.goals`), REC-1 on create; deterministic GoalEngine V1** | CURRENT | Low | High | FUT-001, B-1 | 003 | §19 |
 | CT-PRIV-01 | PRIVATE / journal | TARGET | Low | **High** | — | 002/003 | §19 |
 | CT-WELL-01 | WELLBEING `/wellbeing` | TARGET | Low | **High** | — | 003 | §19 |
 | CT-WARD-01 | WARDROBE `/wardrobe` | TARGET | Low | High | FUT-002 | 012 | §19 |
@@ -121,7 +121,7 @@ An **API contract** is a written promise: *send exactly this, get exactly that b
 
 | # | Drift | Reality | Ref |
 |---|---|---|---|
-| D-1 | openapi has `/notes`, `/goals` CRUD | no controller/service → PLACEHOLDER | §2.4 |
+| D-1 | openapi has `/notes` CRUD | no controller/service → PLACEHOLDER (`/goals` **resolved** — implemented + openapi reconciled in BATCH-11) | §2.4 |
 | D-2 | openapi `POST /expenses` lacks `payments[]`/`transactionType` | code DTO has both | §2.4 |
 | D-3 | `/friends` missing from openapi | controller exists | §2.4 |
 | D-4 | openapi error schema lacks `{success,data}` envelope | filter adds them (+`errorId` on 500) | §2.4/§7 |

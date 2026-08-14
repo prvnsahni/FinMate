@@ -28,6 +28,7 @@ import { EmailModule } from './email/email.module';
 import { PlatformModule } from './platform/platform.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { RecoveryModule } from './recovery/recovery.module';
+import { GoalsModule } from './goals/goals.module';
 import { Note, Goal, AuditLog } from '@finmate/data-models';
 import { ThrottlerConfigModule } from './throttler/throttler-config.module';
 import { ThrottlePolicyResolver } from './throttler/throttle-policy.resolver';
@@ -185,6 +186,7 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
     PlatformModule,
     NotificationsModule,
     RecoveryModule,
+    GoalsModule,
   ],
   controllers: [AppController],
   providers: [

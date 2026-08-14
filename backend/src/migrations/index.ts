@@ -19,3 +19,4 @@ export { AddContactsAndPendingMembers1719600000000 } from './1719600000000-AddCo
 export { AddRecurringExpenseGroupMemberPayer1719700000000 } from './1719700000000-AddRecurringExpenseGroupMemberPayer';
 export { AddExpenseTransactionType1719800000000 } from './1719800000000-AddExpenseTransactionType';
 export { AddExpensePaymentsAndDirectLedger1719900000000 } from './1719900000000-AddExpensePaymentsAndDirectLedger';
+export { AddGoalsV2Fields1720000000000 } from './1720000000000-AddGoalsV2Fields';

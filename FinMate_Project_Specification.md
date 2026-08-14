@@ -3098,3 +3098,44 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   recovery-adoption distribution.
 - **Confirmation:** CODE CHANGED: YES. DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO.
   PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-13 — BATCH-11: Goals-v2 + deterministic Goal Engine (W-GOAL-01..03) — CODE + MIGRATION (authorized)
+
+- **Scope:** First Goals write path — born-E2EE goals, owner-scoped CRUD, deterministic Goal Engine V1
+  behind the frozen `GoalEngine` interface, flag-gated (`feature.goals`, default OFF), REC-1 on create.
+  **Migration authorized & created (not executed here).** No portfolio/investment/ML/external-AI/
+  population/prediction work. **No finance/settlements/groups/auth source change; SEC-KI1 untouched.**
+- **GOALS key model (reuses established patterns — no invented crypto):** per-goal random content key
+  encrypts the title (AES-GCM) client-side; wrapped under the owner's **existing RSA public wrapping key**
+  (recoverable via the RSA root → recovery, REC-1), stored as `goals.encrypted_content_key` (mirrors
+  `attachment.encryptedFileKey` / `EncryptedExpenseKey.wrappedKey`). Server stores ciphertext + wrapped
+  key only, **never decrypts**. No HKDF, no master-direct.
+- **Migration `1720000000000-AddGoalsV2Fields`** (registered in `migrations/index.ts`): `title
+  varchar(160)→TEXT`, add `encrypted_content_key TEXT NULL`, add `priority INTEGER NOT NULL DEFAULT 0`.
+  Additive, transaction-safe, reversible while empty; **no plaintext backfill, no server-side decryption,
+  no fabricated ciphertext.** Verified vs the `Goal` entity + ordering (after 1719900000000). **Not
+  executed** (requires a local/test Postgres; never run against production) → REQUIRES a local migration
+  run before deploy. Goals had no write path, so no rows are expected (REQUIRES PRODUCTION VERIFICATION);
+  the migration is non-destructive regardless.
+- **Files:** NEW `backend/src/app/goals/` — `engine/{goal-engine.types,deterministic-goal-engine}` (+spec),
+  `dto/goal.dto`, `goals.{service,controller,module}`, `goals-enabled.guard` (+specs); NEW migration; EDIT
+  `shared/.../goal.entity.ts` (title→text, +priority, +encryptedContentKey), `app.module.ts`,
+  `migrations/index.ts`, `openapi.yaml` (reconciled `/goals` drift → implemented API), `API_CONTRACT_INDEX`
+  (CT-GOAL-01 → CURRENT; D-1 goals-drift resolved).
+- **API (additive):** `GET/POST /goals`, `GET/PATCH/DELETE /goals/:id`, `GET /goals/:id/projection` —
+  `JwtAuthGuard` + `GoalsEnabledGuard` (404 when flag OFF) + `RecoveryRequiredGuard` on create; throttled;
+  owner-scoped (IDOR-safe 404); optimistic version on update; delete crypto-shreds the wrapped key.
+- **Goal Engine V1:** pure `DeterministicGoalEngine` (no Nest/TypeORM/AI/ML), bound via `GOAL_ENGINE`
+  token → swappable later without touching the Goals module/API. Input = numeric/enum only (no title/
+  free-text); computes projected completion date, on-track, required contribution, shortfall, confidence,
+  and explicit failure states (`invalid_goal`/`insufficient_data`); deterministic (injected clock);
+  plain, non-shaming, no advice/accuracy claim. Reads only the goal's own numbers — **no finance writes.**
+- **Verification:** `nx test backend` → **57 suites / 686 tests** (+4 suites, +22 tests: engine golden
+  fixtures + determinism, service CRUD/IDOR/optimistic-version/crypto-shred/E2EE-opacity, controller
+  scoping, flag guard); `nx build backend` passes (shared entity rebuilt); **finance golden gate green**;
+  `nx test frontend` → **58 suites / 504 tests** (no regression); changed files lint clean (0 errors).
+- **Compatibility/rollback:** additive; flag OFF → Goals 404 (inert). Rollback: run migration `down`
+  (safe while empty), remove GoalsModule + migration + entity fields. **Production impact: none** (flag
+  OFF; migration not executed). **SEC-KI1 untouched** (no group-key/rotation/versionId change).
+- **Confirmation:** CODE CHANGED: YES. DATABASE/SCHEMA (live): NO. MIGRATION CREATED: YES (authorized);
+  EXECUTED: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.
