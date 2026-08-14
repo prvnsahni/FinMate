@@ -3056,3 +3056,45 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   STOP-and-report triggered.
 - **Files:** created the two docs above + this Progress Log entry. **NO code/schema/DB/migration/package/
   production change.**
+
+## 2026-08-13 — REC-1: recovery mandatory before new Class-A E2EE data — CODE CHANGE (no migration, no packages)
+
+- **Summary:** Enforced the frozen REC-1 requirement — a user must have recovery material before
+  establishing **new** Class-A E2EE key material. Server-authoritative guard + a minimal client
+  defense-in-depth interceptor. **No migration** (recovery columns already exist), no schema/shared/entity
+  change, no package, no production change. **Frozen crypto model unchanged** (PBKDF2 master → RSA root →
+  random per-domain keys → recovery wraps the RSA root; no HKDF; client-side plaintext; server stores
+  ciphertext/wrapped material only).
+- **Server enforcement:** new `backend/src/app/recovery/` — `RecoveryStatusService.assertConfigured(userId)`
+  (reads the authoritative `User.recoveryWrappedKey` **presence only**, per request; zero-knowledge — never
+  returns/logs the blob) throwing **409 `REC_RECOVERY_REQUIRED`** (existing error envelope); `RecoveryRequiredGuard`;
+  `@Global RecoveryModule` (read-only `forFeature([User])`).
+- **Gated Class-A-establishing paths (verified from code):** `POST /groups/:id/keys` (writes
+  `MemberWrappedGroupKey`), `POST /groups/:id/keys/rotate` (new Class-A key material — **precondition only,
+  no versionId/rotation semantic change**), `POST /groups/join/:inviteToken` (joiner's wrapped key) — via
+  `@UseGuards(RecoveryRequiredGuard)`; and `POST /expenses` **conditionally** when `wrappedContentKeys`
+  present (direct_shared per-entry keys). **Not gated (conservative, documented):** `createGroup` (metadata
+  + key-version placeholder only), `inviteMember` (transport; the invitee's persistent key is gated at join),
+  `POST /users/me/keys` (the RSA root must precede recovery — gating it would deadlock), and all reads /
+  finance calculations / personal+group expense creation (no new recoverable key material).
+- **Existing users:** recovery present → unchanged; recovery NULL → next **new** Class-A action rejected
+  (one-time prompt), **existing E2EE data stays readable**, no migration/rewrite/rekey/session-revoke, no
+  forced setup merely on login. Reuses existing `GET/POST /users/me/recovery-key[/status]` (no second
+  recovery mechanism). Password change/reset flows untouched; lost-password+lost-recovery permanent-loss
+  behaviour unchanged.
+- **Frontend:** `recovery-required.interceptor` detects `409 REC_RECOVERY_REQUIRED` and emits a
+  `finmate:recovery-required` event so the app can launch the existing recovery-setup flow (server remains
+  authoritative; a client check is never sufficient). Registered in `app.config.ts`.
+- **Verification:** `nx test backend` → **53 suites / 664 tests** (+2 suites, +11 tests: recovery service/
+  guard 409 + envelope + no-blob-leak + race re-read; expenses conditional gate; unrelated endpoints
+  unaffected); **finance golden-fixture gate green** (no financial-calc change); `nx build backend` passes;
+  `nx test frontend` → **58 suites / 504 tests** (interceptor detect/ignore/passthrough); changed files lint
+  clean (0 errors). No `groups`/`shared`/`migrations` schema change.
+- **Compatibility/rollback:** additive; remove the guard decorators + `RecoveryModule` + the expenses
+  conditional + the FE interceptor to revert (no data implications). **SEC-KI1 untouched** (rotation/
+  versionId/M-KEYVER/historical re-encryption not modified — only a recovery precondition added).
+- **Open decisions:** [PRODUCT] rollout policy for existing recovery-less users; [ENGINEERING] whether to
+  also gate `inviteMember`/`/users/me/keys`. [MIGRATION AUTHORIZATION] not needed. [PRODUCTION VERIFICATION]
+  recovery-adoption distribution.
+- **Confirmation:** CODE CHANGED: YES. DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO.
+  PACKAGES: NO. COMMIT: (this iteration). PUSH: NO.

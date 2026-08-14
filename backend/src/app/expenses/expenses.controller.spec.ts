@@ -7,6 +7,7 @@ import {
 } from './services';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SuccessResponse } from '../common/response.util';
+import { RecoveryStatusService } from '../recovery/recovery-status.service';
 
 describe('ExpensesController', () => {
   let controller: ExpensesController;
@@ -14,6 +15,7 @@ describe('ExpensesController', () => {
   let analyticsService: jest.Mocked<ExpensesAnalyticsService>;
   let mockExpensesCrudService: Record<string, jest.Mock>;
   let mockExpensesAnalyticsService: Record<string, jest.Mock>;
+  let mockRecoveryStatusService: { assertConfigured: jest.Mock; isConfigured: jest.Mock };
 
   beforeEach(async () => {
     mockExpensesCrudService = {
@@ -33,6 +35,10 @@ describe('ExpensesController', () => {
     const mockExpenseExportQueryService = {
       getExportRows: jest.fn(),
     };
+    mockRecoveryStatusService = {
+      assertConfigured: jest.fn().mockResolvedValue(undefined),
+      isConfigured: jest.fn().mockResolvedValue(true),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ExpensesController],
@@ -45,6 +51,10 @@ describe('ExpensesController', () => {
         {
           provide: ExpenseExportQueryService,
           useValue: mockExpenseExportQueryService,
+        },
+        {
+          provide: RecoveryStatusService,
+          useValue: mockRecoveryStatusService,
         },
       ],
     })
@@ -120,6 +130,42 @@ describe('ExpensesController', () => {
       new SuccessResponse('Expense created successfully', { id: 'exp-1' }),
     );
     expect(crudService.createExpense).toHaveBeenCalledWith('user-1', dto);
+  });
+
+  describe('REC-1 (direct-shared Class-A key material)', () => {
+    it('requires recovery when creating a direct_shared expense (wrappedContentKeys)', async () => {
+      crudService.createExpense.mockResolvedValue({ id: 'exp-2' });
+      const dto: any = {
+        title: 'ct',
+        wrappedContentKeys: [{ userId: 'u2', wrappedKey: 'wk' }],
+      };
+      await controller.create(dto, { user: { id: 'user-1' } } as any);
+      expect(mockRecoveryStatusService.assertConfigured).toHaveBeenCalledWith(
+        'user-1',
+      );
+    });
+
+    it('does NOT require recovery for a personal/group expense (no wrappedContentKeys)', async () => {
+      crudService.createExpense.mockResolvedValue({ id: 'exp-3' });
+      await controller.create({ title: 'Lunch' } as any, {
+        user: { id: 'user-1' },
+      } as any);
+      expect(mockRecoveryStatusService.assertConfigured).not.toHaveBeenCalled();
+    });
+
+    it('rejects the direct_shared create (and does not persist) when recovery is missing', async () => {
+      mockRecoveryStatusService.assertConfigured.mockRejectedValue(
+        new Error('REC_RECOVERY_REQUIRED'),
+      );
+      const dto: any = {
+        title: 'ct',
+        wrappedContentKeys: [{ userId: 'u2', wrappedKey: 'wk' }],
+      };
+      await expect(
+        controller.create(dto, { user: { id: 'user-1' } } as any),
+      ).rejects.toThrow('REC_RECOVERY_REQUIRED');
+      expect(crudService.createExpense).not.toHaveBeenCalled();
+    });
   });
 
   it('should forward delete call', async () => {

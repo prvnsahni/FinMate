@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import { CreateGroupDto, UpdateContributionDto, UpdateGroupDto } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RecoveryRequiredGuard } from '../recovery/recovery-required.guard';
 import { ExpensesCarryForwardService } from '../expenses/services';
 import { parseRawGroupExpenseFilter } from '../expenses/group-expense-filters.util';
 import {
@@ -90,6 +91,8 @@ export class GroupsController {
     return new SuccessResponse('Groups retrieved successfully', result);
   }
 
+  // REC-1: joining establishes the joiner's wrapped group key (Class-A material).
+  @UseGuards(RecoveryRequiredGuard)
   @Post('join/:inviteToken')
   async joinGroupByToken(
     @Param('inviteToken', ParseUUIDPipe) inviteToken: string,
@@ -359,6 +362,8 @@ export class GroupsController {
    * Provision wrapped group data keys for one or more members.
    * The caller must be an active member with the group key loaded.
    */
+  // REC-1: provisioning writes wrapped group data keys (Class-A material).
+  @UseGuards(RecoveryRequiredGuard)
   @Post(':id/keys')
   async provisionGroupKeys(
     @Param('id', ParseUUIDPipe) id: string,
@@ -373,6 +378,9 @@ export class GroupsController {
     return new SuccessResponse('Group keys provisioned successfully', null);
   }
 
+  // REC-1: rotation creates new Class-A key material (precondition only; no
+  // change to versionId/rotation semantics — SEC-KI1 untouched).
+  @UseGuards(RecoveryRequiredGuard)
   @Post(':id/keys/rotate')
   async rotateGroupKey(
     @Param('id', ParseUUIDPipe) id: string,

@@ -27,6 +27,7 @@ import {
   ExpensesCrudService,
 } from './services';
 import { SuccessResponse } from '../common/response.util';
+import { RecoveryStatusService } from '../recovery/recovery-status.service';
 
 /** Normalize a raw `transactionType` query value; `both`/anything else → undefined (no filter). */
 function normalizeTxType(value?: string): 'expense' | 'refund' | undefined {
@@ -62,6 +63,7 @@ export class ExpensesController {
     private readonly expensesCrudService: ExpensesCrudService,
     private readonly expensesAnalyticsService: ExpensesAnalyticsService,
     private readonly expenseExportQueryService: ExpenseExportQueryService,
+    private readonly recovery: RecoveryStatusService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -71,6 +73,12 @@ export class ExpensesController {
     @Body() dto: CreateExpenseDto,
     @Req() req: Request & { user: { id: string } },
   ) {
+    // REC-1: a direct_shared expense writes per-entry wrapped content keys
+    // (Class-A key material). Require recovery only in that case — personal and
+    // group expenses establish no new recoverable key material and are unaffected.
+    if (dto.wrappedContentKeys && dto.wrappedContentKeys.length > 0) {
+      await this.recovery.assertConfigured(req.user.id);
+    }
     const result = await this.expensesCrudService.createExpense(
       req.user.id,
       dto,
