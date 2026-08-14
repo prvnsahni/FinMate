@@ -3255,3 +3255,50 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   build/test run required (no code changed); prior QA green baseline unchanged.
 - **Confirmation:** CODE CHANGED: NO. SCHEMA/DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES: NO.
   PRODUCTION: NO. FROZEN DOCS: NO. COMMIT: (this iteration, docs only). PUSH: NO.
+
+## 2026-08-14 — Document Intelligence — SCOPE REFINEMENT (additive, docs only, no code)
+
+- **Summary:** Refined the document-intelligence scope per new product direction by **updating the existing**
+  `FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (additive dated ADDENDUM §A1–§A10) — **no new/duplicate doc**.
+  All prior findings (§1–§35) preserved. Still **documentation only** — no OCR/extraction/taxonomy/tagging/
+  CC/bank import/ML/provider implemented.
+- **Architecture refinement:** one pipeline, **input-specific extraction adapters** (image→OCR/vision;
+  text-PDF→direct text/table; scanned-PDF→render→OCR) all producing **one normalized extraction contract**;
+  the caller never branches on `sourceType`. Adapters + engine independently replaceable (mirrors the
+  `GoalEngine` replaceable-contract pattern). **No provider selected.**
+- **Document families classified** (NOW/NEXT/FUTURE/OUT, §A2/§A8): receipts (grocery/retail/restaurant/
+  fuel/pharmacy) **NOW** (total-only, ≈already supported via attachments) / **NEXT** (itemized, needs OCR
+  spike); online + general invoices **NEXT** (text-PDF lead); **credit-card + bank statements NEXT-but-
+  BLOCKED**; utility/subscription/rent/EMI/travel **FUTURE**; investment/tax/legal **OUT OF SCOPE**.
+- **New frozen-doc constraints SURFACED (not modified):** SRS **FUT-004** (V2/FUTURE MUST — statements/card:
+  *never store CVV/PIN/PAN*, *delete-original-default*, OCR-vendor review, **no-accusation** "possible
+  discrepancy" language) and **OQ-03** (Counsel — *AI/statement features BLOCKED* pending OCR/vendor
+  cross-border transfer decision). SRS's "statement import V1-OPTIONAL if dependencies safe" → dependencies
+  **not** safe ⇒ statements stay gated. SRS v1.0 remains FROZEN/untouched.
+- **Reconciliation model (FIN-002 core, §A6):** `allocatedTotal=sum(items)`, `unallocatedDifference=
+  documentTotal−allocatedTotal` (signed, **surfaced never hidden**), `reconciliationStatus ∈ {BALANCED|
+  UNDER_ALLOCATED|OVER_ALLOCATED|UNRECONCILED}`. `documentTotal` authoritative; items subordinate; never
+  auto-alter the transaction. Contract separates **EXTRACTED / INFERRED / USER_CORRECTED / USER_CONFIRMED**;
+  **confidence ≠ financial correctness.**
+- **Statements (§A3/§A4):** CC + bank share the **same `DocumentExtractionEngine`** but use **different**
+  statement-normalization strategies (bank adds debit/credit + running-balance + UPI/NEFT/IMPS/ATM/fee/
+  interest) — not forced into one semantic model. Dedup reuses E2EE-safe `findPotentialDuplicates`.
+- **Taxonomy / learning / E2EE / Goal Engine (§A7):** direction unchanged; **new caveat** — a derived tag can
+  itself be sensitive (e.g. pharmacy→contraception) → not automatically harmless; each derived field needs a
+  Matrix classification `[COUNSEL]`. Goal Engine still consumes only minimized numeric/enum signals; contract
+  unchanged. Population learning stays FUTURE (runtime≠evaluation≠aggregate-learning≠training).
+- **Implementation sequence (§A9, repo-checked):** DOC-0 contracts → DOC-1 total-only attach → DOC-2 engine
+  interface+stub → DOC-3 extraction spike (on-device first) → DOC-4 itemized+reconciliation → DOC-5
+  classification/taxonomy → **stop/re-review** → DOC-6 CC statements (gated) → DOC-7 bank statements (gated)
+  → DOC-8+ FUTURE. Each batch lists dependencies, security gate, migration req, finance gate, E2EE + AI-
+  Firewall implications, prod-verify, and user-approval requirement.
+- **Provider strategy (§A10):** capability + must-satisfy characteristics documented; evaluate at DOC-3 not
+  before; **test on-device OCR first** (avoids AI-Firewall + OQ-03 gates); external OCR/VLM forces AI-Firewall
+  changes + clears OQ-03; privacy > accuracy > reproducibility > latency > cost.
+- **Files:** updated `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (additive §A1–§A10 +
+  reconciliation note) + this Progress Log entry. **No SRS/Ledger/ADR/OpenAPI/API-index/entity/service/
+  controller/frontend/migration/config change.**
+- **Checks:** read-only inspection (Goal Engine architecture doc, SRS statement scope/FUT-004/OQ-03,
+  attachment/receipt/import/expense architecture). No build/test run (no code changed); QA baseline unchanged.
+- **Confirmation:** CODE CHANGED: NO. SCHEMA/DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES: NO.
+  PRODUCTION: NO. OCR/TAXONOMY/CC-BANK-IMPORT/ML: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
