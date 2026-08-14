@@ -3182,3 +3182,40 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   Goal Engine, statement-import, migration, or SRS-revision work solely because this document exists.
 - **Confirmation:** CODE CHANGED: NO. DATABASE/SCHEMA: NO. MIGRATION: NO. API CONTRACT: NO. SRS/FROZEN
   DOCS: NO. PRODUCTION: NO. PACKAGES: NO. COMMIT: YES (docs-only). PUSH: NO.
+
+## 2026-08-13 — Goals-v2 frontend + client born-E2EE (completes BATCH-11 FE)
+
+- **Summary:** Implemented the missing FE Goals experience with the **client-side born-E2EE title path**,
+  wired to the existing Goals API + Goal Engine projection. **Frontend-only** — no backend/shared/
+  migration/API-contract change; frozen Goal Engine contract untouched; SEC-KI1 untouched.
+- **E2EE (reuses existing primitives — no new crypto, no HKDF, no master-direct):** `GoalCryptoService`
+  → `ClientEncryptionService.generateDataKey()` (random per-goal content key) → `encrypt(title, key)`
+  (AES-GCM `iv:ct`) → `wrapKey(key, publicKey)` (RSA-OAEP under the user's **RSA public wrapping key** from
+  `GroupKeyService.getMyAsymmetricKeys()` — recoverable via the RSA root/recovery, matching matrix §8 and
+  REC-1). Decrypt = RSA-`unwrapKey` with the private wrapping key → `decrypt`. **Plaintext title never
+  sent, never logged** (no `console`/`logger` in the module; verified).
+- **Files (new `frontend/src/app/features/goals/`):** `goal.model.ts`; `services/goal-crypto.service.ts`
+  (+spec), `services/goals-api.service.ts` (+spec); `goals-page.component.ts` + `.html` (+spec);
+  `goals.routes.ts`. EDIT `app.routes.ts` (lazy `goals` route under the auth shell).
+- **UI:** list/create/edit/delete goals; per-goal projection (projected completion, required monthly
+  contribution, on-track, estimated shortfall) in **neutral, non-shaming, non-advice** language + the
+  engine disclaimer; loading/error states; REC-1 (`409 REC_RECOVERY_REQUIRED` → recovery prompt),
+  optimistic-version (412) message, and **feature-off (404) → "not available"** (respects `feature.goals`
+  OFF via backend 404). Projection request sends only the numeric `assumedMonthlyContribution`.
+- **Migration:** local/test PostgreSQL **unavailable** (port 5432 closed) → migration `1720000000000`
+  execution **remains PENDING** (no fake results, never production, no SQLite substitute). Verified by
+  inspection previously (DDL↔entity match, ordering, reversibility). **[PRODUCTION VERIFICATION]** run
+  UP/DOWN/re-apply on a disposable local Postgres before deploy.
+- **Verification:** `nx test frontend` → **61 suites / 519 tests** (+3 suites, +15 tests: real WebCrypto
+  round-trip — plaintext never emitted, distinct per-goal keys, ciphertext changes, missing/malformed key
+  fails safe; API endpoints + ciphertext-only body + numeric projection param; component encrypts-before-
+  send + REC-1/404/412 handling); `nx build frontend` **passes**; goals FE lint **0 errors**. `nx test
+  backend` **57/686 unchanged**; **finance golden gate green**.
+- **Security/compat:** owner-scoped (server-enforced); no server decryption; Goal Engine still numeric-only
+  (projection input carries no title); no finance writes; SEC-KI1 untouched. Additive; `feature.goals` OFF
+  → UI shows unavailable. **Rollback:** remove the `goals` route + `features/goals/` dir.
+- **Remaining:** [PRODUCTION VERIFICATION] migration local run; [ENGINEERING] richer engine input
+  (goal↔contribution linkage) still V1-minimal; wiring the REC-1 prompt to auto-launch the recovery panel
+  (currently surfaces a clear message) is a small optional follow-up. No [PRODUCT]/[COUNSEL] items.
+- **Confirmation:** CODE CHANGED: YES (frontend only). BACKEND/SCHEMA/MIGRATION/API-CONTRACT/FROZEN-DOCS:
+  NO. PACKAGES: NO. PRODUCTION: NO. COMMIT: (this iteration). PUSH: NO.
