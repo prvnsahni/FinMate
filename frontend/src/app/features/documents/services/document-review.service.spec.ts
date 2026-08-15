@@ -126,4 +126,57 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     const blob = JSON.stringify(draft);
     expect(blob).not.toMatch(/key|encrypt|token|bytes|password/i);
   });
+
+  // --- DOC-5 classification / tags ---
+  it('suggests engine tags (INFERRED, rule_based) for known items via the shared taxonomy', () => {
+    const m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+    );
+    const tags = m.items[0].tags;
+    expect(tags.some((t) => t.tagId === 'milk')).toBe(true);
+    expect(tags.some((t) => t.tagId === 'grocery')).toBe(true); // ancestor
+    for (const t of tags) {
+      expect(t.authority).toBe('INFERRED');
+      expect(t.source).toBe('rule_based');
+    }
+  });
+
+  it('a user correction adds a per-user tag (USER_CORRECTED, source user) — not global', () => {
+    let m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+    );
+    m = svc.addTag(m, m.items[0].id, 'household');
+    const added = m.items[0].tags.find((t) => t.tagId === 'household');
+    expect(added?.authority).toBe('USER_CORRECTED');
+    expect(added?.source).toBe('user');
+  });
+
+  it('dedupes tags and supports removal', () => {
+    let m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+    );
+    const before = m.items[0].tags.length;
+    m = svc.addTag(m, m.items[0].id, 'grocery'); // already inferred → deduped
+    expect(m.items[0].tags.length).toBe(before);
+    m = svc.removeTag(m, m.items[0].id, 'milk');
+    expect(m.items[0].tags.some((t) => t.tagId === 'milk')).toBe(false);
+  });
+
+  it('does not suggest sensitive medical/pharmacy tags', () => {
+    const m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('pharmacy medicine'), lineTotal: ef(50) }] }),
+    );
+    expect(m.items[0].tags.map((t) => t.canonicalName).join(' ')).not.toMatch(/medic|pharmac|health/i);
+  });
+
+  it('on confirm, kept engine tags become USER_CONFIRMED; user tags stay USER_CORRECTED', () => {
+    let m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+    );
+    m = svc.addTag(m, m.items[0].id, 'household');
+    const { model } = svc.confirm(m);
+    const tags = model.items[0].tags;
+    expect(tags.find((t) => t.tagId === 'milk')?.authority).toBe('USER_CONFIRMED');
+    expect(tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
+  });
 });

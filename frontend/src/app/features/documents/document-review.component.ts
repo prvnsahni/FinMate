@@ -65,6 +65,21 @@ export class DocumentReviewComponent {
     if (m) this.model.set(this.review.deleteItem(m, itemId));
   }
 
+  /** Add a user tag (per-user correction, USER_CORRECTED) from a text input. */
+  addTag(itemId: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const m = this.model();
+    if (m && input.value.trim()) {
+      this.model.set(this.review.addTag(m, itemId, input.value));
+      input.value = '';
+    }
+  }
+
+  removeTag(itemId: string, tagId: string): void {
+    const m = this.model();
+    if (m) this.model.set(this.review.removeTag(m, itemId, tagId));
+  }
+
   confirm(): void {
     const m = this.model();
     if (!m) return;

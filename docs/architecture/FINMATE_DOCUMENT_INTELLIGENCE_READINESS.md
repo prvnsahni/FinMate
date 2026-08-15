@@ -521,6 +521,30 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-5 dynamic taxonomy + classification foundation (MIGRATION-FREE)
+
+**DOC-5 COMPLETE.** A deterministic classification foundation over a **single shared canonical taxonomy**, integrated into the DOC-4 review as advisory tags. **No migration, no persistence, no ML/training, no population learning, no cloud/AI, no package, no CC/bank/DOC-6/7 work, no OCR/rasterizer work.**
+
+**Migration decision — NOT required (documented):** the canonical taxonomy is a **bounded code seed** (common to all users by construction — no per-user duplicate, no uncontrolled auto-creation, no taxonomy explosion, stable ids, no destructive renames). Classification is **advisory metadata computed on-the-fly**; user corrections live in the **client review model** (authority transitions). None of this needs a table. **A future migration IS required only to persist** expense↔tag links, per-user tag preferences/corrections, and dynamic tag *proposals* (candidate→reviewed→active→deprecated lifecycle) — **deferred and reported, not created** (see "Deferred persistence" below). Per the batch rule, no migration was silently created.
+
+**Single shared taxonomy (`@finmate/data-models`, both BE + FE consume it):**
+- `taxonomy/canonical-taxonomy.ts` — `CanonicalTag {id, canonicalName, normalizedKey, aliases, parentId?, status(candidate|reviewed|active|deprecated), version}` + a bounded `CANONICAL_TAXONOMY` seed (food>grocery>dairy>milk…, transport>vehicle>fuel, household>cleaning>detergent, dining>restaurant, utilities). **No medical/pharmacy/health/sensitive categories** (surfaced decision).
+- `taxonomy/classify.ts` — `normalizeTagKey`, `classifyLabel(label, category?)`: deterministic, alias-aware, ancestor-expanding (milk→dairy→grocery→food), deduped, **only active seed tags** (bounded), `[]` when nothing matches. Output is INFERRED, source `rule_based`, `confidence` = match certainty (**never financial correctness**).
+
+**Backend:** `RuleBasedClassificationEngine` implements the **unchanged** DOC-0 `ClassificationEngine` contract via the shared classifier and is bound to `CLASSIFICATION_ENGINE` (stub → rule_based → future model/population, no contract change). Uses only the minimized `{itemLabel, category}` input — never E2EE title/description, never keys/PII. No endpoint added (no live server consumer; classification's real value is client-side).
+
+**Frontend (extends DOC-4 review, no finance-modal change):** each review line item gets **engine-suggested tags** (INFERRED) from the same shared classifier; the user can **add** a tag (per-user correction → USER_CORRECTED, source `user`, **not** global) or **remove** one; on confirm, kept engine tags become USER_CONFIRMED while user tags stay USER_CORRECTED — keeping **engine suggestion / per-user correction / global taxonomy** three distinct layers (the basis for future population learning).
+
+**Boundaries:** classifier receives only minimized signals (no E2EE plaintext, no keys); classification/tags never touch amount/payer/split/refund/settlement/currency/balance (FIN-002 gate green); tags are advisory, not financial truth; no cross-user access (corrections are client-side, per-session); sensitive-tag inference explicitly excluded.
+
+**Deferred persistence (needs a future migration — reported, not created):** `taxonomy_tags`/`tag_aliases` (if the seed ever moves to DB + dynamic proposals), `expense_item_tags` (item↔tag links), `user_tag_preferences` (persisted corrections). Each would need a migration + Data-Classification-Matrix entry (a **derived tag can be sensitive**) + governance for candidate→active promotion — all `[PRODUCT DECISION]`/`[COUNSEL]`, unstarted.
+
+**Population-learning boundary:** unchanged and FUTURE — private user corrections do **not** become training data; runtime≠evaluation≠aggregate-learning≠training. **Goal Engine boundary:** unchanged — taxonomy would feed the Goal Engine only as minimized numeric/enum projections, never raw tags/text.
+
+**Verification:** data-models 2 suites/13 tests, backend 72/762 (finance gate green), frontend 67/551, all builds pass, lint 0.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

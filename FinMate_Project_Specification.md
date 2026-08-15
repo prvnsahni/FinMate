@@ -3530,3 +3530,48 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 
 - **Summary:** Added `docs/architecture/FINMATE_PUBLIC_READ_ONLY_SHARING_FUTURE.md` as a FUTURE-only proposal for a dedicated PublicShare boundary and versioned PublicShareView projection. This records product purpose, public allowlist/prohibited data, token/capability model, live-vs-snapshot tradeoff, owner/admin permission model, FIN-002 reuse, E2EE/document-intelligence boundaries, safe analytics, threat model, caching/noindex guidance, conceptual API/data model, projection versioning, feature-flag recommendation, non-goals, and reconciliation with current groups/settlements/auth/key/document-intelligence architecture. **No implementation started.**
 - **Confirmation:** CODE CHANGED: NO. DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. OPENAPI: NO. FROZEN SRS/DECISION LEDGER/ADRS: NO. E2EE/SECURITY MODEL: NO. DOC-3/OCR/TAXONOMY: NO. PUSH: NO.
+
+## 2026-08-14 — DOC-5: Dynamic taxonomy + classification foundation — CODE CHANGE (MIGRATION-FREE, no packages)
+
+- **Summary:** Deterministic classification over a **single shared canonical taxonomy**, integrated into the
+  DOC-4 review as advisory tags with user correction. **No migration, no persistence, no ML/training, no
+  population learning, no cloud/AI, no package, no CC/bank/DOC-6/7, no OCR/rasterizer, no finance-calc change,
+  no E2EE decryption.**
+- **Migration decision — NOT required (documented, none created):** the canonical taxonomy is a **bounded code
+  seed** (common to all users by construction; no per-user duplicate, no uncontrolled auto-creation, no
+  explosion, stable ids, no destructive renames). Classification is advisory metadata computed on-the-fly;
+  user corrections live in the **client review model** (authority). None needs a table. A future migration is
+  required **only** to persist expense↔tag links, per-user tag preferences, and dynamic tag proposals
+  (candidate→reviewed→active→deprecated) — **deferred + reported, not created** (readiness DOC-5 ADDENDUM).
+- **Shared taxonomy (`@finmate/data-models` — BE + FE consume one source):** `taxonomy/canonical-taxonomy.ts`
+  (`CanonicalTag {id, canonicalName, normalizedKey, aliases, parentId?, status, version}` + bounded seed;
+  **no medical/pharmacy/health/sensitive categories** — surfaced decision); `taxonomy/classify.ts`
+  (`normalizeTagKey`, `classifyLabel(label, category?)` — deterministic, alias-aware, ancestor-expanding
+  milk→dairy→grocery→food, deduped, only active seed tags, `[]` on no match; INFERRED / `rule_based`;
+  `confidence` = match certainty, **not** financial correctness).
+- **Backend:** `RuleBasedClassificationEngine` implements the **unchanged** DOC-0 `ClassificationEngine`
+  contract via the shared classifier; bound to `CLASSIFICATION_ENGINE` (stub → rule_based, no contract change).
+  Minimized `{itemLabel, category}` input only — never E2EE title/description, keys, or PII. No new endpoint
+  (no live server consumer; classification's value is client-side).
+- **Frontend (extends DOC-4 review, no finance-modal change):** each review item gets **engine-suggested tags**
+  (INFERRED) from the same shared classifier; user can **add** a tag (per-user correction → USER_CORRECTED,
+  source `user`, NOT global) or **remove** one; on confirm kept engine tags → USER_CONFIRMED, user tags stay
+  USER_CORRECTED — keeping engine-suggestion / per-user-correction / global-taxonomy three distinct layers.
+- **Files:** `shared/data-models/src/lib/taxonomy/{canonical-taxonomy.ts,classify.ts,taxonomy.spec.ts}` +
+  index export; `backend/.../engine/rule-based-classification-engine.ts` (+spec), module binding + module spec;
+  `frontend/.../documents/document-review.model.ts` (+ReviewTag), `services/document-review.service.ts`
+  (+classify/addTag/removeTag/confirm-tags) (+spec), `document-review.component.ts/.html` (tag chips UI).
+- **Security/adversarial (tests):** deterministic classification; canonical normalization; aliases; duplicate
+  prevention; candidate-vs-active (deprecated never suggested); user correction scoped per-user (not global);
+  authority/provenance (INFERRED/USER_CORRECTED/USER_CONFIRMED); no financial mutation; no E2EE plaintext into
+  classifier (minimized input); bounded growth (only seed ids); stable ids; **sensitive-tag exclusion**
+  (no medical/pharmacy/health derivation). Feature flag `document.intelligence` unchanged (reused; no new flag).
+- **Unresolved decisions:** persisting tags/corrections (migration-gated) + candidate→active governance
+  `[PRODUCT]`; classifying any sensitive category `[COUNSEL]`; wiring the confirmed draft (incl. tags) into
+  expense creation `[PRODUCT]`. Population learning + Goal Engine integration remain FUTURE (unchanged).
+- **Verification:** data-models 2 suites/13 tests; backend **72/762** (finance golden gate **PASS**); frontend
+  **67/551**; frontend + backend builds pass; lint 0 on all changed dirs.
+- **Confirmation:** CODE CHANGED: YES (shared taxonomy + BE engine + FE tags). DATABASE/SCHEMA: NO. MIGRATION
+  CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. DOC-0 CONTRACT CHANGED: NO. FINANCE GOLDEN
+  GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX: NO. DOC-6/7/OCR-LANGDATA/RASTERIZER/ML/CLOUD-OCR: NOT STARTED.
+  COMMIT: (this iteration). PUSH: NO.

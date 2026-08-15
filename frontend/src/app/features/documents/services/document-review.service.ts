@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { classifyLabel, normalizeTagKey } from '@finmate/data-models';
 import {
   ConfirmedDocumentDraft,
   DocumentExtractionResult,
@@ -9,6 +10,7 @@ import {
   ReviewLineItem,
   ReviewModel,
   ReviewReconciliation,
+  ReviewTag,
 } from '../document-review.model';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -48,9 +50,53 @@ export class DocumentReviewService {
         quantity: f(li.quantity),
         unitPrice: f(li.unitPrice),
         lineTotal: f(li.lineTotal),
+        // Engine-suggested tags from the shared taxonomy (advisory, INFERRED).
+        tags: this.suggestTags(li.description?.value ?? null),
       })),
       confirmed: false,
     };
+  }
+
+  /** Deterministic tag suggestions for a label via the shared canonical taxonomy. */
+  private suggestTags(label: string | null): ReviewTag[] {
+    if (!label) return [];
+    return classifyLabel(label).map((t) => ({
+      tagId: t.tagId,
+      canonicalName: t.canonicalName,
+      authority: 'INFERRED' as const,
+      source: 'rule_based' as const,
+    }));
+  }
+
+  /**
+   * Add a user's own tag to an item (per-user correction, authority USER_CORRECTED —
+   * NOT global taxonomy). If the text maps to a shared canonical tag its stable id is
+   * reused; otherwise a normalized user key is used. Duplicates are ignored.
+   */
+  addTag(model: ReviewModel, itemId: string, text: string): ReviewModel {
+    const label = text.trim();
+    if (label === '') return model;
+    const match = classifyLabel(label).find((t) => normalizeTagKey(t.canonicalName) === normalizeTagKey(label));
+    const tag: ReviewTag = {
+      tagId: match ? match.tagId : normalizeTagKey(label),
+      canonicalName: match ? match.canonicalName : label,
+      authority: 'USER_CORRECTED',
+      source: 'user',
+    };
+    const items = model.items.map((it) => {
+      if (it.id !== itemId) return it;
+      if (it.tags.some((x) => x.tagId === tag.tagId)) return it; // dedupe
+      return { ...it, tags: [...it.tags, tag] };
+    });
+    return { ...model, items };
+  }
+
+  /** Remove a tag from an item (user correction). */
+  removeTag(model: ReviewModel, itemId: string, tagId: string): ReviewModel {
+    const items = model.items.map((it) =>
+      it.id === itemId ? { ...it, tags: it.tags.filter((t) => t.tagId !== tagId) } : it,
+    );
+    return { ...model, items };
   }
 
   /** Edit a header field → authority USER_CORRECTED. Returns a new model. */
@@ -86,6 +132,7 @@ export class DocumentReviewService {
       quantity: this.corrected<number>(null),
       unitPrice: this.corrected<number>(null),
       lineTotal: this.corrected<number>(null),
+      tags: [],
     };
     return { ...model, items: [...model.items, blank] };
   }
@@ -138,6 +185,8 @@ export class DocumentReviewService {
         quantity: confirmField(it.quantity),
         unitPrice: confirmField(it.unitPrice),
         lineTotal: confirmField(it.lineTotal),
+        // Kept engine suggestions become USER_CONFIRMED; user tags stay USER_CORRECTED.
+        tags: it.tags.map((t) => (t.authority === 'INFERRED' ? { ...t, authority: 'USER_CONFIRMED' as const } : t)),
       })),
       confirmed: true,
     };

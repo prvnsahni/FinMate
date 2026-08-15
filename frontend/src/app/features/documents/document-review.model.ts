@@ -60,12 +60,29 @@ export interface ReviewField<T> {
   confidence?: number;
 }
 
+/**
+ * A tag on a review item. `INFERRED` = engine suggestion (from the shared taxonomy);
+ * `USER_CORRECTED` = the user's own addition (per-user, NOT global truth);
+ * `USER_CONFIRMED` = kept on confirm. DOC-5 does not persist these — they are advisory
+ * metadata; persistence + global promotion are a future migration-gated batch.
+ */
+export interface ReviewTag {
+  /** Stable taxonomy id when it maps to the shared seed, else a normalized user key. */
+  tagId: string;
+  canonicalName: string;
+  authority: ExtractionAuthority;
+  /** 'rule_based' (engine) or 'user' (a manual correction). */
+  source: 'rule_based' | 'user';
+}
+
 export interface ReviewLineItem {
   id: string;
   description: ReviewField<string>;
   quantity: ReviewField<number>;
   unitPrice: ReviewField<number>;
   lineTotal: ReviewField<number>;
+  /** Advisory classification tags (engine-suggested + user corrections). */
+  tags: ReviewTag[];
 }
 
 export type ReviewHeaderField = 'merchant' | 'date' | 'currency' | 'documentTotal';

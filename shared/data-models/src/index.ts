@@ -31,6 +31,10 @@ export * from './lib/encrypted-envelope';
 export * from './lib/api-responses';
 export * from './lib/ledger-debt-simplifier';
 
+// DOC-5 shared canonical taxonomy + deterministic classifier (pure, browser-safe).
+export * from './lib/taxonomy/canonical-taxonomy';
+export * from './lib/taxonomy/classify';
+
 // Shared validation DTOs
 export * from './lib/dto/auth.dto';
 export * from './lib/dto/user.dto';

@@ -16,7 +16,7 @@ import {
   ClassificationEngine,
 } from './engine/classification-engine.types';
 import { StubDocumentExtractionEngine } from './engine/stub-document-extraction-engine';
-import { StubClassificationEngine } from './engine/stub-classification-engine';
+import { RuleBasedClassificationEngine } from './engine/rule-based-classification-engine';
 
 /**
  * Compile the module with infra dependencies satisfied: PlatformModule (@Global)
@@ -39,9 +39,9 @@ describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)',
     const classification = moduleRef.get<ClassificationEngine>(CLASSIFICATION_ENGINE);
 
     expect(extraction).toBeInstanceOf(StubDocumentExtractionEngine);
-    expect(classification).toBeInstanceOf(StubClassificationEngine);
+    expect(classification).toBeInstanceOf(RuleBasedClassificationEngine);
     expect(extraction.name).toBe('stub');
-    expect(classification.name).toBe('stub');
+    expect(classification.name).toBe('rule_based');
   });
 
   it('a consumer resolves the engine by TOKEN, so a future engine can replace the stub', async () => {

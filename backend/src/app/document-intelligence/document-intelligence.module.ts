@@ -4,7 +4,7 @@ import { Attachment } from '@finmate/data-models';
 import { DOCUMENT_EXTRACTION_ENGINE } from './engine/document-extraction-engine.types';
 import { StubDocumentExtractionEngine } from './engine/stub-document-extraction-engine';
 import { CLASSIFICATION_ENGINE } from './engine/classification-engine.types';
-import { StubClassificationEngine } from './engine/stub-classification-engine';
+import { RuleBasedClassificationEngine } from './engine/rule-based-classification-engine';
 import { DocumentIntakeController } from './intake/document-intake.controller';
 import { DocumentIntakeService } from './intake/document-intake.service';
 import { DocumentIntelligenceEnabledGuard } from './intake/document-intelligence-enabled.guard';
@@ -15,7 +15,7 @@ import { DocumentIntelligenceEnabledGuard } from './intake/document-intelligence
  * DOC-0 — binds the two stable, replaceable contracts via DI tokens (a consumer
  * injects the interface, never a concrete engine):
  *   - DOCUMENT_EXTRACTION_ENGINE → StubDocumentExtractionEngine (extracts nothing)
- *   - CLASSIFICATION_ENGINE      → StubClassificationEngine      (classifies nothing)
+ *   - CLASSIFICATION_ENGINE      → RuleBasedClassificationEngine (DOC-5 shared taxonomy)
  * A future on-device OCR / text-PDF / vision extractor or rule-based classifier
  * replaces the `useClass` here with zero change to any consumer.
  *
@@ -32,7 +32,7 @@ import { DocumentIntelligenceEnabledGuard } from './intake/document-intelligence
   controllers: [DocumentIntakeController],
   providers: [
     { provide: DOCUMENT_EXTRACTION_ENGINE, useClass: StubDocumentExtractionEngine },
-    { provide: CLASSIFICATION_ENGINE, useClass: StubClassificationEngine },
+    { provide: CLASSIFICATION_ENGINE, useClass: RuleBasedClassificationEngine },
     DocumentIntakeService,
     DocumentIntelligenceEnabledGuard,
   ],
