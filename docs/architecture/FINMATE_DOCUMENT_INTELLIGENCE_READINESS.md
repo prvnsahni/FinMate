@@ -479,6 +479,18 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-2 extraction technology spike (architecture only; no provider/package)
+
+**DOC-2 COMPLETE (spike).** Implemented the internal **adapter architecture** behind the **unchanged** DOC-0 contract, plus synthetic fixtures, tests, and the engineering comparison doc [`FINMATE_DOCUMENT_EXTRACTION_SPIKE.md`](./FINMATE_DOCUMENT_EXTRACTION_SPIKE.md). **No OCR/PDF package installed, no provider selected, no external service called, no migration, no finance change, no E2EE decryption, no DOC-0 contract change.**
+
+**Added (backend `engine/`):** `adapters/extraction-adapter.types.ts` (internal `ExtractionAdapter` boundary), `adapters/document-source-detector.ts` (`detectSourceType` + `selectAdapterKind`: image / text-PDF / scanned-PDF / none), `adapters/spike-adapters.ts` (Image/PdfText/PdfScan stubs → explicit `provider_unavailable`, each declaring the package a real impl needs), `local-document-extraction-engine.ts` (`LocalDocumentExtractionEngine`: detection → adapter → `computeReconciliation` → `DocumentExtractionResult`; on-device-first, `usesExternalProvider=false`), `__fixtures__/receipts.fixtures.ts` (synthetic, no images/PII). Tests: source detection, adapter routing, reconciliation BALANCED/UNDER/OVER (fixtures + through-engine), no-fabrication, replaceability (`Stub → Local`), no finance-write/decrypt/external surface.
+
+**Not bound:** the stub remains the active engine (zero behaviour change); `LocalDocumentExtractionEngine` is the ready-to-bind artifact.
+
+**Recommendation (not a decision):** on-device-first, **text-PDF-first** — for DOC-3 request approval to add **pdfjs-dist** then **Tesseract.js** (Apache-2.0, on-device, zero unit cost, no firewall/OQ-03 dependency), then run the measured spike against the fixtures. Managed OCR / VLM remain `CANDIDATE — NOT SELECTED` (blocked by AI Firewall + OQ-03). **Installing any package is the first DOC-3 action and requires explicit approval.**
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

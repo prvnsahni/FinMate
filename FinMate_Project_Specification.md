@@ -3394,3 +3394,44 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES (backend intake + FE selector + tests). DATABASE/SCHEMA: NO. MIGRATION
   CREATED/EXECUTED: NO. PACKAGES: NO. PRODUCTION: NO. OCR: NO. TAXONOMY: NO. STATEMENT IMPORT: NO. ML/TRAINING:
   NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — DOC-2: Document extraction technology SPIKE (architecture only, no package/provider)
+
+- **Summary:** Implemented **DOC-2 only** as a controlled extraction spike — the internal **adapter
+  architecture** behind the **unchanged** DOC-0 `DocumentExtractionEngine` contract, synthetic fixtures,
+  tests, and an engineering comparison doc. **No OCR/PDF/rasterizer package installed, no provider selected,
+  no external/AI/cloud call, no dynamic taxonomy, no CC/bank import, no ML, no finance-calc change, no E2EE
+  decryption, no migration.**
+- **Package gate (hard stop respected):** dependency inspection shows only `xlsx` — **no** pdf/ocr/canvas/
+  sharp/jimp/tesseract libs. Real image/PDF extraction therefore requires a new package; per §18 I **did not
+  install** one. Adapters honestly return `provider_unavailable`. **[PACKAGE DECISION]** for DOC-3: add
+  `pdfjs-dist` then `tesseract.js` (Apache-2.0, on-device, zero unit cost, no AI-Firewall/OQ-03 dependency) —
+  **awaiting explicit approval**.
+- **Architecture (new, `backend/src/app/document-intelligence/engine/`):**
+  - `adapters/extraction-adapter.types.ts` — internal `ExtractionAdapter` boundary (image/pdf_text/
+    pdf_scanned), replaceable per source without touching the engine.
+  - `adapters/document-source-detector.ts` — pure `detectSourceType` + `selectAdapterKind` (image → image;
+    PDF+text-layer → pdf_text; PDF no-text → pdf_scanned; else none). Caller never branches on source.
+  - `adapters/spike-adapters.ts` — Image/PdfText/PdfScan stubs → explicit `provider_unavailable`, each
+    **declaring the package a real impl needs**; on-device (`processesLocally=true`); fabricate nothing.
+  - `local-document-extraction-engine.ts` — `LocalDocumentExtractionEngine`: detection → adapter →
+    (total+items) `computeReconciliation` → `DocumentExtractionResult`; `usesExternalProvider=false`;
+    injectable adapters (testability). **Not bound** — stub stays the active engine (zero behaviour change);
+    this is the ready-to-bind artifact (`Stub → Local → Better`, no consumer change).
+  - `__fixtures__/receipts.fixtures.ts` — 9 **synthetic** fixtures (grocery/retail/restaurant/fuel/multi-page
+    text-PDF/scanned-PDF/low-quality/ambiguous/sum≠total); ground-truth only, **no images/binaries/PII**.
+- **Reconciliation proven (FIN-002):** 685=685 BALANCED · 640 vs 685 UNDER (Δ 45) · 700 vs 685 OVER (Δ −15) —
+  verified both against fixtures and end-to-end through the engine mapping; **surfaces, never alters** values.
+- **Security/privacy:** no external network (on-device candidates only); engine/adapters receive the DOC-1
+  minimized input (no keys/tokens/PII); no document content logged; no finance-write/decrypt/external surface
+  (asserted). AI Firewall untouched (managed OCR/VLM remain `CANDIDATE — NOT SELECTED`, blocked by OQ-03).
+- **Recommended next step:** on-device-first, **text-PDF-first** — approve `pdfjs-dist` (+ later
+  `tesseract.js`) for DOC-3, then run the measured spike against the fixtures using the doc's scoring rubric.
+- **Docs:** new `docs/architecture/FINMATE_DOCUMENT_EXTRACTION_SPIKE.md` (18-section comparison) + additive
+  DOC-2 ADDENDUM in the readiness doc + this Progress Log entry. Frozen SRS/Ledger/ADR/Matrix **unmodified**;
+  DOC-0 contract **unchanged**.
+- **Verification:** `nx test backend` → **67 suites / 744 tests pass** (63/719 baseline + 4 suites/25 tests;
+  **finance golden gate green**); `nx build backend` **passes**; engine lint **0 errors**. Frontend untouched.
+- **Confirmation:** CODE CHANGED: YES (spike architecture + fixtures + tests). DATABASE/SCHEMA: NO. MIGRATION
+  CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. OCR PROVIDER SELECTED: NO. EXTERNAL SERVICE
+  USED: NO. DOC-0 CONTRACT CHANGED: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
