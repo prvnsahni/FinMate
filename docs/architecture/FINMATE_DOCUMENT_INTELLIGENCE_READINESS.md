@@ -491,6 +491,18 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-3 measured local extraction (pdfjs + tesseract installed)
+
+**DOC-3 COMPLETE (measured spike).** Approved packages `pdfjs-dist@6.2.108` + `tesseract.js@7.0.0` installed; real adapters implemented behind the **unchanged** DOC-0 contract; measured results recorded in [`FINMATE_DOCUMENT_EXTRACTION_SPIKE.md`](./FINMATE_DOCUMENT_EXTRACTION_SPIKE.md) (§DOC-3). **No other package, no external/cloud/AI call, no migration, no finance change, no E2EE decryption.**
+
+**Measured:** **text-PDF extraction (pdfjs) WORKS** — merchant/date/currency/total/line-items extracted accurately, reconciliation BALANCED/UNDER/OVER correct, fully local, ~15–280 ms (via `backend/tools/doc3-pdf-extraction-harness.mjs`; pdfjs v6 is ESM-only and won't load in Jest, so Jest tests the adapter logic via an injected fake loader + the pure parser). **Image OCR (tesseract) BLOCKED safe-by-default** — v7 defaults to a CDN fetch for core/worker/language data and ships no `eng.traineddata`; the adapter refuses to run (returns `provider_unavailable`) rather than hit the network. **Scanned-PDF BLOCKED** — rendering needs a rasterizer (canvas), not in the approved set.
+
+**New decisions surfaced (not taken):** `[PACKAGE/ENGINEERING]` offline OCR language-data asset (`eng.traineddata`, ~10–15 MB, local `langPath`, no CDN); `[PACKAGE]` rasterizer (`canvas`) for scanned-PDF. Managed OCR/VLM stay blocked (AI Firewall + OQ-03).
+
+**Next (DOC-4, not started):** extraction **review UI** (edit/add/remove items + reconciliation + user confirmation) on the working text-PDF path, kept out of the finance-critical expense modal; line-item persistence remains a `[PRODUCT DECISION]`.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

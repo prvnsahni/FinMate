@@ -5,19 +5,20 @@ import {
   DocumentExtractionInput,
 } from './document-extraction-engine.types';
 import {
+  AdapterContent,
   AdapterExtraction,
   AdapterKind,
   ExtractionAdapter,
 } from './adapters/extraction-adapter.types';
 
-const input = (over: Partial<DocumentExtractionInput> = {}): DocumentExtractionInput => ({
-  documentRef: 'att-1',
-  sourceType: 'image',
-  mimeType: 'image/jpeg',
+const content = (over: Partial<AdapterContent> = {}): AdapterContent => ({
+  bytes: Uint8Array.from([37, 80, 68, 70]), // "%PDF"
+  sourceType: 'pdf',
+  mimeType: 'application/pdf',
   ...over,
 });
 
-/** A fake adapter returning fixture-like candidates (to exercise the reconciliation mapping). */
+/** Adapter set whose (all) adapters return the given canned extraction. */
 const fakeAdapterSet = (
   out: Omit<AdapterExtraction, 'warnings' | 'unresolvedFields'> &
     Partial<Pick<AdapterExtraction, 'warnings' | 'unresolvedFields'>>,
@@ -31,101 +32,72 @@ const fakeAdapterSet = (
   return { image: make('image'), pdf_text: make('pdf_text'), pdf_scanned: make('pdf_scanned') };
 };
 
-describe('LocalDocumentExtractionEngine (DOC-2 spike architecture)', () => {
-  const engine = new LocalDocumentExtractionEngine();
+const items = (...totals: number[]) =>
+  totals.map((v) => ({ authority: 'EXTRACTED' as const, lineTotal: { value: v, authority: 'EXTRACTED' as const } }));
 
-  it('accepts image input and routes to an adapter → explicit provider_unavailable (no fabrication)', async () => {
-    const r = await engine.extract(input({ sourceType: 'image', mimeType: 'image/png' }));
-    expect(r.status).toBe('provider_unavailable');
-    expect(r.sourceType).toBe('image');
-    expect(r.lineItems).toBeUndefined();
-    expect(r.reconciliation).toBeUndefined();
-    expect(r.candidatesOnly).toBe(true);
+describe('LocalDocumentExtractionEngine (DOC-3)', () => {
+  it('DOC-0 extract(ref) supplies no bytes → explicit invalid_input, never decrypts (E2EE boundary)', async () => {
+    const engine = new LocalDocumentExtractionEngine();
+    const input: DocumentExtractionInput = { documentRef: 'att-1', sourceType: 'pdf', mimeType: 'application/pdf' };
+    const r = await engine.extract(input);
+    expect(r.status).toBe('invalid_input');
+    expect(r.warnings.join(' ')).toMatch(/no document content|E2EE/i);
   });
 
-  it('accepts text-PDF input (pdfHasTextLayer) and scanned-PDF input, same result shape', async () => {
-    const textPdf = await engine.extract(
-      input({ sourceType: 'pdf', mimeType: 'application/pdf' }),
-      { pdfHasTextLayer: true },
-    );
-    const scannedPdf = await engine.extract(
-      input({ sourceType: 'pdf', mimeType: 'application/pdf' }),
-      { pdfHasTextLayer: false },
-    );
-    for (const r of [textPdf, scannedPdf]) {
-      expect(r.status).toBe('provider_unavailable'); // no OCR/PDF package installed
-      expect(r.sourceType).toBe('pdf');
-      expect(r.candidatesOnly).toBe(true);
-      // Caller sees a DocumentExtractionResult regardless of the internal adapter.
-      expect(r.engine.contractVersion).toBe(engine.contractVersion);
-    }
-  });
-
-  it('rejects unsupported input with invalid_input', async () => {
-    expect((await engine.extract(input({ sourceType: 'unknown', mimeType: 'text/plain' }))).status).toBe(
-      'invalid_input',
-    );
-    expect((await engine.extract(input({ documentRef: '' }))).status).toBe('invalid_input');
-  });
-
-  it('runs computeReconciliation when an adapter returns a total + items — BALANCED', async () => {
-    const eng = new LocalDocumentExtractionEngine(
+  it('extractFromContent routes PDF-with-text-layer to pdf_text and returns a normalized result', async () => {
+    const engine = new LocalDocumentExtractionEngine(
       fakeAdapterSet({
         status: 'ok',
         header: { total: { value: 685, authority: 'EXTRACTED' } },
-        lineItems: [
-          { authority: 'EXTRACTED', lineTotal: { value: 120, authority: 'EXTRACTED' } },
-          { authority: 'EXTRACTED', lineTotal: { value: 45, authority: 'EXTRACTED' } },
-          { authority: 'EXTRACTED', lineTotal: { value: 520, authority: 'EXTRACTED' } },
-        ],
+        lineItems: items(120, 45, 520),
       }),
     );
-    const r = await eng.extract(input());
+    const r = await engine.extractFromContent(content(), { pdfHasTextLayer: true });
+    expect(r.sourceType).toBe('pdf');
     expect(r.reconciliation?.reconciliationStatus).toBe('BALANCED');
-    expect(r.reconciliation?.allocatedTotal).toBe(685);
+    expect(r.candidatesOnly).toBe(true);
+    // Caller sees a DocumentExtractionResult — no adapter/pdfjs types leak.
+    expect(r.engine.contractVersion).toBe(engine.contractVersion);
   });
 
-  it('surfaces UNDER_ALLOCATED and OVER_ALLOCATED without altering values', async () => {
+  it('surfaces UNDER / OVER / UNRECONCILED without altering values', async () => {
     const under = await new LocalDocumentExtractionEngine(
-      fakeAdapterSet({
-        status: 'partial_extraction',
-        header: { total: { value: 685, authority: 'EXTRACTED' } },
-        lineItems: [
-          { authority: 'EXTRACTED', lineTotal: { value: 120, authority: 'EXTRACTED' } },
-          { authority: 'EXTRACTED', lineTotal: { value: 520, authority: 'EXTRACTED' } },
-        ],
-      }),
-    ).extract(input());
+      fakeAdapterSet({ status: 'partial_extraction', header: { total: { value: 685, authority: 'EXTRACTED' } }, lineItems: items(120, 520) }),
+    ).extractFromContent(content());
     expect(under.reconciliation?.reconciliationStatus).toBe('UNDER_ALLOCATED');
     expect(under.reconciliation?.unallocatedDifference).toBe(45);
 
     const over = await new LocalDocumentExtractionEngine(
-      fakeAdapterSet({
-        status: 'ok',
-        header: { total: { value: 685, authority: 'EXTRACTED' } },
-        lineItems: [
-          { authority: 'EXTRACTED', lineTotal: { value: 120, authority: 'EXTRACTED' } },
-          { authority: 'EXTRACTED', lineTotal: { value: 520, authority: 'EXTRACTED' } },
-          { authority: 'EXTRACTED', lineTotal: { value: 60, authority: 'EXTRACTED' } },
-        ],
-      }),
-    ).extract(input());
+      fakeAdapterSet({ status: 'ok', header: { total: { value: 685, authority: 'EXTRACTED' } }, lineItems: items(120, 520, 60) }),
+    ).extractFromContent(content());
     expect(over.reconciliation?.reconciliationStatus).toBe('OVER_ALLOCATED');
     expect(over.reconciliation?.unallocatedDifference).toBe(-15);
+
+    // Missing total → no reconciliation attached (nothing invented).
+    const noTotal = await new LocalDocumentExtractionEngine(
+      fakeAdapterSet({ status: 'partial_extraction', lineItems: items(120) }),
+    ).extractFromContent(content());
+    expect(noTotal.reconciliation).toBeUndefined();
   });
 
-  it('is a drop-in replacement: satisfies the same contract as the stub', () => {
+  it('rejects empty/unsupported content with invalid_input', async () => {
+    const engine = new LocalDocumentExtractionEngine();
+    expect((await engine.extractFromContent(content({ bytes: new Uint8Array(0) }))).status).toBe('invalid_input');
+    expect((await engine.extractFromContent(content({ sourceType: 'unknown', mimeType: 'text/plain' }))).status).toBe(
+      'invalid_input',
+    );
+  });
+
+  it('is a drop-in replacement for the stub and uses no external provider', () => {
     const stub: DocumentExtractionEngine = new StubDocumentExtractionEngine();
     const local: DocumentExtractionEngine = new LocalDocumentExtractionEngine();
-    // Both expose the identical surface; a consumer swaps one for the other.
     expect(typeof stub.extract).toBe('function');
     expect(typeof local.extract).toBe('function');
-    expect(local.capabilities().usesExternalProvider).toBe(false); // no external service
-    expect(local.capabilities().kind).toBe('local_ocr');
+    expect(local.capabilities().usesExternalProvider).toBe(false);
   });
 
   it('has NO finance-write / decrypt / external-call surface', () => {
-    const surface = engine as unknown as Record<string, unknown>;
+    const surface = new LocalDocumentExtractionEngine() as unknown as Record<string, unknown>;
     for (const forbidden of ['save', 'createExpense', 'mutate', 'decrypt', 'fetch']) {
       expect(typeof surface[forbidden]).toBe('undefined');
     }

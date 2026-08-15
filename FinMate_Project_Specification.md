@@ -3435,3 +3435,52 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES (spike architecture + fixtures + tests). DATABASE/SCHEMA: NO. MIGRATION
   CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. OCR PROVIDER SELECTED: NO. EXTERNAL SERVICE
   USED: NO. DOC-0 CONTRACT CHANGED: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — DOC-3: Local PDF + OCR extraction spike (measured) — CODE CHANGE + 2 APPROVED PACKAGES
+
+- **Summary:** Implemented + measured the real local extraction adapters proposed in DOC-2, behind the
+  **unchanged** DOC-0 contract, using the two **user-approved** packages only. **No cloud OCR, no AI/vision,
+  no dynamic taxonomy, no tags, no CC/bank import, no ML, no finance-calc change, no E2EE decryption, no
+  migration, no other package.**
+- **Packages installed (approved):** `pdfjs-dist@6.2.108`, `tesseract.js@7.0.0` (+ `tesseract.js-core`; 11
+  transitive). Audit: pre-existing tree vulns unchanged; DOC-3 added no direct security-relevant surface.
+- **Adapters (real, `engine/adapters/`):**
+  - `pdf-text-extraction.adapter.ts` — real **pdfjs-dist** text-layer extraction (dynamic ESM import via a
+    Function-import shim; injectable loader for tests); per-page provenance; `no_text_detected` when no text
+    layer. `receipt-text-parser.ts` (pure) maps text → merchant/date/currency/total/line-items (authority
+    EXTRACTED + confidence + provenance; **omits** unreadable fields — no fabrication).
+  - `image-extraction.adapter.ts` — **tesseract.js**, **safe-by-default**: v7 defaults to a CDN fetch for
+    core/worker/**language data** and ships no `eng.traineddata`; the adapter returns `provider_unavailable`
+    and **never triggers a network fetch** unless a local recognizer/lang-data is present (verified).
+  - `pdf-scan-extraction.adapter.ts` — scanned-PDF render→OCR **blocked**: rasterizing pages needs a canvas
+    package (not approved) → explicit `provider_unavailable`, no network, no fabrication.
+  - `local-adapters.ts` + rewritten `local-document-extraction-engine.ts`: DOC-0 `extract(ref)` returns an
+    explicit **E2EE-content boundary** (no bytes, never decrypts a reference); spike `extractFromContent(bytes)`
+    routes via detector → adapter → `computeReconciliation`. `usesExternalProvider=false`. **Not bound** (stub
+    stays active; zero behaviour change).
+- **Measured (real pdfjs via `backend/tools/doc3-pdf-extraction-harness.mjs`):** text-PDF extraction **works** —
+  merchant/date/currency/total/items accurate; reconciliation BALANCED (685=685) / UNDER (Δ45) / OVER (Δ−15)
+  correct; ~15–280 ms; no-text-layer correctly detected → OCR route. pdfjs v6 is **ESM-only and won't load in
+  Jest's VM**, so Jest tests the adapter logic with an injected fake loader + the pure parser; the harness
+  provides the live numbers.
+- **Answers:** (1) local OCR accuracy — *unproven here* (no offline lang-data; CDN suppressed); (2) pdfjs
+  sufficient for text PDFs — **yes**; (3) scanned-PDF usable — **no** (needs rasterizer); (4) failure modes —
+  offline lang-data dependency, photo preprocessing, dense tables/handwriting/GST, run→line heuristics; (5)
+  on-device viable — **yes for text-PDF**; (6) DOC-4 — extraction **review UI** on the text-PDF path (outside
+  the finance modal); (7) blocked — image OCR until lang-data decision, scanned-PDF until rasterizer, managed
+  OCR/VLM until AI-Firewall + OQ-03.
+- **New decisions surfaced (not taken):** `[PACKAGE/ENGINEERING]` offline `eng.traineddata` asset (~10–15 MB,
+  local `langPath`, no CDN); `[PACKAGE]` rasterizer (`canvas`) for scanned-PDF.
+- **Security/privacy verified:** no external HTTP from implemented path (pdfjs in-process; image adapter
+  refuses rather than fetch; scanned adapter returns boundary); no keys/tokens/PII into the extractor; no
+  document content logged; no production data; candidates-only (FIN-002).
+- **Docs:** DOC-3 measured-results section in `FINMATE_DOCUMENT_EXTRACTION_SPIKE.md` + additive DOC-3 ADDENDUM
+  in the readiness doc + this Progress Log entry. DOC-0 contract **unchanged**; frozen SRS/Ledger/ADR/Matrix
+  **unmodified**.
+- **Verification:** `nx test backend` → **71 suites / 756 tests pass** (67/744 baseline + 4 net new suites/
+  ~12 tests; **finance golden gate green**); `nx build backend` **passes**; engine lint **0 errors**. Frontend
+  untouched.
+- **Confirmation:** PACKAGE INSTALLED: pdfjs-dist@6.2.108, tesseract.js@7.0.0. CODE CHANGED: YES. DATABASE/
+  SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. EXTERNAL PROVIDER: NO. OCR: local-only (blocked
+  on lang-data). PDF TEXT: YES (measured). SCANNED PDF: blocked (rasterizer). FINANCE GOLDEN GATE: PASS. DOC-0
+  CONTRACT CHANGED: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.

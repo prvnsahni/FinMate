@@ -15,14 +15,25 @@
  */
 
 import {
+  DocumentSourceType,
   ExtractedDocumentHeader,
   ExtractedLineItem,
   ExtractionStatus,
-  DocumentExtractionInput,
 } from '../document-extraction-engine.types';
 
 /** Which internal adapter handles a document. */
 export type AdapterKind = 'image' | 'pdf_text' | 'pdf_scanned';
+
+/**
+ * Document CONTENT explicitly supplied to an adapter for the spike. Extraction
+ * operates only on bytes handed to it here — never on a server-resolved reference
+ * (that would require decrypting an E2EE attachment; see the spike doc / DOC-3 §13).
+ */
+export interface AdapterContent {
+  bytes: Uint8Array;
+  mimeType: string;
+  sourceType: DocumentSourceType;
+}
 
 /** What a real adapter would require — surfaced for the package-decision report. */
 export interface AdapterRequirement {
@@ -51,8 +62,9 @@ export interface ExtractionAdapter {
   readonly kind: AdapterKind;
   readonly requirement: AdapterRequirement;
   /**
-   * Produce candidate fields for a document. Absent a provider/package it MUST return
-   * `provider_unavailable` with empty payloads — never fabricated values.
+   * Produce candidate fields from supplied document content. Absent a provider/asset
+   * it MUST return `provider_unavailable`/`no_text_detected` with empty payloads —
+   * never fabricated values, never a network call.
    */
-  extract(input: DocumentExtractionInput): Promise<AdapterExtraction>;
+  extract(content: AdapterContent): Promise<AdapterExtraction>;
 }

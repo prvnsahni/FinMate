@@ -9,6 +9,7 @@ import {
 } from './document-extraction-engine.types';
 import { computeReconciliation } from './reconciliation';
 import {
+  AdapterContent,
   AdapterKind,
   ExtractionAdapter,
 } from './adapters/extraction-adapter.types';
@@ -17,30 +18,34 @@ import {
   detectSourceType,
   selectAdapterKind,
 } from './adapters/document-source-detector';
-import { defaultSpikeAdapters } from './adapters/spike-adapters';
+import { defaultLocalAdapters } from './adapters/local-adapters';
 
 const ACCEPTED_INPUT: DocumentSourceType[] = ['image', 'pdf'];
 
 /**
- * DOC-2 spike engine. Demonstrates the full replaceable architecture behind the
- * unchanged DOC-0 `DocumentExtractionEngine` contract:
+ * DOC-3 local extraction engine. Real on-device adapters (pdfjs-dist text, tesseract
+ * image, scanned-PDF boundary) behind the UNCHANGED DOC-0 contract:
  *
- *   input → source detection → adapter (image | pdf_text | pdf_scanned) → normalized
- *         → (when a total + items exist) computeReconciliation → DocumentExtractionResult
+ *   content → source detection → adapter → normalized → (total+items) reconciliation
  *
- * The adapters are injected (defaulting to the spike stubs, which return
- * `provider_unavailable` because no OCR/PDF package is installed). It calls no
- * external service, never decrypts, never writes finance data, and never fabricates
- * values. It is NOT yet bound in the module — the stub remains the active engine
- * until a provider/package is approved; this engine is the ready-to-bind artifact.
+ * Two surfaces:
+ *  - `extract(input)` (DOC-0 interface): the production path receives only an OPAQUE
+ *    reference, never bytes. For E2EE attachments the server has no plaintext, so this
+ *    path cannot supply content and returns an explicit result — it never decrypts or
+ *    resolves the reference (DOC-3 §13 boundary).
+ *  - `extractFromContent(content)` (spike): operates ONLY on bytes explicitly supplied
+ *    (fixtures/tests), routes to the matching real adapter, and reconciles totals.
+ *
+ * Calls no external service (`usesExternalProvider=false`), never mutates finance data,
+ * never fabricates values. NOT bound in the module (the stub stays the active engine).
  */
 export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
   readonly name = 'local';
-  readonly version = '0.1.0-spike';
+  readonly version = '0.2.0-spike';
   readonly contractVersion = DOCUMENT_EXTRACTION_CONTRACT_VERSION;
 
   constructor(
-    private readonly adapters: Record<AdapterKind, ExtractionAdapter> = defaultSpikeAdapters(),
+    private readonly adapters: Record<AdapterKind, ExtractionAdapter> = defaultLocalAdapters(),
   ) {}
 
   capabilities(): DocumentExtractionCapabilities {
@@ -50,69 +55,75 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
       contractVersion: this.contractVersion,
       kind: 'local_ocr',
       supportedInputTypes: [...ACCEPTED_INPUT],
-      // No family is claimed until a real adapter is wired.
       supportedFamilies: [],
-      // The architecture supports these once a provider exists.
       supportsLineItems: true,
       supportsReconciliation: true,
       supportsStatementTransactions: false,
-      // All candidate adapters are on-device-first: no external provider.
       usesExternalProvider: false,
     };
   }
 
   /**
-   * @param input Minimized document input (opaque ref + coarse metadata).
-   * @param signals Optional probe signals (e.g. pdfHasTextLayer) a real engine derives.
+   * DOC-0 interface path. Receives an opaque reference only — no bytes. The server
+   * cannot resolve E2EE plaintext here, so no extraction is performed and nothing is
+   * decrypted. Use `extractFromContent` with explicitly-supplied bytes for the spike.
    */
-  async extract(
-    input: DocumentExtractionInput,
+  async extract(input: DocumentExtractionInput): Promise<DocumentExtractionResult> {
+    return this.envelope(
+      ACCEPTED_INPUT.includes(input?.sourceType) ? input.sourceType : 'unknown',
+      'invalid_input',
+      {
+        warnings: [
+          'No document content supplied. This engine extracts only from bytes handed to ' +
+            'extractFromContent(); it never resolves/decrypts an attachment reference (E2EE boundary).',
+        ],
+      },
+    );
+  }
+
+  /**
+   * Spike extraction over explicitly-supplied content.
+   * @param content Document bytes + mimeType + sourceType (from a fixture/test).
+   * @param signals Optional probe signals (e.g. pdfHasTextLayer) for routing.
+   */
+  async extractFromContent(
+    content: AdapterContent,
     signals: SourceSignals = {},
   ): Promise<DocumentExtractionResult> {
     if (
-      !input ||
-      typeof input.documentRef !== 'string' ||
-      input.documentRef.length === 0 ||
-      typeof input.mimeType !== 'string' ||
-      !ACCEPTED_INPUT.includes(input.sourceType)
+      !content ||
+      !(content.bytes instanceof Uint8Array) ||
+      content.bytes.length === 0 ||
+      !ACCEPTED_INPUT.includes(content.sourceType)
     ) {
-      return this.envelope(input?.sourceType ?? 'unknown', 'invalid_input', {
-        warnings: ['Invalid or unsupported document input for extraction.'],
+      return this.envelope(content?.sourceType ?? 'unknown', 'invalid_input', {
+        warnings: ['Invalid or empty document content.'],
       });
     }
 
-    const kind = selectAdapterKind(input, signals);
+    const kind = selectAdapterKind(
+      { mimeType: content.mimeType, sourceType: content.sourceType },
+      signals,
+    );
     if (kind === 'none') {
-      return this.envelope(detectSourceType(input.mimeType), 'unsupported_document', {
+      return this.envelope(detectSourceType(content.mimeType), 'unsupported_document', {
         warnings: ['No extraction adapter matches this input.'],
       });
     }
 
-    const adapter = this.adapters[kind];
-    const out = await adapter.extract(input);
+    const out = await this.adapters[kind].extract(content);
 
-    // Map the adapter output onto the DOC-0 result. Reconciliation runs ONLY when a
-    // document total and line items are both present — it surfaces the difference and
-    // never alters values (FIN-002).
     const total = out.header?.total?.value;
     const reconciliation =
       typeof total === 'number' && out.lineItems && out.lineItems.length > 0
-        ? computeReconciliation(
-            total,
-            out.lineItems.map((li) => li.lineTotal?.value),
-          )
+        ? computeReconciliation(total, out.lineItems.map((li) => li.lineTotal?.value))
         : undefined;
 
     return {
-      engine: {
-        name: this.name,
-        version: this.version,
-        contractVersion: this.contractVersion,
-        kind: 'local_ocr',
-      },
+      engine: this.engineInfo(),
       status: out.status,
       documentFamily: 'unknown',
-      sourceType: input.sourceType,
+      sourceType: content.sourceType,
       ...(out.header ? { header: out.header } : {}),
       ...(out.lineItems ? { lineItems: out.lineItems } : {}),
       ...(reconciliation ? { reconciliation } : {}),
@@ -123,18 +134,22 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
     };
   }
 
+  private engineInfo() {
+    return {
+      name: this.name,
+      version: this.version,
+      contractVersion: this.contractVersion,
+      kind: 'local_ocr' as const,
+    };
+  }
+
   private envelope(
     sourceType: DocumentSourceType,
     status: ExtractionStatus,
     extra: { warnings?: string[] },
   ): DocumentExtractionResult {
     return {
-      engine: {
-        name: this.name,
-        version: this.version,
-        contractVersion: this.contractVersion,
-        kind: 'local_ocr',
-      },
+      engine: this.engineInfo(),
       status,
       documentFamily: 'unknown',
       sourceType,

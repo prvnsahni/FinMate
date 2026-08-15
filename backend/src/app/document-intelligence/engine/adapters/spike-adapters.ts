@@ -1,5 +1,5 @@
-import { DocumentExtractionInput } from '../document-extraction-engine.types';
 import {
+  AdapterContent,
   AdapterExtraction,
   AdapterKind,
   AdapterRequirement,
@@ -19,7 +19,7 @@ abstract class BaseSpikeAdapter implements ExtractionAdapter {
   abstract readonly kind: AdapterKind;
   abstract readonly requirement: AdapterRequirement;
 
-  async extract(_input: DocumentExtractionInput): Promise<AdapterExtraction> {
+  async extract(_content: AdapterContent): Promise<AdapterExtraction> {
     return {
       status: 'provider_unavailable',
       warnings: [

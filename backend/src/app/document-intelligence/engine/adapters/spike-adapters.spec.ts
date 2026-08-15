@@ -1,9 +1,8 @@
 import { defaultSpikeAdapters } from './spike-adapters';
-import { AdapterKind } from './extraction-adapter.types';
-import { DocumentExtractionInput } from '../document-extraction-engine.types';
+import { AdapterContent, AdapterKind } from './extraction-adapter.types';
 
-const input: DocumentExtractionInput = {
-  documentRef: 'att-1',
+const content: AdapterContent = {
+  bytes: Uint8Array.from([1, 2, 3]),
   sourceType: 'image',
   mimeType: 'image/jpeg',
 };
@@ -13,7 +12,7 @@ describe('DOC-2 spike adapters (architecture, no extraction)', () => {
   const kinds: AdapterKind[] = ['image', 'pdf_text', 'pdf_scanned'];
 
   it.each(kinds)('%s adapter returns provider_unavailable and fabricates nothing', async (kind) => {
-    const out = await adapters[kind].extract(input);
+    const out = await adapters[kind].extract(content);
     expect(out.status).toBe('provider_unavailable');
     expect(out.header).toBeUndefined();
     expect(out.lineItems).toBeUndefined();
