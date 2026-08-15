@@ -440,6 +440,24 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-0 implemented (contracts + stub only)
+
+**This ADDENDUM records a code change** (the assessment sections §1–§35 and §A1–§A10 above remain read-only analysis; the "Reconciliation" block below describes *those* sections). **DOC-0** — the stable contract + safe stub foundation from §A9 — is now implemented. **No OCR, no provider, no taxonomy, no CC/bank import, no ML, no migration, no package, no external call, no finance write.**
+
+**Contract location (backend):** `backend/src/app/document-intelligence/`
+- `engine/document-extraction-engine.types.ts` — `DocumentExtractionEngine` interface, normalized input/result envelope (header · line items · reconciliation · statement transactions), `ExtractedField<T>` with `confidence`/`provenance`/`authority`, `DocumentFamily`/`ExtractionStatus`/`ReconciliationStatus` enums, `capabilities()`, and the `DOCUMENT_EXTRACTION_ENGINE` DI token. `confidence` is documented as extraction certainty, **not** financial correctness.
+- `engine/reconciliation.ts` — pure `computeReconciliation()` (`unallocatedDifference = documentTotal − allocatedTotal`; BALANCED/UNDER_ALLOCATED/OVER_ALLOCATED/UNRECONCILED); **surfaces differences, never corrects them**.
+- `engine/stub-document-extraction-engine.ts` — safe stub: validates image/PDF input → returns explicit `invalid_input` / `unsupported_document`; **fabricates no values**, calls no OCR/AI/network, no finance write.
+- `engine/classification-engine.types.ts` + `engine/stub-classification-engine.ts` — separate, replaceable `ClassificationEngine` boundary + `CLASSIFICATION_ENGINE` token; stub returns **no** candidate tags (no taxonomy/tagging/learning/persistence).
+- `document-intelligence.module.ts` — binds both tokens via `useClass` and exports them. **Not yet registered in `AppModule`** — nothing consumes it until DOC-1.
+- Specs: `document-extraction-engine.spec.ts`, `classification-engine.spec.ts`, `document-intelligence.module.spec.ts` (21 tests: input acceptance, failure states, no-fabrication, all four reconciliation states, authority states, confidence≠correctness, engine independence, no finance-write/decrypt/external surface, DI replaceability).
+
+**Intentionally NOT implemented (later DOC batches):** OCR/PDF/vision extraction; provider selection; dynamic/global taxonomy; tag persistence/governance; CC/bank statement import; population learning/training; Goal Engine integration; any DB entity/migration; any API endpoint; `AppModule` registration.
+
+**Boundaries preserved:** FIN-002 (candidates-only; golden gate green), E2EE (no decrypt path; minimized input), AI Firewall (no external call; `usesExternalProvider=false`), Goal Engine contract, SEC-KI1 — all untouched. Frozen stack (SRS/Ledger/ADR/OpenAPI/Matrix) unmodified.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

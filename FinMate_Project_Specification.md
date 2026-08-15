@@ -3302,3 +3302,47 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   attachment/receipt/import/expense architecture). No build/test run (no code changed); QA baseline unchanged.
 - **Confirmation:** CODE CHANGED: NO. SCHEMA/DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES: NO.
   PRODUCTION: NO. OCR/TAXONOMY/CC-BANK-IMPORT/ML: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — DOC-0: Document Intelligence contracts + safe stub — CODE CHANGE (no migration, no packages)
+
+- **Summary:** Implemented **DOC-0 only** — the stable, replaceable Document Intelligence contract foundation
+  (mirroring the Goal Engine interface→token→impl pattern) plus safe stubs. **No OCR, no provider, no AI/
+  vision, no dynamic taxonomy, no CC/bank statement import, no ML/training, no DB entity/migration, no
+  package, no external call, no finance write, no API endpoint.**
+- **Contracts (new `backend/src/app/document-intelligence/`):**
+  - `engine/document-extraction-engine.types.ts` — `DocumentExtractionEngine` interface + `extract()`/
+    `capabilities()`; normalized input (opaque `documentRef` + coarse routing metadata only — no keys/tokens/
+    PII); result envelope with header · **line items** · **reconciliation** · **statement transactions**;
+    `ExtractedField<T>` carrying `confidence`/`provenance`/`authority`; `DocumentFamily` (15 families +
+    unknown, extensible — none claimed supported); `ExtractionStatus` failure states; `DOCUMENT_EXTRACTION_
+    ENGINE` DI token. **`confidence` documented as extraction certainty, NOT financial correctness.**
+  - `engine/reconciliation.ts` — pure `computeReconciliation()`: `unallocatedDifference = documentTotal −
+    sum(items)`; states BALANCED / UNDER_ALLOCATED / OVER_ALLOCATED / UNRECONCILED. **Surfaces the
+    difference; never invents/removes/adjusts an item** (FIN-002).
+  - `engine/stub-document-extraction-engine.ts` — validates image/PDF → explicit `invalid_input` /
+    `unsupported_document`; fabricates nothing; no OCR/AI/network; `usesExternalProvider=false`.
+  - `engine/classification-engine.types.ts` + `engine/stub-classification-engine.ts` — **separate,
+    replaceable** `ClassificationEngine` + `CLASSIFICATION_ENGINE` token; stub returns **no** candidate tags
+    (no taxonomy/tagging/persistence/learning).
+  - `document-intelligence.module.ts` — binds + exports both tokens via `useClass`. **Not registered in
+    AppModule** (nothing consumes it until DOC-1) → minimal footprint, zero runtime change to the app.
+- **Boundary preservation (explicit):** extraction is **candidates-only** — the contract has no finance-
+  write, decrypt, or external-call surface (asserted by tests). FIN-002 golden gate **green**; E2EE untouched
+  (minimized input, no decrypt); AI Firewall untouched (no external provider); Goal Engine contract + SEC-KI1
+  untouched; frozen SRS/Decision-Ledger/ADRs/OpenAPI/Matrix unmodified.
+- **Tests (new, +3 suites / +21 tests):** `document-extraction-engine.spec.ts`, `classification-engine.spec.ts`,
+  `document-intelligence.module.spec.ts` — image/PDF acceptance, invalid/unsupported failure, no-fabrication,
+  all four reconciliation states + tolerance + NaN handling, all four authority states, confidence≠correctness,
+  extraction↔classification independence, no finance-write/decrypt/external surface, and **DI replaceability**
+  (a fake `local_ocr` engine swapped in via the token with no consumer change).
+- **Docs:** additive DOC-0 status ADDENDUM in `FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (contract location
+  + what remains intentionally unimplemented) + this Progress Log entry. **No frozen doc modified.**
+- **Verification:** `nx test backend` → **60 suites / 707 tests pass** (57/686 baseline + 3/21 new; **finance
+  golden gate green**); `nx build backend` **passes** (typecheck clean; bundle unchanged — module not yet
+  app-wired); doc-intelligence lint **0 errors**. Frontend untouched.
+- **Remaining (later batches, not started):** DOC-1 total-only attach; DOC-2 engine+consumer wiring; DOC-3
+  extraction spike (on-device first); DOC-4 itemized+reconciliation; DOC-5 classification/taxonomy; DOC-6/7
+  CC/bank statements (gated by OQ-03 + FUT-004). Provider selection deferred to DOC-3.
+- **Confirmation:** CODE CHANGED: YES (backend contracts + stubs + tests only). SCHEMA/DATABASE: NO. MIGRATION
+  CREATED/EXECUTED: NO. PACKAGES: NO. PRODUCTION: NO. OCR/TAXONOMY/CC-BANK-IMPORT/ML: NO. FROZEN DOCS: NO.
+  COMMIT: (this iteration). PUSH: NO.
