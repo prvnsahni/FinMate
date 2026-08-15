@@ -458,6 +458,27 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-1 implemented (intake boundary: TOTAL_ONLY vs ITEMIZED)
+
+**DOC-1 COMPLETE.** Establishes the safe user-workflow boundary around the **existing** attachment infrastructure — **before** any real extraction. **OCR NOT IMPLEMENTED · PDF extraction NOT IMPLEMENTED · taxonomy NOT IMPLEMENTED · CC/bank statement import NOT IMPLEMENTED · no ML/training · no provider · no package · no migration.**
+
+**What DOC-1 adds (backend `backend/src/app/document-intelligence/intake/`):**
+- `document-processing-mode.ts` — `DocumentProcessingMode` enum (`TOTAL_ONLY` | `ITEMIZED`); a **request-level** choice (no persisted column → no migration).
+- `document-intake.service.ts` — owner-scoped `process(userId, attachmentId, mode)`. **TOTAL_ONLY** → no extraction (caller uses the normal expense flow). **ITEMIZED** → invokes the DOC-0 `DOCUMENT_EXTRACTION_ENGINE` with a **minimized** input (`buildExtractionInput`: opaque `documentRef` + `sourceType`/`mimeType`/`sizeBytes` only — never `encryptedFileKey`/`encryptedOriginalName`/`storageKey`/keys/PII) → stub returns explicit `unsupported_document`. `resolveSourceType` maps mime → image/pdf/unknown. IDOR-safe: non-uploader → 404.
+- `document-intake.controller.ts` — `POST /document-intelligence/attachments/:attachmentId/process`, `JwtAuthGuard` + throttled + flag-gated.
+- `document-intelligence-enabled.guard.ts` — gates the surface behind the new `document.intelligence` flag (**default OFF** → 404).
+- `document-intelligence.module.ts` — now imports `TypeOrmModule.forFeature([Attachment])` (reuse for the ownership check only), registers the controller + service + guard, keeps the engine token bindings; **registered in AppModule** (first consumer).
+- `feature-flags.constants.ts` — additive `document.intelligence` flag (`FEATURE_DOCUMENT_INTELLIGENCE`, default false).
+- `openapi.yaml` — additive path for the **implemented** endpoint only.
+
+**Frontend (minimal, self-contained — `frontend/src/app/features/documents/`):** `DocumentIntelligenceApiService` (POSTs mode only) + `DocumentModeSelectorComponent` (Total-only / Extract-items chooser that shows an explicit *"item extraction isn't available yet"* notice for ITEMIZED — never fake success). **Not wired into the finance-critical create-expense modal** — that integration is deferred to DOC-2 (when extraction is real) to avoid touching finance UX now.
+
+**Boundaries preserved:** FIN-002 (no finance write; golden gate green); E2EE (no server-side decryption; minimized input carries no keys); AI Firewall (no external/OCR call); Goal Engine + SEC-KI1 untouched. **No migration** (mode is request-level; existing attachment storage suffices). Frozen **SRS/Decision-Ledger/ADR/Matrix unmodified**. **Verification:** backend 63 suites/719 tests, frontend 63 suites/524 tests, both builds pass, lint 0.
+
+**Deferred to later batches:** real extraction adapters (DOC-2/3), reconciliation UI + itemized persistence (DOC-4), taxonomy (DOC-5), CC/bank statements (DOC-6/7 — gated by OQ-03 + FUT-004), and wiring the mode selector into the expense flow.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

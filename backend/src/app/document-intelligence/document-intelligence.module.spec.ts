@@ -1,5 +1,9 @@
-import { Test } from '@nestjs/testing';
+import { Test, TestingModuleBuilder } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Attachment } from '@finmate/data-models';
 import { DocumentIntelligenceModule } from './document-intelligence.module';
+import { PlatformModule } from '../platform/platform.module';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import {
   DOCUMENT_EXTRACTION_ENGINE,
   DocumentExtractionCapabilities,
@@ -14,11 +18,22 @@ import {
 import { StubDocumentExtractionEngine } from './engine/stub-document-extraction-engine';
 import { StubClassificationEngine } from './engine/stub-classification-engine';
 
+/**
+ * Compile the module with infra dependencies satisfied: PlatformModule (@Global)
+ * supplies FeatureFlagsService for the enabled-guard, the Attachment repository is
+ * mocked (no DB), and JwtAuthGuard is stubbed. The engine token bindings under test
+ * are untouched.
+ */
+const testModule = (): TestingModuleBuilder =>
+  Test.createTestingModule({ imports: [DocumentIntelligenceModule, PlatformModule] })
+    .overrideProvider(getRepositoryToken(Attachment))
+    .useValue({ findOne: jest.fn() })
+    .overrideGuard(JwtAuthGuard)
+    .useValue({ canActivate: () => true });
+
 describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)', () => {
   it('binds the stub engines to their tokens by default', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [DocumentIntelligenceModule],
-    }).compile();
+    const moduleRef = await testModule().compile();
 
     const extraction = moduleRef.get<DocumentExtractionEngine>(DOCUMENT_EXTRACTION_ENGINE);
     const classification = moduleRef.get<ClassificationEngine>(CLASSIFICATION_ENGINE);
@@ -68,9 +83,7 @@ describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)',
       }
     }
 
-    const moduleRef = await Test.createTestingModule({
-      imports: [DocumentIntelligenceModule],
-    })
+    const moduleRef = await testModule()
       .overrideProvider(DOCUMENT_EXTRACTION_ENGINE)
       .useClass(FakeLocalOcrEngine)
       .compile();

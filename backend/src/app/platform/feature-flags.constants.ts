@@ -22,7 +22,8 @@ export type FeatureFlag =
   | 'notifications.inApp'
   | 'mobile.secureStorage'
   | 'mobile.push'
-  | 'domain.intelligence';
+  | 'domain.intelligence'
+  | 'document.intelligence';
 
 export interface FeatureFlagDef {
   /** Env var whose value overrides the default (e.g. FEATURE_AI_FIREWALL). */
@@ -93,6 +94,11 @@ export const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagDef> = {
     envKey: 'FEATURE_DOMAIN_INTELLIGENCE',
     default: false,
     description: 'BATCH-15 V2 intelligence domain',
+  },
+  'document.intelligence': {
+    envKey: 'FEATURE_DOCUMENT_INTELLIGENCE',
+    default: false,
+    description: 'DOC-1 document intake (total-only/itemized boundary); itemized extraction not implemented',
   },
 };
 

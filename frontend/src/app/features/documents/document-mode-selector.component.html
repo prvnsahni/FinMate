@@ -1,0 +1,47 @@
+<fieldset class="space-y-3">
+  <legend class="text-sm font-medium text-gray-900 dark:text-gray-100">
+    How should we handle this document?
+  </legend>
+
+  <div role="radiogroup" aria-label="Document processing mode" class="space-y-2">
+    <button
+      type="button"
+      role="radio"
+      [attr.aria-checked]="selected() === 'TOTAL_ONLY'"
+      (click)="select('TOTAL_ONLY')"
+      class="w-full text-left rounded-lg border p-3 transition focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      [class.border-indigo-500]="selected() === 'TOTAL_ONLY'"
+      [class.border-gray-200]="selected() !== 'TOTAL_ONLY'"
+    >
+      <span class="block font-medium text-gray-900 dark:text-gray-100">Total only</span>
+      <span class="block text-sm text-gray-500 dark:text-gray-400">
+        I'll enter or confirm the total myself.
+      </span>
+    </button>
+
+    <button
+      type="button"
+      role="radio"
+      [attr.aria-checked]="selected() === 'ITEMIZED'"
+      (click)="select('ITEMIZED')"
+      class="w-full text-left rounded-lg border p-3 transition focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      [class.border-indigo-500]="selected() === 'ITEMIZED'"
+      [class.border-gray-200]="selected() !== 'ITEMIZED'"
+    >
+      <span class="block font-medium text-gray-900 dark:text-gray-100">Extract items</span>
+      <span class="block text-sm text-gray-500 dark:text-gray-400">
+        Try to identify individual items for review.
+      </span>
+    </button>
+  </div>
+
+  @if (itemizedChosen()) {
+    <p
+      role="status"
+      class="rounded-md bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-800 dark:text-amber-300"
+    >
+      Item extraction isn't available yet. You can still attach the document and enter
+      the total — the receipt stays as evidence for this expense.
+    </p>
+  }
+</fieldset>

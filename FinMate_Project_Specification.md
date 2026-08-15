@@ -3346,3 +3346,51 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES (backend contracts + stubs + tests only). SCHEMA/DATABASE: NO. MIGRATION
   CREATED/EXECUTED: NO. PACKAGES: NO. PRODUCTION: NO. OCR/TAXONOMY/CC-BANK-IMPORT/ML: NO. FROZEN DOCS: NO.
   COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — DOC-1: Document intake boundary (TOTAL_ONLY vs ITEMIZED) — CODE CHANGE (no migration, no packages)
+
+- **Summary:** Implemented **DOC-1 only** — the safe user-workflow boundary around the **existing** attachment
+  infrastructure, distinguishing **TOTAL_ONLY** from **ITEMIZED** *before* any real extraction. **No OCR, no
+  provider, no AI/vision, no dynamic taxonomy, no auto-tags, no CC/bank statement import, no ML/training, no
+  finance-calc change, no server-side decryption, no migration, no package.**
+- **Backend (new `backend/src/app/document-intelligence/intake/`):**
+  - `document-processing-mode.ts` — `DocumentProcessingMode` enum (`TOTAL_ONLY`|`ITEMIZED`); a **request-level**
+    choice (no persisted column ⇒ **no migration** — existing `attachments`/`receipt_versions` suffice).
+  - `document-intake.service.ts` — owner-scoped `process(userId, attachmentId, mode)`. **TOTAL_ONLY** → no
+    extraction (use the normal expense flow). **ITEMIZED** → invokes the DOC-0 `DOCUMENT_EXTRACTION_ENGINE`
+    with a **minimized** input (`buildExtractionInput`: opaque `documentRef` + `sourceType`/`mimeType`/
+    `sizeBytes` only — **never** `encryptedFileKey`/`encryptedOriginalName`/`storageKey`/keys/PII) → stub
+    returns explicit `unsupported_document` (no fake items). `resolveSourceType` maps mime→image/pdf/unknown.
+    **IDOR-safe**: non-uploader → 404.
+  - `document-intake.controller.ts` — `POST /document-intelligence/attachments/:attachmentId/process`
+    (`JwtAuthGuard` + throttle + flag guard).
+  - `document-intelligence-enabled.guard.ts` — gates behind new `document.intelligence` flag (**default OFF**
+    → 404), mirrors `GoalsEnabledGuard`.
+  - `document-intelligence.module.ts` — adds `TypeOrmModule.forFeature([Attachment])` (ownership check only) +
+    controller/service/guard; **registered in AppModule** (first consumer). `feature-flags.constants.ts` +
+    `document.intelligence` (`FEATURE_DOCUMENT_INTELLIGENCE`, default false). `openapi.yaml` + the one
+    implemented path.
+- **Frontend (minimal, self-contained — `frontend/src/app/features/documents/`):** `DocumentIntelligenceApi
+  Service` (POSTs mode only — no bytes/keys) + `DocumentModeSelectorComponent` (Total-only / Extract-items
+  chooser showing an explicit *"item extraction isn't available yet"* notice for ITEMIZED — never fake
+  success). **Deliberately NOT wired into the finance-critical create-expense modal** — DOC-2 will integrate
+  it once extraction is real, avoiding any finance-UX change now.
+- **Security/adversarial coverage (tests):** IDOR (User B's attachment → 404, engine not called); minimized
+  input carries no keys/filename/storageKey (asserted on the exact engine arg); TOTAL_ONLY never invokes the
+  engine; ITEMIZED → explicit unavailable, zero fabricated items; service has no finance-write/decrypt/external
+  surface; feature-flag OFF → 404; image+pdf accepted, unknown mime handled.
+- **Design decisions (reported, not requiring input):** (1) mode stays **request-level → no migration**;
+  (2) new **feature flag default OFF**; (3) FE mode-selector delivered **standalone/tested, not wired** into
+  the finance modal (DOC-2 integration point) — the lowest-risk option that avoids touching finance UX.
+- **Docs:** additive DOC-1 ADDENDUM in `FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (intake location +
+  explicit "OCR/PDF/taxonomy/CC-bank NOT IMPLEMENTED") + this Progress Log entry. Frozen SRS/Ledger/ADR/Matrix
+  **unmodified**; `openapi.yaml` updated only for the implemented endpoint.
+- **Verification:** `nx test backend` → **63 suites / 719 tests pass** (60/707 baseline + 3 suites/12 tests;
+  **finance golden gate green**); `nx build backend` **passes**; `nx test frontend` → **63 suites / 524 tests**
+  (61/519 + 2 suites/5 tests); `nx build frontend` **passes**; doc-intelligence + documents lint **0 errors**.
+- **Remaining (later batches, not started):** DOC-2 engine+consumer wiring / extraction spike; DOC-3 on-device
+  OCR; DOC-4 itemized+reconciliation UI + persistence; DOC-5 taxonomy; DOC-6/7 CC/bank (gated OQ-03 + FUT-004);
+  wiring the mode selector into the expense flow.
+- **Confirmation:** CODE CHANGED: YES (backend intake + FE selector + tests). DATABASE/SCHEMA: NO. MIGRATION
+  CREATED/EXECUTED: NO. PACKAGES: NO. PRODUCTION: NO. OCR: NO. TAXONOMY: NO. STATEMENT IMPORT: NO. ML/TRAINING:
+  NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.

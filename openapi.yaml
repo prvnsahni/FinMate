@@ -2434,6 +2434,46 @@ paths:
           description: Projection (status ok/insufficient_data/invalid_goal; no free-text)
         '401': { $ref: '#/components/responses/UnauthorizedError' }
         '404': { $ref: '#/components/responses/NotFoundError' }
+  /document-intelligence/attachments/{attachmentId}/process:
+    post:
+      summary: Document intake — choose TOTAL_ONLY or ITEMIZED for an owned attachment (DOC-1)
+      description: |
+        Establishes the document-intake boundary over the existing attachment
+        infrastructure. Owner-scoped and gated behind the `document.intelligence`
+        feature flag (404 when OFF). TOTAL_ONLY performs no extraction (the caller
+        uses the normal expense flow). ITEMIZED invokes the replaceable
+        DocumentExtractionEngine — currently a stub that returns an explicit
+        `unsupported_document` (item extraction is not implemented yet). Never
+        mutates finance data, never decrypts attachment content, calls no OCR.
+      tags: [Document Intelligence]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [TOTAL_ONLY, ITEMIZED]
+                  description: TOTAL_ONLY (no extraction) or ITEMIZED (invoke extraction boundary).
+      responses:
+        '201':
+          description: |
+            Intake processed. Returns the mode, sourceType, whether extraction was
+            attempted, and (ITEMIZED only) the normalized extraction result — which
+            is candidates-only and currently `unsupported_document`.
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
   /import/expenses:
     post:
       summary: Upload CSV/XLSX to import expenses
