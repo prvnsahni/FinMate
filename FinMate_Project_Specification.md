@@ -3484,3 +3484,44 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PRODUCTION: NO. EXTERNAL PROVIDER: NO. OCR: local-only (blocked
   on lang-data). PDF TEXT: YES (measured). SCANNED PDF: blocked (rasterizer). FINANCE GOLDEN GATE: PASS. DOC-0
   CONTRACT CHANGED: NO. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-14 — DOC-4: Document extraction review & confirmation — CODE CHANGE (frontend only, no migration)
+
+- **Summary:** Built the user **review/confirmation** layer for extracted document candidates — **frontend-
+  only**. TOTAL_ONLY bypasses extraction; ITEMIZED extracts client-side (PDF text) → editable review → live
+  reconciliation → **explicit confirm** → draft handed to the existing expense flow. **No new OCR, no package,
+  no rasterizer, no taxonomy/tags, no CC/bank import, no ML, no cloud/AI, no migration, no backend change, no
+  finance-calc change, no E2EE decryption.**
+- **Why frontend-only / no backend endpoint:** DOC-3 established the server cannot access E2EE attachment
+  plaintext; the review layer consumes a `DocumentExtractionResult` and PDF-text extraction runs **in-browser**
+  (pdfjs, code-split). Candidates are edited client-side and only an explicit confirm produces a draft, so **no
+  new API and no migration were required** (none added — inspection confirmed existing storage suffices).
+- **Files (`frontend/src/app/features/documents/`):** `document-review.model.ts` (editable model; field
+  authority EXTRACTED→USER_CORRECTED on edit→USER_CONFIRMED on confirm; `ConfirmedDocumentDraft`);
+  `services/document-review.service.ts` (pure: build/edit/add/delete/reconcile/confirm — **never invents an
+  item, never silently changes the document total**); `services/document-extraction-client.service.ts` +
+  `receipt-text-parser.ts` (client PDF-text via a **pluggable pdfjs loader**; images honestly
+  `provider_unavailable`); `document-review.component.*` (editable candidates + live reconciliation + explicit
+  Confirm/Cancel + honest failure/unavailable/empty states); `document-intake-page.component.*` (mode selector →
+  bypass/extract→review); `documents.routes.ts` + lazy `/documents` route in `app.routes.ts`.
+- **Adversarial coverage (tests):** extracted total never silently changes; user can edit amount/add/delete
+  item; edit → USER_CORRECTED; explicit confirm required (nothing emitted on render); UNDER(+45)/OVER(−15)/
+  BALANCED/UNRECONCILED surfaced; no manufactured item; extraction-failure + provider_unavailable handled;
+  TOTAL_ONLY never invokes extraction; draft carries no bytes/keys/OCR text; no finance mutation before confirm;
+  confirm only produces a draft (handoff to existing flow). IDOR unchanged (no new attachment access).
+- **Security:** attachment ownership/IDOR untouched (DOC-4 adds no attachment access); no keys/tokens in any
+  payload; no server-side decryption; no document-content logging (no console in services); no external
+  provider; extraction runs on user-supplied bytes only.
+- **Not wired into the finance-critical expense modal** (kept a separate flow per instruction); wiring the
+  confirmed draft into expense creation is the documented handoff/integration point for a follow-up.
+- **Docs:** additive DOC-4 ADDENDUM in the readiness doc + this Progress Log entry. Frozen SRS/Ledger/ADR/
+  Matrix **unmodified**; DOC-0 contract + ClassificationEngine stub + GoalEngine contract **untouched**.
+- **Verification:** `nx test frontend` → **67 suites / 546 tests pass** (63/524 baseline + 4 suites/22 tests);
+  `nx build frontend` **passes**; documents lint **0 errors**; `nx test backend` → **71/756 unchanged, finance
+  golden gate PASS**; `nx build backend` passes.
+- **Unresolved decisions:** wiring draft → expense creation (UX/`[PRODUCT]`); line-item persistence entity-vs-
+  metadata `[PRODUCT]`; image OCR language-data `[PACKAGE/ENGINEERING]`; scanned-PDF rasterizer `[PACKAGE]`;
+  browser pdfjs worker validation (build OK; live-browser run not exercised here).
+- **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO.
+  PACKAGES INSTALLED: NO. PRODUCTION: NO. NEW OCR: NO. CLOUD/AI: NO. BACKEND CHANGED: NO. FINANCE GOLDEN GATE:
+  PASS. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.

@@ -503,6 +503,24 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-14 · DOC-4 review & confirmation layer (frontend, no backend/migration)
+
+**DOC-4 COMPLETE.** The user review/confirmation experience for extracted candidates — **frontend-only**, on the working **PDF-text** path. **No new OCR, no package, no rasterizer, no taxonomy/tags, no CC/bank import, no ML, no cloud/AI, no migration, no backend change, no finance-calc change, no E2EE decryption.**
+
+**Why frontend-only:** DOC-3 established the server cannot extract E2EE attachment content (no plaintext); the review layer consumes a `DocumentExtractionResult` and PDF-text extraction runs **client-side** (pdfjs, code-split, in-browser). No new backend endpoint or migration was required (candidates are edited client-side; only an explicit confirm hands a draft to the existing expense flow), so none was added.
+
+**Added (`frontend/src/app/features/documents/`):**
+- `document-review.model.ts` — editable review model (fields carry `authority`: EXTRACTED→USER_CORRECTED on edit→USER_CONFIRMED on confirm), `ConfirmedDocumentDraft`.
+- `services/document-review.service.ts` — pure: `fromExtractionResult`, edit/add/delete (raise authority), `reconcile` (BALANCED/UNDER/OVER/UNRECONCILED; **never invents an item, never silently changes the document total**), explicit `confirm()` → draft.
+- `services/document-extraction-client.service.ts` + `receipt-text-parser.ts` — client PDF-text extraction (pluggable pdfjs loader; images honestly `provider_unavailable` — no pretend OCR).
+- `document-review.component.*` — editable candidates + live reconciliation + explicit Confirm/Cancel; honest failure/unavailable/empty states. `document-intake-page.component.*` — mode selector → TOTAL_ONLY (bypass) / ITEMIZED (extract→review→confirm). Lazy route `/documents`.
+
+**Boundaries:** confirm is the only path to a draft; the draft carries no bytes/keys/OCR text; nothing mutates finance before the existing authoritative flow; not wired into the 700-line expense modal (separate flow); IDOR unchanged (no new attachment access). **Verification:** frontend 67 suites/546 tests, backend 71/756 (finance gate green), both builds pass, lint 0.
+
+**Deferred:** wiring the confirmed draft into the expense-creation flow; image OCR (language-data decision); scanned-PDF (rasterizer); line-item persistence `[PRODUCT DECISION]`.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

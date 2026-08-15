@@ -1,0 +1,48 @@
+<div class="max-w-2xl mx-auto p-4 space-y-5">
+  <header>
+    <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Add from a document</h1>
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+      Attach a receipt or PDF. Choose whether to just record the total, or try to extract items for review.
+    </p>
+  </header>
+
+  <app-document-mode-selector (modeSelected)="onMode($event)" />
+
+  @if (mode() === 'TOTAL_ONLY') {
+    <div role="status" class="rounded-md bg-gray-50 dark:bg-gray-800/40 p-4 text-sm text-gray-700 dark:text-gray-300">
+      Total-only: attach the document and enter the amount in the normal expense flow. No extraction is performed.
+    </div>
+  }
+
+  @if (mode() === 'ITEMIZED') {
+    <div class="space-y-3">
+      <label class="block text-sm">
+        <span class="text-gray-500 dark:text-gray-400">Choose a document (PDF works best; images aren't OCR'd yet)</span>
+        <input type="file" accept="application/pdf,image/*" (change)="onFile($event)" class="block mt-1 text-sm" />
+      </label>
+
+      @if (loading()) {
+        <p role="status" class="text-sm text-gray-500">Reading document…</p>
+      }
+      @if (error(); as e) {
+        <p role="alert" class="text-sm text-red-600 dark:text-red-400">{{ e }}</p>
+      }
+
+      @if (result(); as r) {
+        <app-document-review
+          [extractionResult]="r"
+          (confirmed)="onConfirmed($event)"
+          (cancelled)="onCancelled()"
+        />
+      }
+
+      @if (confirmedDraft(); as d) {
+        <div role="status" class="rounded-md bg-green-50 dark:bg-green-900/20 p-4 text-sm text-green-800 dark:text-green-300">
+          <p class="font-medium">Ready to add as an expense</p>
+          <p>{{ d.title ?? 'Document' }} · {{ d.amount ?? '—' }} {{ d.currency ?? '' }} · {{ d.itemCount }} item(s)</p>
+          <p class="text-xs mt-1">Continue in the normal expense flow to save it — nothing has been changed yet.</p>
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -1,0 +1,110 @@
+@if (model(); as m) {
+  <div class="space-y-4">
+    <!-- Non-reviewable states — honest, no pretend OCR -->
+    @if (!hasCandidates()) {
+      <div role="status" class="rounded-md bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-800 dark:text-amber-300 space-y-2">
+        @switch (m.status) {
+          @case ('provider_unavailable') {
+            <p>Item extraction isn't available for this document yet.</p>
+          }
+          @case ('no_text_detected') {
+            <p>This looks like a scanned document with no text layer — item extraction isn't available yet.</p>
+          }
+          @case ('unsupported_document') {
+            <p>This document type isn't supported for item extraction.</p>
+          }
+          @default {
+            <p>We couldn't read items from this document.</p>
+          }
+        }
+        <p>You can switch to <strong>Total only</strong> and enter the amount yourself — the document stays attached as evidence.</p>
+        <button type="button" (click)="cancel()" class="mt-1 rounded-md border border-amber-300 px-3 py-1.5 font-medium">
+          Back
+        </button>
+      </div>
+    } @else {
+      <!-- Editable candidates -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="block text-sm">
+          <span class="text-gray-500 dark:text-gray-400">Merchant</span>
+          <input class="finmate-input w-full" [value]="m.merchant.value ?? ''" (input)="editHeader('merchant', $event)" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-gray-500 dark:text-gray-400">Date</span>
+          <input class="finmate-input w-full" [value]="m.date.value ?? ''" (input)="editHeader('date', $event)" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-gray-500 dark:text-gray-400">Currency</span>
+          <input class="finmate-input w-full" [value]="m.currency.value ?? ''" (input)="editHeader('currency', $event)" />
+        </label>
+        <label class="block text-sm">
+          <span class="text-gray-500 dark:text-gray-400">Document total (authoritative)</span>
+          <input type="number" class="finmate-input w-full" [value]="m.documentTotal.value ?? ''" (input)="editHeader('documentTotal', $event)" />
+        </label>
+      </div>
+
+      <!-- Line items -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-medium text-gray-900 dark:text-gray-100">Items</h3>
+          <button type="button" (click)="addItem()" class="text-sm text-indigo-600 dark:text-indigo-400 font-medium">
+            + Add item
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-gray-500 dark:text-gray-400 text-left">
+              <tr>
+                <th class="py-1 pr-2 font-normal">Description</th>
+                <th class="py-1 px-2 font-normal">Qty</th>
+                <th class="py-1 px-2 font-normal">Unit</th>
+                <th class="py-1 px-2 font-normal">Line total</th>
+                <th class="py-1 pl-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (it of m.items; track it.id) {
+                <tr>
+                  <td class="py-1 pr-2"><input class="finmate-input w-full" [value]="it.description.value ?? ''" (input)="editItem(it.id, 'description', $event)" /></td>
+                  <td class="py-1 px-2"><input type="number" class="finmate-input w-16" [value]="it.quantity.value ?? ''" (input)="editItem(it.id, 'quantity', $event)" /></td>
+                  <td class="py-1 px-2"><input type="number" class="finmate-input w-20" [value]="it.unitPrice.value ?? ''" (input)="editItem(it.id, 'unitPrice', $event)" /></td>
+                  <td class="py-1 px-2"><input type="number" class="finmate-input w-24" [value]="it.lineTotal.value ?? ''" (input)="editItem(it.id, 'lineTotal', $event)" /></td>
+                  <td class="py-1 pl-2 text-right">
+                    <button type="button" (click)="deleteItem(it.id)" aria-label="Delete item" class="text-red-600 dark:text-red-400">✕</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Reconciliation (surfaced, never auto-corrected) -->
+      @if (reconciliation(); as rec) {
+        <div class="rounded-md border p-3 text-sm"
+             [class.border-green-300]="rec.reconciliationStatus === 'BALANCED'"
+             [class.border-amber-300]="rec.reconciliationStatus !== 'BALANCED'">
+          <div class="flex justify-between"><span>Document total</span><span>{{ rec.documentTotal ?? '—' }}</span></div>
+          <div class="flex justify-between"><span>Items total</span><span>{{ rec.allocatedTotal }}</span></div>
+          <div class="flex justify-between font-medium">
+            <span>Unallocated</span>
+            <span>{{ rec.unallocatedDifference }} · {{ rec.reconciliationStatus }}</span>
+          </div>
+        </div>
+      }
+
+      <div class="flex gap-2">
+        <button type="button" (click)="confirm()" class="rounded-md bg-indigo-600 px-4 py-2 text-white font-medium">
+          Confirm
+        </button>
+        <button type="button" (click)="cancel()" class="rounded-md border px-4 py-2 font-medium">Cancel</button>
+      </div>
+
+      @if (m.confirmed) {
+        <p role="status" class="text-sm text-green-700 dark:text-green-400">
+          Confirmed — ready to add as an expense in the normal flow.
+        </p>
+      }
+    }
+  </div>
+}

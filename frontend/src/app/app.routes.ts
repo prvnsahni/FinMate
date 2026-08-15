@@ -33,6 +33,11 @@ export const appRoutes: Route[] = [
         loadChildren: () =>
           import('./features/goals/goals.routes').then((m) => m.goalsRoutes),
       },
+      {
+        path: 'documents',
+        loadChildren: () =>
+          import('./features/documents/documents.routes').then((m) => m.documentsRoutes),
+      },
       // People supersedes the old Friends page; keep the path as a redirect
       // for backwards compatibility (bookmarks, existing links).
       { path: 'friends', redirectTo: 'people', pathMatch: 'full' },
