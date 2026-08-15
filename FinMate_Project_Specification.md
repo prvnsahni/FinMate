@@ -3525,3 +3525,8 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO.
   PACKAGES INSTALLED: NO. PRODUCTION: NO. NEW OCR: NO. CLOUD/AI: NO. BACKEND CHANGED: NO. FINANCE GOLDEN GATE:
   PASS. FROZEN DOCS: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-15 - Public Read-Only Expense Sharing future architecture proposal - DOCUMENTATION ONLY
+
+- **Summary:** Added `docs/architecture/FINMATE_PUBLIC_READ_ONLY_SHARING_FUTURE.md` as a FUTURE-only proposal for a dedicated PublicShare boundary and versioned PublicShareView projection. This records product purpose, public allowlist/prohibited data, token/capability model, live-vs-snapshot tradeoff, owner/admin permission model, FIN-002 reuse, E2EE/document-intelligence boundaries, safe analytics, threat model, caching/noindex guidance, conceptual API/data model, projection versioning, feature-flag recommendation, non-goals, and reconciliation with current groups/settlements/auth/key/document-intelligence architecture. **No implementation started.**
+- **Confirmation:** CODE CHANGED: NO. DATABASE/SCHEMA: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. OPENAPI: NO. FROZEN SRS/DECISION LEDGER/ADRS: NO. E2EE/SECURITY MODEL: NO. DOC-3/OCR/TAXONOMY: NO. PUSH: NO.
