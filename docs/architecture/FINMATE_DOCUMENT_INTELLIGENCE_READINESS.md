@@ -533,7 +533,7 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 **Backend:** `RuleBasedClassificationEngine` implements the **unchanged** DOC-0 `ClassificationEngine` contract via the shared classifier and is bound to `CLASSIFICATION_ENGINE` (stub → rule_based → future model/population, no contract change). Uses only the minimized `{itemLabel, category}` input — never E2EE title/description, never keys/PII. No endpoint added (no live server consumer; classification's real value is client-side).
 
-**Frontend (extends DOC-4 review, no finance-modal change):** each review line item gets **engine-suggested tags** (INFERRED) from the same shared classifier; the user can **add** a tag (per-user correction → USER_CORRECTED, source `user`, **not** global) or **remove** one; on confirm, kept engine tags become USER_CONFIRMED while user tags stay USER_CORRECTED — keeping **engine suggestion / per-user correction / global taxonomy** three distinct layers (the basis for future population learning).
+**Frontend (extends DOC-4 review, no finance-modal change):** each review line item gets **engine-suggested tags** (INFERRED) from the same shared classifier; the user can **add** a tag (per-user correction → USER_CORRECTED, source `user`, **not** global) or **remove** one; on confirm, kept engine tags become USER_CONFIRMED while user tags stay USER_CORRECTED, and `ConfirmedDocumentDraft.items[].tags` carries the advisory metadata forward for a future safe persistence path — keeping **engine suggestion / per-user correction / global taxonomy** three distinct layers (the basis for future population learning).
 
 **Boundaries:** classifier receives only minimized signals (no E2EE plaintext, no keys); classification/tags never touch amount/payer/split/refund/settlement/currency/balance (FIN-002 gate green); tags are advisory, not financial truth; no cross-user access (corrections are client-side, per-session); sensitive-tag inference explicitly excluded.
 
@@ -541,7 +541,7 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 **Population-learning boundary:** unchanged and FUTURE — private user corrections do **not** become training data; runtime≠evaluation≠aggregate-learning≠training. **Goal Engine boundary:** unchanged — taxonomy would feed the Goal Engine only as minimized numeric/enum projections, never raw tags/text.
 
-**Verification:** data-models 2 suites/13 tests, backend 72/762 (finance gate green), frontend 67/551, all builds pass, lint 0.
+**Verification:** data-models 2 suites/13 tests, backend 72/763 (finance gate green), frontend 67/552, backend + frontend builds pass, lint passes with 0 errors (existing warnings remain).
 
 ---
 

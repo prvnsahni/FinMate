@@ -197,6 +197,13 @@ export class DocumentReviewService {
       currency: confirmedModel.currency.value,
       date: confirmedModel.date.value,
       itemCount: confirmedModel.items.length,
+      items: confirmedModel.items.map((it) => ({
+        description: it.description.value,
+        quantity: it.quantity.value,
+        unitPrice: it.unitPrice.value,
+        lineTotal: it.lineTotal.value,
+        tags: it.tags,
+      })),
       reconciliation: this.reconcile(confirmedModel),
     };
     return { model: confirmedModel, draft };

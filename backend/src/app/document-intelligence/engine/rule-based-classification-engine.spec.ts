@@ -42,4 +42,17 @@ describe('RuleBasedClassificationEngine (DOC-5, shared taxonomy)', () => {
     expect(engine.capabilities().usesExternalProvider).toBe(false);
     expect(engine.capabilities().kind).toBe('rule_based');
   });
+
+  it('does not echo E2EE keys, auth tokens, or raw bytes from adversarial input', async () => {
+    const r = await engine.classify({
+      itemLabel: 'Milk',
+      category: 'Grocery',
+      encryptedFileKey: 'wrapped-secret-key',
+      authToken: 'bearer-secret-token',
+      rawAttachmentBytes: 'raw-bytes',
+    } as never);
+
+    expect(JSON.stringify(r)).not.toMatch(/wrapped-secret-key|bearer-secret-token|raw-bytes/i);
+    expect(r.candidateTags.some((t) => t.tag === 'Milk')).toBe(true);
+  });
 });

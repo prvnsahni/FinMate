@@ -85,9 +85,6 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     expect(uc.unallocatedDifference).toBe(45);
 
     // OVER: add a 60 item → 700 vs 685 → -15
-    let over = svc.fromExtractionResult(result());
-    over = svc.editItemField(svc.addItem(over), over.items[over.items.length - 1].id, 'lineTotal', '60');
-    // re-add: simpler explicit
     const over2 = svc.fromExtractionResult(
       result({ lineItems: [{ authority: 'EXTRACTED', lineTotal: ef(120) }, { authority: 'EXTRACTED', lineTotal: ef(520) }, { authority: 'EXTRACTED', lineTotal: ef(60) }] }),
     );
@@ -124,7 +121,7 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     const m = svc.fromExtractionResult(result());
     const { draft } = svc.confirm(m);
     const blob = JSON.stringify(draft);
-    expect(blob).not.toMatch(/key|encrypt|token|bytes|password/i);
+    expect(blob).not.toMatch(/key|encrypt|token|bytes|password|encryptedOriginalName|encryptedFileKey|storageKey/i);
   });
 
   // --- DOC-5 classification / tags ---
@@ -178,5 +175,21 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     const tags = model.items[0].tags;
     expect(tags.find((t) => t.tagId === 'milk')?.authority).toBe('USER_CONFIRMED');
     expect(tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
+  });
+
+  it('carries confirmed tags into the draft without changing finance values', () => {
+    let m = svc.fromExtractionResult(
+      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+    );
+    m = svc.addTag(m, m.items[0].id, 'household');
+    const { draft } = svc.confirm(m);
+
+    expect(draft.amount).toBe(685);
+    expect(draft.currency).toBe('INR');
+    expect(draft.itemCount).toBe(1);
+    expect(draft.items[0].lineTotal).toBe(120);
+    expect(draft.items[0].tags.find((t) => t.tagId === 'milk')?.authority).toBe('USER_CONFIRMED');
+    expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
+    expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.source).toBe('user');
   });
 });

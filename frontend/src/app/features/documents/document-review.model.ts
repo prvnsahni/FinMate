@@ -85,6 +85,15 @@ export interface ReviewLineItem {
   tags: ReviewTag[];
 }
 
+export interface ConfirmedDocumentDraftItem {
+  description: string | null;
+  quantity: number | null;
+  unitPrice: number | null;
+  lineTotal: number | null;
+  /** Advisory tags only. These do not mutate finance values or category. */
+  tags: ReviewTag[];
+}
+
 export type ReviewHeaderField = 'merchant' | 'date' | 'currency' | 'documentTotal';
 
 export interface ReviewModel {
@@ -123,5 +132,7 @@ export interface ConfirmedDocumentDraft {
   currency: string | null;
   date: string | null;
   itemCount: number;
+  /** Candidate line-item metadata carried forward for future safe persistence. */
+  items: ConfirmedDocumentDraftItem[];
   reconciliation: ReviewReconciliation;
 }
