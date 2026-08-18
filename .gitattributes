@@ -2,3 +2,6 @@
 * text=auto eol=lf
 
 # Diff-friendly handling for binary-ish or generated files can be added here as needed.
+
+# Tesseract OCR language data is a binary asset — never treat as text / never EOL-normalize.
+*.traineddata binary

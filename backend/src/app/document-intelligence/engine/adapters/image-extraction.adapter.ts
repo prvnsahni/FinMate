@@ -5,6 +5,7 @@ import {
   ExtractionAdapter,
 } from './extraction-adapter.types';
 import { parseReceiptText } from './receipt-text-parser';
+import { LocalTesseractRecognizer, engLangDataAvailable } from './local-tesseract-recognizer';
 
 /** Local OCR provider seam. A real impl wraps tesseract.js configured LOCAL-ONLY. */
 export interface OcrRecognizer {
@@ -13,29 +14,31 @@ export interface OcrRecognizer {
 }
 
 /**
- * Real image adapter (tesseract.js) — but SAFE BY DEFAULT.
+ * Real image adapter (tesseract.js) — SAFE BY DEFAULT, LOCAL-ONLY (DOC-6).
  *
- * tesseract.js v7 fetches its core/worker/language data from a CDN by default (a
- * network call) and does NOT ship `eng.traineddata`. To honour the spike's "no
- * external network / on-device only" rule, this adapter:
- *   - checks whether local OCR language data is present (`langDataAvailable`), and
- *   - **refuses to run OCR** (returns `provider_unavailable`) when it is absent,
- *     rather than triggering a CDN download.
- * It only invokes a recognizer when one is injected (tests) or local data exists. It
- * never fabricates values. Wiring a real local recognizer + committing/installing the
- * traineddata asset is a follow-up decision (see the spike doc).
+ * tesseract.js v7 would fetch its language data from a CDN when `langPath` is unset. To
+ * honour the "no external network / on-device only" rule, this adapter:
+ *   - checks whether local OCR language data is present (`langDataAvailable`, a pure
+ *     filesystem check by default), and
+ *   - **refuses to run OCR** (returns `provider_unavailable`) when it is absent, rather
+ *     than triggering a CDN download; and
+ *   - when present, runs a LOCAL-ONLY `LocalTesseractRecognizer` (core/worker from the
+ *     local packages, `eng.traineddata` from the committed asset, `langPath` local so the
+ *     CDN fallback is unreachable).
+ * A recognizer may also be injected (tests). It never fabricates values, never mutates
+ * finance data, and never receives keys/tokens/E2EE plaintext.
  */
 export class ImageExtractionAdapter implements ExtractionAdapter {
   readonly kind = 'image' as const;
   readonly requirement: AdapterRequirement = {
-    requiredPackages: ['tesseract.js', 'eng.traineddata (language data — not shipped by the package)'],
+    requiredPackages: ['tesseract.js', 'eng.traineddata (committed local asset — backend/src/assets/tessdata/)'],
     processesLocally: true,
-    note: 'On-device WASM OCR. Default fetches language data from a CDN — must be configured local-only.',
+    note: 'On-device WASM OCR, configured LOCAL-ONLY (langPath → committed asset; no CDN, no network).',
   };
 
   constructor(
     private readonly recognizer?: OcrRecognizer,
-    private readonly langDataAvailable: () => boolean = () => false,
+    private readonly langDataAvailable: () => boolean = engLangDataAvailable,
   ) {}
 
   async extract(content: AdapterContent): Promise<AdapterExtraction> {
@@ -87,13 +90,11 @@ export class ImageExtractionAdapter implements ExtractionAdapter {
 
   /**
    * Build a real local-only tesseract.js recognizer. Only reached when local language
-   * data exists (guarded above) so it never triggers a network fetch here. Lazily
-   * loaded so tesseract.js is never imported in environments that don't run OCR.
+   * data exists (guarded above) so it never triggers a network fetch here. The
+   * recognizer lazily imports tesseract.js, so it is never loaded in environments that
+   * do not run OCR.
    */
   private async localRecognizer(): Promise<OcrRecognizer> {
-    // NOTE: intentionally not wired to a concrete tesseract worker in DOC-3 — running
-    // it requires the local traineddata asset (absent in this environment). Kept as an
-    // explicit failure so no accidental network/asset assumption is made.
-    throw new Error('Local OCR recognizer is not configured (no local language data).');
+    return new LocalTesseractRecognizer();
   }
 }

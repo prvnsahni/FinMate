@@ -3575,3 +3575,46 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO. PRODUCTION: NO. DOC-0 CONTRACT CHANGED: NO. FINANCE GOLDEN
   GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX: NO. DOC-6/7/OCR-LANGDATA/RASTERIZER/ML/CLOUD-OCR: NOT STARTED.
   COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-18 — Offline image OCR enabled (DOC-3 language-data completion) — CODE + LOCAL ASSET (no package, no migration)
+
+- **Summary:** Made the DOC-3 `ImageExtractionAdapter` run **real, LOCAL/OFFLINE** English OCR by wiring a
+  local-only tesseract.js worker and committing the `eng.traineddata` model. **No new package** (tesseract.js@7
+  / tesseract.js-core@7 already installed in DOC-3), **no migration, no finance-calc change, no E2EE decryption,
+  no cloud/AI, no rasterizer, no CC/bank (frozen DOC-6/7) work.**
+- **Label note (frozen roadmap untouched):** requested as "DOC-6", but the FROZEN readiness roadmap already
+  assigns **DOC-6 = Credit-card statement** / **DOC-7 = Bank statement** (OQ-03 + FUT-004 + COUNSEL gated). This
+  is instead the **DOC-3 deferred OCR language-data decision**, fully on-device (no OQ-03/AI-Firewall gate). The
+  frozen roadmap rows were **NOT** renumbered/modified. Documented as an additive readiness ADDENDUM only.
+- **Local OCR asset (committed):** `backend/src/assets/tessdata/eng.traineddata` — `tessdata_fast` @ tag `4.1.0`,
+  4,113,088 bytes, SHA-256 `7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2`, **Apache-2.0**,
+  byte-identical across two independent mirrors. Provenance/license in `.../tessdata/PROVENANCE.md`;
+  `*.traineddata` marked `binary` in `.gitattributes`.
+- **Local-only wiring:** new `engine/adapters/local-tesseract-recognizer.ts` — loads WASM core + worker via
+  local `require` (never network) and the model via `langPath` → committed dir (`gzip:false`,
+  `cacheMethod:'none'`, **no logger**); tesseract.js **lazily imported** (never in the module graph unless OCR
+  runs). `engLangDataAvailable()` = pure filesystem check; adapter returns `provider_unavailable` when the asset
+  is absent and the recognizer **fails closed** (throws, never fetches). tesseract's jsdelivr fallback is
+  unreachable because `langPath` is always set local.
+- **Offline proof (`backend/tools/doc6-ocr-offline-smoke.mjs`):** with `http`/`https`/`fetch` patched to throw,
+  a synthetic pure-Node BMP (no rasterizer) OCR'd to `"TOTAL 128"` in ~1.2 s with **0 network attempts** — real
+  glyph OCR, fully offline. (`0→8` is the crude synthetic font, not the pipeline.)
+- **Files:** `.gitattributes` (+`*.traineddata binary`); `backend/src/assets/tessdata/{eng.traineddata,
+  PROVENANCE.md}`; `backend/.../engine/adapters/local-tesseract-recognizer.ts` (+spec); `image-extraction.adapter.ts`
+  (real langData default + local recognizer, no throwing stub); `image-extraction.adapter.spec.ts` (adversarial
+  no-keys + real-fs-gate tests); `local-document-extraction-engine.spec.ts` (OCR finance-safety test);
+  `backend/tools/doc6-ocr-offline-smoke.mjs`; readiness ADDENDUM + this Progress Log entry.
+- **Security/adversarial (tests):** `provider_unavailable` without invoking OCR when lang data absent;
+  fail-closed recognizer (never fetches); OCR seam receives **only** image bytes + mime (no keys/tokens/PII);
+  `no_text_detected` on empty OCR; OCR path surfaces sum(items) > total (OVER_ALLOCATED) and **never** rewrites
+  the authoritative total; feature flag `document.intelligence` unchanged (still OFF; LocalEngine unbound).
+- **Unresolved decisions:** scanned-PDF rasterizer (still boundary); real-receipt OCR accuracy tuning
+  (preprocessing) + larger `tessdata`/`best` model `[ENGINEERING]`; production asset-copy into the webpack
+  bundle (only if LocalEngine is ever bound in prod); CC/bank statements remain frozen DOC-6/7
+  (OQ-03+FUT-004+COUNSEL); managed OCR/VLM remain blocked.
+- **Verification:** backend **73 suites/769 tests** (finance golden gate **PASS**); frontend unchanged; backend
+  build passes; lint 0 on changed dirs; offline smoke **PASS** (0 network attempts).
+- **Confirmation:** CODE CHANGED: YES (backend OCR wiring + local asset). DATABASE/SCHEMA: NO. MIGRATION
+  CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO (reused DOC-3 tesseract.js). PRODUCTION: NO. DOC-0 CONTRACT
+  CHANGED: NO. FINANCE GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK-DOC-6-7/
+  ML/CLOUD-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

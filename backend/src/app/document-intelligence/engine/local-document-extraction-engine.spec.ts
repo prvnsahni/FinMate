@@ -10,6 +10,9 @@ import {
   AdapterKind,
   ExtractionAdapter,
 } from './adapters/extraction-adapter.types';
+import { ImageExtractionAdapter, OcrRecognizer } from './adapters/image-extraction.adapter';
+import { PdfTextExtractionAdapter } from './adapters/pdf-text-extraction.adapter';
+import { PdfScanExtractionAdapter } from './adapters/pdf-scan-extraction.adapter';
 
 const content = (over: Partial<AdapterContent> = {}): AdapterContent => ({
   bytes: Uint8Array.from([37, 80, 68, 70]), // "%PDF"
@@ -94,6 +97,29 @@ describe('LocalDocumentExtractionEngine (DOC-3)', () => {
     expect(typeof stub.extract).toBe('function');
     expect(typeof local.extract).toBe('function');
     expect(local.capabilities().usesExternalProvider).toBe(false);
+  });
+
+  it('DOC-6: OCR image path surfaces sum(items) > total (OVER) and NEVER rewrites the authoritative total', async () => {
+    // A LOCAL-ONLY OCR recognizer is faked here (no worker, no network). Its text yields
+    // items summing to 640 against a document TOTAL of 600 — a discrepancy that must be
+    // SURFACED, never silently corrected.
+    const ocr: OcrRecognizer = {
+      recognize: async () => 'Example Market\nMilk 120\nRice 520\nTOTAL INR 600',
+    };
+    const adapters: Record<AdapterKind, ExtractionAdapter> = {
+      image: new ImageExtractionAdapter(ocr),
+      pdf_text: new PdfTextExtractionAdapter(),
+      pdf_scanned: new PdfScanExtractionAdapter(),
+    };
+    const engine = new LocalDocumentExtractionEngine(adapters);
+    const r = await engine.extractFromContent(
+      content({ bytes: Uint8Array.from([255, 216, 255]), sourceType: 'image', mimeType: 'image/jpeg' }),
+    );
+    expect(r.reconciliation?.documentTotal).toBe(600); // total preserved verbatim
+    expect(r.reconciliation?.allocatedTotal).toBe(640);
+    expect(r.reconciliation?.reconciliationStatus).toBe('OVER_ALLOCATED');
+    expect(r.reconciliation?.unallocatedDifference).toBe(-40);
+    expect(r.candidatesOnly).toBe(true);
   });
 
   it('has NO finance-write / decrypt / external-call surface', () => {

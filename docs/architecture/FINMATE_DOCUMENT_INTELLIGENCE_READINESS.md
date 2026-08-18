@@ -545,6 +545,26 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 ---
 
+# ADDENDUM — 2026-08-18 · Offline image OCR enabled (DOC-3 language-data completion) — CODE + LOCAL ASSET
+
+**⚠️ Label note (frozen roadmap untouched):** this batch was requested as "DOC-6", but the FROZEN roadmap (§ roadmap table) already assigns **DOC-6 = Credit-card statement** and **DOC-7 = Bank statement** (both gated by OQ-03 + FUT-004 + AI-Firewall, "external OCR likely", COUNSEL). This work is instead the **completion of the DOC-3 deferred `[PACKAGE/ENGINEERING]` OCR language-data decision** — fully on-device, no OQ-03/AI-Firewall gate. **The frozen roadmap rows are intentionally NOT renumbered or modified.** No frozen SRS/Ledger/ADR/Matrix change.
+
+**COMPLETE — image OCR now runs LOCAL/OFFLINE.** The DOC-3 `ImageExtractionAdapter` was safe-by-default (`provider_unavailable`, never a CDN fetch) but had no wired recognizer. It now runs a real **local-only** tesseract.js worker when the local model is present. **No new package** (tesseract.js@7 / tesseract.js-core@7 already installed in DOC-3), **no migration**, **no finance-calc change**, **no E2EE decryption**, **no cloud/AI**, **no rasterizer**, **no CC/bank/DOC-6-7 work**.
+
+**Local OCR language asset (committed):** `backend/src/assets/tessdata/eng.traineddata` — `tessdata_fast` @ tag `4.1.0`, 4,113,088 bytes, SHA-256 `7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2`, **Apache-2.0**, byte-identical across two independent mirrors. Provenance/license recorded in `backend/src/assets/tessdata/PROVENANCE.md`; `*.traineddata` marked `binary` in `.gitattributes`.
+
+**Local-only wiring (`engine/adapters/local-tesseract-recognizer.ts`):** loads WASM core + worker via local `require('tesseract.js'/-core)` (never network) and the model via `langPath` → the committed dir with `gzip:false`, `cacheMethod:'none'`, **no logger**. tesseract.js is **lazily imported** so it never enters the module graph unless OCR runs. `engLangDataAvailable()` is a **pure filesystem check**; the adapter returns `provider_unavailable` when the asset is absent and the recognizer **fails closed** (throws, never fetches) if constructed without it. tesseract's jsdelivr fallback only triggers when `langPath` is unset — it is always set here, so it is unreachable.
+
+**Offline proof (smoke harness `backend/tools/doc6-ocr-offline-smoke.mjs`):** with `http`/`https`/`fetch` all patched to throw, a synthetic receipt image (pure-Node BMP, no rasterizer package) OCR'd to `"TOTAL 128"` in ~1.2 s with **0 network attempts** — real glyph OCR, fully offline. (The `0→8` slip is the crude synthetic font, not the pipeline; real-receipt glyph accuracy against a rasterizer remains a future measurement.)
+
+**Boundaries preserved:** DOC-0 contract **unchanged**; the review flow is still `document → extraction candidates → user edits → explicit confirm → draft` (no auto-finance mutation); DOC-5 taxonomy tags stay advisory (never touch amount/payer/split/refund/settlement/currency/balance — FIN-002 gate green); the OCR seam receives only image bytes + mime (adversarial test proves no keys/tokens/PII reach it); `document.intelligence` flag remains **OFF by default** and the LocalEngine stays unbound in the module (stub is the active engine); `TOTAL_ONLY` stays extraction-free; scanned-PDF still returns its explicit no-rasterizer boundary.
+
+**Deferred (unchanged, FUTURE):** scanned-PDF rasterizer; real-receipt OCR accuracy tuning (preprocessing/deskew/threshold); larger `tessdata`/`best` model; production asset-copy into the webpack bundle (only needed if the LocalEngine is ever bound in prod); CC/bank statements (frozen DOC-6/7, OQ-03+FUT-004+COUNSEL); managed OCR/VLM.
+
+**Verification:** backend 73 suites/769 tests (finance golden gate green), frontend unchanged, builds pass, lint 0 errors. Offline smoke: PASS (0 network attempts).
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.
