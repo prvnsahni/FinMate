@@ -559,9 +559,20 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 **Boundaries preserved:** DOC-0 contract **unchanged**; the review flow is still `document → extraction candidates → user edits → explicit confirm → draft` (no auto-finance mutation); DOC-5 taxonomy tags stay advisory (never touch amount/payer/split/refund/settlement/currency/balance — FIN-002 gate green); the OCR seam receives only image bytes + mime (adversarial test proves no keys/tokens/PII reach it); `document.intelligence` flag remains **OFF by default** and the LocalEngine stays unbound in the module (stub is the active engine); `TOTAL_ONLY` stays extraction-free; scanned-PDF still returns its explicit no-rasterizer boundary.
 
-**Deferred (unchanged, FUTURE):** scanned-PDF rasterizer; real-receipt OCR accuracy tuning (preprocessing/deskew/threshold); larger `tessdata`/`best` model; production asset-copy into the webpack bundle (only needed if the LocalEngine is ever bound in prod); CC/bank statements (frozen DOC-6/7, OQ-03+FUT-004+COUNSEL); managed OCR/VLM.
+**Deferred (unchanged, FUTURE):** scanned-PDF rasterizer; real-receipt OCR accuracy tuning (preprocessing/deskew/threshold); larger `tessdata`/`best` model; CC/bank statements (frozen DOC-6/7, OQ-03+FUT-004+COUNSEL); managed OCR/VLM.
 
 **Verification:** backend 73 suites/769 tests (finance golden gate green), frontend unchanged, builds pass, lint 0 errors. Offline smoke: PASS (0 network attempts).
+
+---
+
+## Hardening — 2026-08-18 · offline OCR reproducibility (DOC-3 completion, no new package)
+
+Small non-gated hardening of the existing offline image-OCR path — **no new package, no provider, no migration, no contract change, no production enablement** (flag stays OFF, LocalEngine stays unbound).
+
+- **Build/packaging (verified, corrected):** the backend build already ships the model — `backend/webpack.config.js` uses `NxAppWebpackPlugin` with `assets: ['./src/assets']`, so `eng.traineddata` is copied to `dist/backend/assets/tessdata/eng.traineddata`. (The earlier DOC-6 "deferred production asset-copy" note was inaccurate and is removed.)
+- **Recognizer path resolution (fixed):** `local-tesseract-recognizer.ts` now also resolves the **bundled/deployed** layout `resolve(__dirname, 'assets', 'tessdata')` (i.e. `dist/backend/assets/tessdata`) in addition to the dev/test source path and CWD candidates — so offline OCR is discoverable in a built deployment, not only in dev/test. `provider_unavailable` / fail-closed behaviour when the asset is genuinely absent is unchanged.
+- **Reproducibility gate (added):** `tessdata-asset.spec.ts` pins the asset's presence, exact size (4,113,088 B) and SHA-256 (`7d4322bd…`) against `PROVENANCE.md` — a missing/corrupt/swapped/wrong-version model fails CI loudly instead of silently degrading.
+- **Re-verified boundaries (unchanged):** core/worker via local `require`, model via local `langPath` (no CDN, no `fetch`/`node-fetch` in the runtime path); no OCR text/bytes logged; OCR is backend-only (frontend imports no tesseract); `TOTAL_ONLY` never extracts; DOC-4 review + DOC-5 advisory tags + FIN-002 candidate-only all intact.
 
 ---
 

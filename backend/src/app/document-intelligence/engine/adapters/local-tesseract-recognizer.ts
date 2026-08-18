@@ -30,11 +30,16 @@ function candidateTessdataDirs(): string[] {
   const fromEnv = process.env.OCR_TESSDATA_PATH;
   return [
     ...(fromEnv ? [fromEnv] : []),
-    // From this compiled file: engine/adapters -> ../../../../assets/tessdata (backend/src/assets/tessdata).
+    // Bundled/deployed layout: the webpack build copies `src/assets` next to the bundle
+    // (NxAppWebpackPlugin `assets`), so from `dist/backend/main.js` the model lives at
+    // `dist/backend/assets/tessdata`.
+    resolve(__dirname, 'assets', 'tessdata'),
+    // Dev/test (ts source): engine/adapters -> ../../../../assets/tessdata (backend/src/assets/tessdata).
     resolve(__dirname, '..', '..', '..', '..', 'assets', 'tessdata'),
-    // From the process CWD (repo root or the backend project root).
+    // From the process CWD (repo root or the backend project/deploy root).
     resolve(process.cwd(), 'backend', 'src', 'assets', 'tessdata'),
     resolve(process.cwd(), 'src', 'assets', 'tessdata'),
+    resolve(process.cwd(), 'assets', 'tessdata'),
   ];
 }
 

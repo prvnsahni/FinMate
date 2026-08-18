@@ -3618,3 +3618,33 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   CREATED/EXECUTED: NO. PACKAGES INSTALLED: NO (reused DOC-3 tesseract.js). PRODUCTION: NO. DOC-0 CONTRACT
   CHANGED: NO. FINANCE GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK-DOC-6-7/
   ML/CLOUD-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-18 — Offline image OCR hardening (DOC-3 completion) — reproducibility (no package, no migration)
+
+- **Summary:** Small non-gated hardening of the existing offline image-OCR path to make it **reproducible and
+  locally deployable**. **No new package/provider, no migration, no DOC-0 contract change, no production
+  enablement** (`document.intelligence` stays OFF; LocalEngine stays unbound; stub remains active). Roadmap stays
+  at the post-DOC-5 STOP checkpoint — **no DOC-6/7, no scanned-PDF, no ML/cloud OCR, no AI-Firewall work.**
+- **Verified (no change needed):** tesseract.js@7.0.0 / tesseract.js-core@7.0.0; `eng.traineddata` tracked in git,
+  on disk, SHA-256 `7d4322bd…` matches PROVENANCE; **no CDN URL / `fetch` / `node-fetch` in the runtime path**
+  (core+worker via local `require`, model via local `langPath`); no OCR text/bytes logged; OCR is backend-only
+  (frontend imports no tesseract); `TOTAL_ONLY` never extracts; DOC-4 review + DOC-5 advisory tags + FIN-002
+  candidate-only intact; E2EE minimized input (no keys/tokens/bytes; no server-side decrypt).
+- **Build/packaging (verified + corrected):** `backend/webpack.config.js` uses `NxAppWebpackPlugin` with
+  `assets: ['./src/assets']` → the model IS copied to `dist/backend/assets/tessdata/eng.traineddata`. The earlier
+  DOC-6 "deferred production asset-copy" note was inaccurate and is removed.
+- **Changes made (2 code + docs):** (1) `local-tesseract-recognizer.ts` — added the **bundled/deployed** path
+  candidate `resolve(__dirname,'assets','tessdata')` (i.e. `dist/backend/assets/tessdata`) so OCR is discoverable
+  in a built deployment, not only dev/test (fail-closed/`provider_unavailable` behaviour unchanged). (2) new
+  `tessdata-asset.spec.ts` — reproducibility gate pinning asset presence + exact size (4,113,088 B) + SHA-256
+  against PROVENANCE (fails CI on a missing/corrupt/swapped/wrong-version model). (3) readiness ADDENDUM +
+  this Progress Log entry.
+- **Files:** `backend/.../engine/adapters/local-tesseract-recognizer.ts`;
+  `backend/.../engine/adapters/tessdata-asset.spec.ts` (new); `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md`;
+  `FinMate_Project_Specification.md`.
+- **Verification:** backend **73 suites/772 tests** (finance golden gate **PASS**); backend build passes; lint 0
+  on changed dirs; offline smoke **PASS** (0 network attempts). Frontend unaffected.
+- **Confirmation:** CODE CHANGED: YES (recognizer path resolution + asset test). DATABASE/SCHEMA: NO. MIGRATION:
+  NO. PACKAGES INSTALLED: NO. PRODUCTION: NO (flag OFF, engine unbound). DOC-0 CONTRACT: NO. FINANCE GOLDEN GATE:
+  PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK/ML/CLOUD-OCR: NOT STARTED. COMMIT: (this
+  iteration). PUSH: NO.
