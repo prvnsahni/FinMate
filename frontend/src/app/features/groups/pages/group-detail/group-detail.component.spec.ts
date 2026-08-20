@@ -521,6 +521,35 @@ describe('GroupDetailComponent', () => {
       expect(component.hasMoreExpenses()).toBe(false);
     });
 
+    it('drops a stale (older) fetch response so it cannot overwrite a newer one (GOAL 4)', () => {
+      const older = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      const newer = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      mockExpensesService.getExpenses = jest
+        .fn()
+        .mockReturnValueOnce(older.asObservable())
+        .mockReturnValueOnce(newer.asObservable()) as any;
+
+      fixture.detectChanges(); // fetch #1 (older) — still pending
+      // A newer fetch supersedes it before #1 resolves.
+      component.fetchExpenses('group-1', 'replace'); // fetch #2 (newer) — pending
+
+      // Newer resolves first and is applied.
+      newer.next({
+        data: [{ id: 'new-1', title: 'Newer', amountTotal: 5 }],
+        meta: { totalItems: 1 },
+      });
+      newer.complete();
+      expect(component.expenses().map((e) => e.id)).toEqual(['new-1']);
+
+      // The older (stale) response arrives LATER — it must be ignored entirely.
+      older.next({
+        data: [{ id: 'stale-1', title: 'Stale', amountTotal: 9 }],
+        meta: { totalItems: 1 },
+      });
+      older.complete();
+      expect(component.expenses().map((e) => e.id)).toEqual(['new-1']);
+    });
+
     it('does not fetch another page while one is already loading', () => {
       const secondPageSubject = new Subject<{
         data: unknown[];

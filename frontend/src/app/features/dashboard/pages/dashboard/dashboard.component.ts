@@ -94,6 +94,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
   /** 1-based page of the unified /expenses/me list currently loaded. */
   expensesPage = 1;
   private readonly expensesPageSize = 50;
+  /**
+   * Monotonic id for /expenses/me fetches (refresh + load-more share it). A
+   * response is applied only when it is still the latest request, so a late/
+   * out-of-order reply can never overwrite fresher data or append onto a list
+   * that was just reloaded — the request-sequence equivalent of switchMap.
+   */
+  private myExpensesSeq = 0;
   /** True while infinite scroll is appending a subsequent page. */
   isLoadingMoreExpenses = false;
   expenseViewFilter: 'all' | 'personal' | 'group_share' = 'all';
@@ -173,13 +180,19 @@ export class DashboardComponent implements OnInit, OnDestroy {
   refreshExpenseData() {
     this.isLoading = true;
 
-    // 1. Fetch personal + group-share expenses (unified list). Resets to the
-    //    first page; infinite scroll appends further pages via loadMoreMyExpenses.
-    this.expensesPage = 1;
+    // 1. Fetch personal + group-share expenses (unified list). Reloads the whole
+    //    window the user has already scrolled through (pages 1..expensesPage in
+    //    one request) rather than collapsing to page 1 — so a create/edit/delete
+    //    keeps the user's loaded context (the newest row lands at the top). On
+    //    first load expensesPage is 1, so this is a single first page.
+    const loadedPages = Math.max(1, this.expensesPage);
+    const seq = ++this.myExpensesSeq;
     this.expensesService
-      .getMyExpenses({ page: 1, limit: this.expensesPageSize })
+      .getMyExpenses({ page: 1, limit: this.expensesPageSize * loadedPages })
       .subscribe({
         next: (res) => {
+          // A newer fetch superseded this one — drop the stale response.
+          if (seq !== this.myExpensesSeq) return;
           const items = this.extractExpenseItems(res);
           this.myExpenses = items;
           this.totalMyExpenses = this.extractExpenseTotal(res, items.length);
@@ -191,7 +204,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           // the totalBalance getter — no longer a running sum of expenses here.
           this.isLoading = false;
         },
-        error: () => (this.isLoading = false),
+        error: () => {
+          if (seq !== this.myExpensesSeq) return;
+          this.isLoading = false;
+        },
       });
 
     // 2. Combined monthly total (personal + group shares)
@@ -371,10 +387,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!this.hasMoreMyExpenses) return;
     this.isLoadingMoreExpenses = true;
     const nextPage = this.expensesPage + 1;
+    const seq = ++this.myExpensesSeq;
     this.expensesService
       .getMyExpenses({ page: nextPage, limit: this.expensesPageSize })
       .subscribe({
         next: (res) => {
+          // A newer fetch (e.g. a mutation reload) superseded this page — dropping
+          // it avoids appending stale rows onto a freshly reloaded list.
+          if (seq !== this.myExpensesSeq) return;
           const items = this.extractExpenseItems(res);
           this.myExpenses = [...this.myExpenses, ...items];
           this.totalMyExpenses = this.extractExpenseTotal(
@@ -387,7 +407,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.expensesPage = nextPage;
           this.isLoadingMoreExpenses = false;
         },
-        error: () => (this.isLoadingMoreExpenses = false),
+        error: () => {
+          if (seq !== this.myExpensesSeq) return;
+          this.isLoadingMoreExpenses = false;
+        },
       });
   }
 

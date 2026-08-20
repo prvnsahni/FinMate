@@ -6,7 +6,7 @@ import { GroupsService } from '../../../groups/services/groups.service';
 import { ExpensesService } from '../../../groups/services/expenses.service';
 import { ExpensesUiStore } from '../../../groups/services/expenses-ui.store';
 import { AuthService } from '../../../../core/auth/auth.service';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
@@ -211,6 +211,51 @@ describe('DashboardComponent', () => {
       expect(component.myExpenses.length).toBe(2);
       expect(component.totalMyExpenses).toBe(5);
       expect(component.hasMoreMyExpenses).toBe(true);
+    });
+
+    it('mutation refresh reloads the whole loaded window (pages 1..N), not just page 1', () => {
+      mockExpensesService.getMyExpenses.mockReturnValue(
+        of({ data: mockExpenses, meta: { totalItems: 5 } }),
+      );
+      fixture.detectChanges(); // initial load: page 1
+      component.loadMoreMyExpenses(); // scrolled to page 2
+      expect(component.expensesPage).toBe(2);
+
+      // A create/edit/delete calls refreshExpenseData: it must reload pages 1..2
+      // in ONE request (limit = pageSize × loadedPages) and keep the user's window
+      // instead of collapsing back to a single first page.
+      component.refreshExpenseData();
+      expect(mockExpensesService.getMyExpenses).toHaveBeenLastCalledWith({
+        page: 1,
+        limit: 100,
+      });
+      expect(component.expensesPage).toBe(2); // context preserved, not reset to 1
+    });
+
+    it('drops a stale my-expenses response so it cannot overwrite a newer one (GOAL 4)', () => {
+      const older = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      const newer = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      mockExpensesService.getMyExpenses
+        .mockReturnValueOnce(older.asObservable())
+        .mockReturnValueOnce(newer.asObservable());
+
+      fixture.detectChanges(); // fetch #1 (older) — pending
+      component.refreshExpenseData(); // fetch #2 (newer) — pending
+
+      newer.next({
+        data: [{ id: 'new-1', title: 'Newer', amountTotal: 5 }],
+        meta: { totalItems: 1 },
+      });
+      newer.complete();
+      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual(['new-1']);
+
+      // Older (stale) arrives later — must be ignored.
+      older.next({
+        data: [{ id: 'stale-1', title: 'Stale', amountTotal: 9 }],
+        meta: { totalItems: 1 },
+      });
+      older.complete();
+      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual(['new-1']);
     });
 
     it('appends the next page and advances the page cursor on loadMore', () => {

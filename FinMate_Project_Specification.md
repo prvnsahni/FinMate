@@ -3751,3 +3751,39 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   PRODUCTION: NO (documentIntelligence OFF; backend engine unbound). DOC-0 CONTRACT: NO. E2EE: PRESERVED. FINANCE
   GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK/ML/CLOUD-OCR/DOC-6-7: NOT
   STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-19 — UX hardening: month-aware export + stable infinite-scroll pagination/mutation/race (frontend, no migration)
+
+- **Summary:** Hardened the expense-list surfaces (group ledger + personal dashboard) so export matches the
+  viewed month and infinite-scroll stays consistent across mutations and concurrent fetches. **No finance-calc
+  change, no payer/split/refund/settlement/balance change, no E2EE change, no SEC-KI1/group-key change, no
+  migration, no schema change.** The app uses **infinite scroll everywhere** (no discrete page navigation);
+  changes are additive within that model — the discrete "Page 3 ↔ Page 4" model in the request does not apply.
+- **Group ledger (`group-detail.component`) — GOALS 1/3/5 (present in working tree, verified) + GOAL 4 (added):**
+  - **Month-aware export:** `resolveExportRange('month')` and `openExportModal` derive from the shared
+    `effectiveDateRange()`/`timeScope` (the on-screen month/household-navigator), never the system month; export
+    filename + button label name the viewed period; group scope + all applied filter dimensions inherited.
+  - **Mutation preserves context:** `fetchExpenses` gained a `reload` mode — a create/edit/delete re-fetches
+    pages 1..currentPage in ONE authoritative request and replaces in place (newest row on top) instead of
+    collapsing to one page; **delete that empties the final page clamps `currentPage` to the previous valid
+    page**; month change resets to page 1; month/filter/sort preserved otherwise.
+  - **GOAL 4 race guard (added):** a monotonic `fetchSeq` — a fetch applies its `next`/`error` only if it is
+    still the latest request, so a late/out-of-order response can never overwrite fresher data.
+- **Dashboard personal list (`dashboard.component`) — GOAL 3/4 (added):** `refreshExpenseData` now reloads the
+  whole loaded window (pages 1..expensesPage in one request) instead of collapsing to page 1, preserving the
+  user's scrolled context on a mutation; a shared `myExpensesSeq` guard drops stale/out-of-order `/expenses/me`
+  responses (refresh + load-more) so a late reply can't overwrite or append onto a freshly reloaded list.
+- **Files:** `group-detail.component.ts` (+`fetchSeq` guard, on top of the working-tree month-aware-export/reload
+  work), `group-detail.component.html`, `group-detail.component.spec.ts` (+GOAL 4 race test);
+  `dashboard.component.ts` (window-reload + `myExpensesSeq` guard), `dashboard.component.spec.ts` (+window-reload
+  + race tests); this Progress Log.
+- **Provenance note:** the group-ledger month-aware-export + reload/clamp implementation (GOALS 1/3/5, ~130 LOC
+  + 300 LOC spec) was already present **uncommitted** in the working tree at the start of this task and was
+  preserved and built upon; this batch adds the GOAL 4 race/stale-response guards (group + dashboard) and the
+  dashboard mutation-window reload, then commits the whole batch.
+- **Reset rules (verified):** RESET→page 1 on month/date/filter/sort change; PRESERVE current window on ordinary
+  refresh/edit/add; DELETE preserves the page, else clamps to the previous valid page.
+- **Verification:** frontend 70 suites/589 tests (incl. 12 group pagination/export + 3 new race/window tests);
+  frontend build + lint clean; backend unchanged (772; finance golden gate PASS).
+- **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA/MIGRATION: NO. PACKAGES: NO. FINANCE:
+  UNCHANGED (golden gate PASS). E2EE/SEC-KI1: UNCHANGED. PRODUCTION: NO. COMMIT: (this iteration). PUSH: NO.
