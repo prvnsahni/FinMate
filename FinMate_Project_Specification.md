@@ -3688,3 +3688,45 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   PRODUCTION: NO (flag OFF; backend engine unbound). DOC-0 CONTRACT: NO. E2EE: PRESERVED (no server decrypt, no
   plaintext/keys to backend). FINANCE GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO.
   SCANNED-PDF/CC/BANK/ML/CLOUD-OCR/DOC-6-7: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-19 — DOC-3F: Receipt-capture UX integration (frontend, no package, no migration)
+
+- **Summary:** Connects the already-built DI pieces (DOC-1 mode select · DOC-3E browser OCR / pdfjs extraction ·
+  DOC-5 tags · DOC-4 review · `ConfirmedDocumentDraft` · `ExpenseDraftPrefill`) into a **scope-aware** receipt
+  workflow that funnels through the existing authoritative expense flow. **No new package, no migration, no
+  finance-calc change, no server-side decryption, no cloud OCR/CDN, no scanned-PDF, no CC/bank (DOC-6/7), no ML.**
+  The document flow NEVER creates an expense and never touches payer/participants/split/refund/settlement/balance/
+  currency.
+- **Scope (inspected, reused):** the create-expense modal already carries scope via inputs — personal (dashboard:
+  groupId=null, members=[]) vs group (group-detail: id/members/type). The receipt launcher lives **inside** that
+  already-scoped modal, so originating scope is preserved automatically with **no parent/routing change** and no
+  new scope model.
+- **Flow:** modal "Scan a receipt" (create-mode + flag only) → ReceiptCaptureComponent overlay → mode select →
+  TOTAL_ONLY: no extraction (normal flow + existing E2EE attachment) / EXTRACT_ITEMS: pick file → browser-local
+  extraction (image=DOC-3E Tesseract, text PDF=pdfjs, scanned=provider_unavailable) → DOC-4 review (edit items,
+  correct tags, reconciliation, explicit confirm) → ConfirmedDocumentDraft → mapDraftToExpensePrefill (header
+  fields only) → modal applyPrefill → user explicitly submits via the existing finance/E2EE path.
+- **Implemented (frontend, additive):** `documents/receipt-capture.component.ts/.html` (+spec) orchestrator
+  (emits confirmed/totalOnly/cancelled; no upload, no finance mutation); `create-expense-modal.component.ts/.html`
+  additive flag-gated launcher (button+overlay+handlers; finance logic unchanged; edit mode ignores it);
+  `environments/environment.ts`+`environment.prod.ts` additive `documentIntelligence` flag **default OFF** (mirrors
+  backend `document.intelligence`; hides entry when OFF; not enabled in prod); `document-mode-selector` stale copy
+  refreshed (+spec). Reuses `DocumentExtractionClientService`, `DocumentReviewComponent`, DOC-5 classify,
+  `mapDraftToExpensePrefill`, `applyPrefill` — no duplicated extraction logic.
+- **E2EE:** receipt bytes read only in-browser for OCR; no server decrypt, no keys/plaintext/OCR-text to backend;
+  final attachment continues through the existing client-side E2EE path (DOC-3F does not auto-attach or alter it).
+- **Taxonomy:** reuses DOC-5; tags advisory (INFERRED→USER_CONFIRMED on confirm; user adds stay USER_CORRECTED);
+  prefill carries no tags/category into finance; expense category not auto-changed.
+- **Browser OCR e2e:** added `frontend-e2e/src/receipt-ocr-assets.spec.ts` (assets served same-origin; no
+  external OCR/CDN request on load). **Not executed here** (no served stack/browsers); full UI-flow steps need the
+  flag ON + auth (manual/flag-enabled e2e) — documented, not fabricated.
+- **Security/adversarial (tests):** flag OFF hides entry + openReceiptCapture inert; TOTAL_ONLY never extracts;
+  EXTRACT_ITEMS invokes extraction; defensive no-extract outside ITEMIZED; provider_unavailable handled safely;
+  extraction error surfaced (no fabrication); explicit confirm required to emit draft; receipt confirm pre-fills
+  only header fields and creates NO expense; transactionType/splitMode untouched; edit mode inert.
+- **Verification:** frontend affected set 70 suites/574 tests green (full suite + build + lint below); backend
+  unchanged (772; finance golden gate PASS — no backend change).
+- **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA/MIGRATION: NO. PACKAGES INSTALLED: NO.
+  PRODUCTION: NO (documentIntelligence OFF; backend engine unbound). DOC-0 CONTRACT: NO. E2EE: PRESERVED. FINANCE
+  GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK/ML/CLOUD-OCR/DOC-6-7: NOT
+  STARTED. COMMIT: (this iteration). PUSH: NO.

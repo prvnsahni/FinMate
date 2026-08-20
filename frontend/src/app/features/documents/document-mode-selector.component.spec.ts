@@ -19,7 +19,7 @@ describe('DocumentModeSelectorComponent', () => {
     expect(comp.itemizedChosen()).toBe(false);
   });
 
-  it('surfaces the "not available yet" state for ITEMIZED (no fake success)', () => {
+  it('emits and flags ITEMIZED when chosen', () => {
     const emitted: DocumentProcessingMode[] = [];
     comp.modeSelected.subscribe((m) => emitted.push(m));
     comp.select('ITEMIZED');
@@ -27,15 +27,16 @@ describe('DocumentModeSelectorComponent', () => {
     expect(comp.itemizedChosen()).toBe(true);
   });
 
-  it('renders the explicit unavailable notice in the template when ITEMIZED is chosen', () => {
+  it('renders the on-device extraction notice (with scanned-PDF caveat) only when ITEMIZED is chosen', () => {
     const fixture = TestBed.createComponent(DocumentModeSelectorComponent);
     fixture.detectChanges();
     let text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).not.toMatch(/isn't available yet/i);
+    expect(text).not.toMatch(/on your device/i);
 
     fixture.componentInstance.select('ITEMIZED');
     fixture.detectChanges();
     text = (fixture.nativeElement as HTMLElement).textContent ?? '';
-    expect(text).toMatch(/isn't available yet/i);
+    expect(text).toMatch(/on your device/i);
+    expect(text).toMatch(/scanned PDFs aren't supported/i);
   });
 });

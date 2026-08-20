@@ -599,6 +599,30 @@ Small non-gated hardening of the existing offline image-OCR path — **no new pa
 
 ---
 
+# ADDENDUM — 2026-08-19 · DOC-3F receipt-capture UX integration (frontend, no package, no migration)
+
+**Goal:** connect the already-built DI pieces into a **scope-aware** receipt workflow that funnels through the existing authoritative expense flow. **No new package, no migration, no finance-calc change, no server-side decryption, no cloud OCR/CDN, no scanned-PDF, no CC/bank (DOC-6/7), no ML.** The document flow **never creates an expense** and never touches payer/participants/split/refund/settlement/balance/currency.
+
+**Scope model (inspected, reused — not reinvented):** the create-expense modal already carries scope via inputs — **personal** (dashboard: `[groupId]="null"`, `[members]="[]"`) vs **group** (group-detail: group id/members/type). DOC-3F puts the receipt launcher **inside** that already-scoped modal, so the originating scope is preserved automatically with **no parent/routing changes** and **no new scope model**.
+
+**Flow:** modal "Scan a receipt" (create-mode + flag only) → `ReceiptCaptureComponent` overlay → mode select → **TOTAL_ONLY: no extraction** (keep normal flow, existing E2EE attachment) / **EXTRACT_ITEMS**: pick file → browser-local extraction (`DocumentExtractionClientService`: image = DOC-3E Tesseract WASM, text PDF = pdfjs, scanned PDF = `provider_unavailable`) → DOC-4 `DocumentReviewComponent` (edit items, correct tags, reconciliation, **explicit confirm**) → `ConfirmedDocumentDraft` → `mapDraftToExpensePrefill` (header fields only) → modal `applyPrefill` → user **explicitly submits** through the existing finance/E2EE path.
+
+**Implemented (frontend, additive):**
+- `receipt-capture.component.ts/.html` — embeddable orchestrator; reuses the mode selector, extraction client, and review component; emits `confirmed`/`totalOnly`/`cancelled`; performs no upload, no finance mutation; extraction runs on the picked file's bytes **in the browser** (no keys/plaintext to backend).
+- `create-expense-modal.component.ts/.html` — **additive** flag-gated "Scan a receipt" button (create-mode only) + overlay + handlers (`onReceiptConfirmed` maps draft → existing `applyPrefill`). Finance logic (payer/split/refund/settlement/duplicate/encryption) **unchanged**; edit mode ignores it.
+- `environments/environment.ts` + `environment.prod.ts` — additive `documentIntelligence` flag, **default OFF** in both (mirrors the backend `document.intelligence`); when OFF the entry point is hidden (no active workflow). Not enabled in production.
+- `document-mode-selector` copy refreshed (the stale "extraction isn't available yet" notice → accurate on-device wording with the scanned-PDF caveat).
+
+**E2EE:** receipt bytes are read **only in the browser** for OCR; no server-side decryption, no keys/plaintext/OCR-text sent to the backend. The final attachment (if the user adds one) continues through the **existing client-side E2EE attachment path** — DOC-3F does not auto-attach or alter that path.
+
+**Taxonomy:** reuses DOC-5 (`DocumentReviewService.suggestTags`/`classifyLabel`); tags stay advisory (INFERRED→USER_CONFIRMED on confirm; user adds stay USER_CORRECTED); the prefill carries **no** tags/category into finance; expense category is not auto-changed.
+
+**Browser OCR e2e:** added `frontend-e2e/src/receipt-ocr-assets.spec.ts` asserting (a) worker/core/model served **same-origin** and (b) **no external OCR/CDN request** on load. **Not executed in this environment** (no served stack/browsers here). Full UI-flow steps (synthetic image → OCR → review → draft → explicit submit) require the flag ON + auth and are a manual/flag-enabled e2e run — **documented, not fabricated**.
+
+**Verification:** frontend affected set 70 suites/574 tests green (full suite + build + lint below); backend unchanged (772; finance golden gate PASS — no backend change). Migration/DB: none. Production/flag: `document.intelligence` and the frontend `documentIntelligence` stay OFF.
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

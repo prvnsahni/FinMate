@@ -27,6 +27,21 @@
       </svg>
     </button>
 
+    <!-- DOC-3F: receipt-capture overlay (create-mode, flag-gated). Reuses the existing
+         extraction/review pipeline; on confirm it only PRE-FILLS this scoped form. -->
+    @if (showReceiptCapture()) {
+      <div
+        data-testid="receipt-capture-overlay"
+        class="absolute inset-0 z-20 bg-white dark:bg-finmate-card rounded-none md:rounded-3xl p-6 md:p-8 overflow-y-auto"
+      >
+        <app-receipt-capture
+          (confirmed)="onReceiptConfirmed($event)"
+          (totalOnly)="closeReceiptCapture()"
+          (cancelled)="closeReceiptCapture()"
+        />
+      </div>
+    }
+
     <!-- Header (Sticky) -->
     <div class="flex-shrink-0 pr-8">
       <h2 class="text-2xl font-bold mb-1">
@@ -44,6 +59,24 @@
         }}
       </p>
     </div>
+
+    <!-- DOC-3F: additive receipt-capture entry point (create-mode + document.intelligence only). -->
+    @if (!expense && docIntelEnabled) {
+      <div class="flex-shrink-0 mb-4">
+        <button
+          type="button"
+          (click)="openReceiptCapture()"
+          data-testid="scan-receipt-button"
+          class="inline-flex items-center gap-2 rounded-xl border border-indigo-300 dark:border-indigo-500/40 px-3 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Scan a receipt
+        </button>
+      </div>
+    }
 
     <!-- Error Alert -->
     @if (errorMessage) {

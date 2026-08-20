@@ -53,6 +53,9 @@ import {
 import { CryptoRecoveryPanelComponent } from '../../../../shared/components/crypto-recovery-panel/crypto-recovery-panel.component';
 import { CryptoRecoveryQueueService } from '../../../../core/services/crypto-recovery-queue.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ReceiptCaptureComponent } from '../../../documents/receipt-capture.component';
+import { mapDraftToExpensePrefill } from '../../../documents/expense-draft-prefill';
+import { ConfirmedDocumentDraft } from '../../../documents/document-review.model';
 
 /**
  * One row of the edit-mode "Changes" summary. `key` matches the form control
@@ -111,6 +114,7 @@ export interface ExpenseDraftPrefill {
     CryptoRecoveryPanelComponent,
     CurrencyPipe,
     DatePipe,
+    ReceiptCaptureComponent,
   ],
   templateUrl: './create-expense-modal.component.html',
 })
@@ -255,6 +259,35 @@ export class CreateExpenseModalComponent implements OnChanges {
 
   private markChanged(): void {
     this.changeTick.update((n) => n + 1);
+  }
+
+  // --- DOC-3F: receipt-capture launcher (additive, create-mode, flag-gated) ----------
+  /** Mirrors the backend `document.intelligence` flag; default OFF (hides the entry point). */
+  readonly docIntelEnabled = environment.documentIntelligence === true;
+  /** Whether the in-modal receipt-capture overlay is open. */
+  readonly showReceiptCapture = signal(false);
+
+  /** Open receipt capture. Create-mode + flag only; scope (group/personal) is already this modal's. */
+  openReceiptCapture(): void {
+    if (this.isEditMode || !this.docIntelEnabled) return;
+    this.showReceiptCapture.set(true);
+  }
+
+  /**
+   * A receipt draft was explicitly confirmed. Map ONLY the safe header fields and seed the
+   * form via the existing create-mode pre-fill — never payer/split/refund/settlement, never
+   * an expense. The user still reviews and explicitly submits through the normal flow.
+   */
+  onReceiptConfirmed(draft: ConfirmedDocumentDraft): void {
+    if (this.isEditMode) return;
+    this.prefill = mapDraftToExpensePrefill(draft);
+    this.applyPrefill(this.prefill);
+    this.showReceiptCapture.set(false);
+  }
+
+  /** Total-only / cancelled — no extraction result is applied; return to the normal flow. */
+  closeReceiptCapture(): void {
+    this.showReceiptCapture.set(false);
   }
 
   /**
