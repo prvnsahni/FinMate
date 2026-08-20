@@ -86,6 +86,20 @@ interface ExpenseSnapshot {
   attachmentKeys: string[];
 }
 
+/**
+ * Additive create-mode pre-fill (DOC-3E). A document-review `ConfirmedDocumentDraft` is
+ * mapped to this by `mapDraftToExpensePrefill` and passed via the `prefill` input to seed
+ * ONLY these non-finance-calculation fields. It never sets payer, split, refund, or
+ * settlement — the user still chooses those and must explicitly submit. Ignored in edit mode.
+ */
+export interface ExpenseDraftPrefill {
+  title?: string | null;
+  amountTotal?: number | null;
+  currency?: string | null;
+  category?: string | null;
+  expenseDate?: string | null;
+}
+
 @Component({
   selector: 'app-create-expense-modal',
   standalone: true,
@@ -130,6 +144,12 @@ export class CreateExpenseModalComponent implements OnChanges {
   @Input() members: GroupMember[] = [];
   @Input() expense: GroupExpense | null = null; // To support edit mode
   @Input() defaultCategory: string = CATEGORY_OPTIONS[0].value;
+  /**
+   * Optional create-mode pre-fill from a confirmed document/receipt draft (DOC-3E).
+   * Seeds only non-finance-calculation fields (title/amount/currency/category/date);
+   * never payer/split/refund/settlement. Ignored in edit mode. The user still submits.
+   */
+  @Input() prefill: ExpenseDraftPrefill | null = null;
 
   @Output() expenseCreated = new EventEmitter<void>();
   @Output() closeModalEvent = new EventEmitter<void>();
@@ -235,6 +255,28 @@ export class CreateExpenseModalComponent implements OnChanges {
 
   private markChanged(): void {
     this.changeTick.update((n) => n + 1);
+  }
+
+  /**
+   * Seed create-mode form fields from a confirmed document draft (DOC-3E). Patches ONLY the
+   * provided, non-empty non-finance-calculation fields — payer, split, refund, and
+   * settlement are never touched, so the user's explicit choices and submit still govern.
+   */
+  private applyPrefill(prefill: ExpenseDraftPrefill): void {
+    const patch: Partial<{
+      title: string;
+      amountTotal: number | null;
+      currency: string;
+      category: string;
+      expenseDate: string;
+    }> = {};
+    if (prefill.title != null && prefill.title !== '') patch.title = prefill.title;
+    if (prefill.amountTotal != null) patch.amountTotal = prefill.amountTotal;
+    if (prefill.currency != null && prefill.currency !== '') patch.currency = prefill.currency;
+    if (prefill.category != null && prefill.category !== '') patch.category = prefill.category;
+    if (prefill.expenseDate != null && prefill.expenseDate !== '') patch.expenseDate = prefill.expenseDate;
+    this.expenseForm.patchValue(patch);
+    this.markChanged();
   }
 
   get isEditMode(): boolean {
@@ -813,6 +855,12 @@ export class CreateExpenseModalComponent implements OnChanges {
 
     if (!this.expense && changes['defaultCategory'] && this.defaultCategory) {
       this.expenseForm.patchValue({ category: this.defaultCategory });
+    }
+
+    // DOC-3E: additive create-mode pre-fill from a confirmed receipt draft. Seeds only
+    // non-finance-calculation fields; never payer/split/refund/settlement. Edit mode ignores it.
+    if (!this.expense && changes['prefill'] && this.prefill) {
+      this.applyPrefill(this.prefill);
     }
 
     if (changes['expense'] && this.expense) {

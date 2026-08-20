@@ -17,7 +17,7 @@
   @if (mode() === 'ITEMIZED') {
     <div class="space-y-3">
       <label class="block text-sm">
-        <span class="text-gray-500 dark:text-gray-400">Choose a document (PDF works best; images aren't OCR'd yet)</span>
+        <span class="text-gray-500 dark:text-gray-400">Choose a document (PDF or a receipt photo — OCR runs privately on your device)</span>
         <input type="file" accept="application/pdf,image/*" (change)="onFile($event)" class="block mt-1 text-sm" />
       </label>
 

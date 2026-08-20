@@ -576,6 +576,29 @@ Small non-gated hardening of the existing offline image-OCR path — **no new pa
 
 ---
 
+# ADDENDUM — 2026-08-19 · DOC-3E browser-local receipt OCR + E2EE-safe expense-draft seam (frontend, no package, no migration)
+
+**Why browser-local (privacy boundary):** FinMate attachments are **client-side E2EE** — the create-expense modal generates a per-file key, encrypts the bytes, and wraps the key under the scope key before upload (`create-expense-modal.component.ts`); the `Attachment` entity stores only `encryptedFileKey` + ciphertext. **The backend never sees plaintext receipt bytes.** Therefore the DOC-3/DOC-6 **backend** OCR (Node `LocalTesseractRecognizer`) **cannot** OCR an E2EE receipt without either server-side decryption or shipping plaintext to the server — both forbidden. DOC-3E runs OCR **entirely in the browser** so receipt bytes never leave the device.
+
+**Pipeline (all client-side up to the existing finance flow):** image bytes → browser Tesseract WASM → OCR text → `parseReceiptText` → DOC-5 `classifyLabel` advisory tags → DOC-4 review (edit items/tags, reconciliation, explicit confirm) → `ConfirmedDocumentDraft` → **additive** expense-modal pre-fill → existing finance/E2EE logic (user still submits).
+
+**Implemented (frontend):**
+- `services/browser-ocr.service.ts` — `BrowserOcrService`: lazy `import('tesseract.js')` (code-split), `createWorker('eng', LSTM_ONLY, { workerPath, corePath, langPath })` all **same-origin `/assets`**, `gzip:false`, `cacheMethod:'none'`, **no logger**. The jsdelivr CDN fallback is unreachable (paths are always set local); a missing/failed asset **fails closed** (throws → `provider_unavailable`), never a network fetch. Loader is injectable for tests.
+- `services/document-extraction-client.service.ts` — the image branch now calls local OCR (was `provider_unavailable`): `ok`/`partial_extraction` with header+items, `no_text_detected` on empty, `provider_unavailable` on failure. Injectable `useOcr()` seam; the service holds **no HttpClient** — receipt bytes never go to the backend.
+- `frontend/project.json` — build `assets` copy tesseract worker (`tesseract.js/dist/worker.min.js`), core WASM+loaders (`tesseract.js-core/*.wasm`, `*.wasm.js`) and the **single committed** `eng.traineddata` (from `backend/src/assets/tessdata`) to `/assets/tesseract` + `/assets/tessdata` (same-origin, **no CDN**, no duplicate binary in git).
+- `expense-draft-prefill.ts` — pure `mapDraftToExpensePrefill(draft)` → `{ title, amountTotal, currency, expenseDate }` only. **No** payer/split/refund/settlement/category/tags cross into finance.
+- `create-expense-modal.component.ts` — **additive** `@Input() prefill: ExpenseDraftPrefill` + create-mode-only `applyPrefill()` that patches only those non-finance fields (mirrors the edit-mode patch). Edit mode ignores it; finance logic (payer/split/refund/settlement/duplicate/encryption) **unchanged**.
+
+**Asset:** reuses the **same** DOC-6 `eng.traineddata` (tessdata_fast 4.1.0, SHA-256 `7d4322bd…`, Apache-2.0) — no new asset, no new package (tesseract.js@7 already installed).
+
+**Backend OCR unchanged & retained:** the Node `LocalTesseractRecognizer` / `LocalDocumentExtractionEngine` remain as an **available, replaceable adapter** behind the unchanged DOC-0 contract; they are **not** bound to E2EE-attachment processing (the stub stays the active engine; `document.intelligence` stays OFF). E2EE receipt OCR uses the browser path.
+
+**Boundaries:** no server-side decryption; no plaintext bytes/keys/OCR text to backend; DOC-0 contract unchanged; DOC-5 taxonomy reused (tags advisory: INFERRED→USER_CONFIRMED on confirm, user adds stay USER_CORRECTED; never touch amount/payer/split/refund/settlement/currency/balance); `TOTAL_ONLY` never OCRs; FIN-002 candidate-only, golden gate green; no migration; flag OFF.
+
+**Verification:** frontend 69 suites/564 tests in the affected set green (full suite in progress); backend unchanged (772). **Browser WASM OCR cannot run in the Jest VM** — unit tests use an injected fake recognizer; a real end-to-end browser OCR run requires a browser and is a manual/e2e check (not fabricated here).
+
+---
+
 ## Reconciliation
 
 - ✅ **READ-ONLY** — no code, schema, migration, entity, DTO, API/OpenAPI, package, provider, or production change.

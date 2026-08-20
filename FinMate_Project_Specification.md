@@ -3648,3 +3648,43 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   NO. PACKAGES INSTALLED: NO. PRODUCTION: NO (flag OFF, engine unbound). DOC-0 CONTRACT: NO. FINANCE GOLDEN GATE:
   PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO. SCANNED-PDF/CC/BANK/ML/CLOUD-OCR: NOT STARTED. COMMIT: (this
   iteration). PUSH: NO.
+
+## 2026-08-19 — DOC-3E: Browser-local receipt OCR + E2EE-safe expense-draft seam (frontend, no package, no migration)
+
+- **Summary:** E2EE-preserving receipt OCR. Because attachments are **client-side E2EE** (the modal encrypts
+  bytes + wraps the file key before upload; the backend never sees plaintext receipts), the DOC-3/DOC-6 **backend**
+  OCR cannot process E2EE receipts. DOC-3E runs OCR **entirely in the browser** (Tesseract WASM) so bytes never
+  leave the device, then feeds the existing DOC-5 tags → DOC-4 review → confirm → an **additive** expense-modal
+  pre-fill. **No new package** (tesseract.js@7 already installed), **no migration, no finance-calc change, no
+  server-side decryption, no cloud OCR/VLM, no scanned-PDF, no DOC-6/7, no ML.**
+- **Privacy boundary (verified):** `Attachment` stores `encryptedFileKey` (wrapped under scope key) + ciphertext;
+  `create-expense-modal` generates a per-file key, encrypts bytes, `wrapKey`s it client-side. Server never sees
+  plaintext receipt bytes → backend OCR of E2EE receipts is off the table; browser OCR is the only E2EE-safe path.
+- **Implemented (frontend):** `services/browser-ocr.service.ts` (lazy/code-split tesseract; same-origin local
+  worker/core/lang paths; `gzip:false`, `cacheMethod:'none'`, no logger; fail-closed → provider_unavailable; no
+  CDN); `services/document-extraction-client.service.ts` image branch now OCRs locally (was provider_unavailable),
+  injectable `useOcr()` seam, no HttpClient (bytes never leave browser); `frontend/project.json` build assets copy
+  tesseract worker/core + the **single committed** eng.traineddata (from backend/src/assets/tessdata) to
+  `/assets` (no CDN, no git duplicate); `expense-draft-prefill.ts` pure mapper (title/amount/currency/date only);
+  `create-expense-modal.component.ts` additive `@Input() prefill` + create-mode `applyPrefill()` (never
+  payer/split/refund/settlement); intake HTML copy refreshed.
+- **Backend OCR retained, unchanged:** Node `LocalTesseractRecognizer`/`LocalDocumentExtractionEngine` remain an
+  available replaceable adapter behind the unchanged DOC-0 contract; **not** bound to E2EE-attachment processing
+  (stub stays active; `document.intelligence` stays OFF). No backend code changed.
+- **Files:** `frontend/src/app/features/documents/services/browser-ocr.service.ts` (+spec),
+  `.../services/document-extraction-client.service.ts` (+spec), `.../documents/expense-draft-prefill.ts` (+spec),
+  `.../documents/document-intake-page.component.html`, `frontend/project.json`,
+  `frontend/.../groups/components/create-expense-modal/create-expense-modal.component.ts` (+spec),
+  `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md`, `FinMate_Project_Specification.md`.
+- **Security/adversarial (tests):** OCR runs locally with a fake loader; local-only worker/core/lang paths (no
+  http/CDN); fail-closed on missing assets (no network fallback); OCR receives ONLY bytes+mime (no keys/tokens);
+  OCR text/bytes not logged; TOTAL_ONLY never OCRs (file input gated to ITEMIZED); no_text_detected on empty;
+  extraction/tags cannot mutate finance; tags advisory + user-correction preserved; explicit confirm required;
+  prefill maps only non-finance fields and never flips refund/split; client service holds no HttpClient.
+- **Verification:** frontend affected set 69 suites/564 tests green (full suite + build + lint below); backend
+  unchanged (772; finance golden gate PASS — no backend change). **Browser WASM OCR cannot run in Jest** — real
+  end-to-end OCR requires a browser (manual/e2e), NOT fabricated.
+- **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA/MIGRATION: NO. PACKAGES INSTALLED: NO.
+  PRODUCTION: NO (flag OFF; backend engine unbound). DOC-0 CONTRACT: NO. E2EE: PRESERVED (no server decrypt, no
+  plaintext/keys to backend). FINANCE GOLDEN GATE: PASS. FROZEN SRS/LEDGER/ADR/MATRIX/ROADMAP: NO.
+  SCANNED-PDF/CC/BANK/ML/CLOUD-OCR/DOC-6-7: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

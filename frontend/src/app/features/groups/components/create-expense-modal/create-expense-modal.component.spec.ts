@@ -1,4 +1,5 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { SimpleChange } from '@angular/core';
 import { CreateExpenseModalComponent } from './create-expense-modal.component';
 import { ExpensesService } from '../../services/expenses.service';
 import { FriendsService } from '../../../../features/friends/services/friends.service';
@@ -1079,6 +1080,54 @@ describe('CreateExpenseModalComponent', () => {
       expect(
         el.querySelector('[data-testid="household-contribution-amount"]'),
       ).toBeTruthy();
+    });
+  });
+
+  // --- DOC-3E: additive receipt-draft pre-fill (create-mode only) -------------
+  describe('DOC-3E receipt prefill', () => {
+    const prefill = {
+      title: 'Corner Grocery',
+      amountTotal: 42.5,
+      currency: 'INR',
+      expenseDate: '2026-08-01',
+    };
+
+    it('seeds only non-finance fields in create mode; never refund/split', () => {
+      component.expense = null; // create mode
+      component.prefill = prefill;
+      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+
+      const v = component.expenseForm.getRawValue();
+      expect(v.title).toBe('Corner Grocery');
+      expect(v.amountTotal).toBe(42.5); // exact — never re-derived/altered
+      expect(v.currency).toBe('INR');
+      expect(v.expenseDate).toBe('2026-08-01');
+      // The prefill NEVER makes it a refund or changes the split mode (payer/participant
+      // defaults are the modal's own existing create-mode behaviour, not the prefill).
+      expect(v.transactionType).toBe('expense');
+      expect(component.splitMode).toBe('equal');
+    });
+
+    it('is IGNORED in edit mode (existing expense wins; no silent overwrite)', () => {
+      component.expense = { id: 'exp-1' } as any; // edit mode (truthy)
+      component.prefill = prefill;
+      // Only the prefill change fires; the edit-mode branch (changes['expense']) does not.
+      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+
+      // Guard `!this.expense` blocks the prefill — the title stays at its default.
+      expect(component.expenseForm.getRawValue().title).toBe('');
+    });
+
+    it('patches only provided fields (undefined fields leave form defaults intact)', () => {
+      component.expense = null;
+      component.prefill = { amountTotal: 10 };
+      const originalDate = component.expenseForm.getRawValue().expenseDate;
+      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+
+      const v = component.expenseForm.getRawValue();
+      expect(v.amountTotal).toBe(10);
+      expect(v.title).toBe(''); // not provided → unchanged
+      expect(v.expenseDate).toBe(originalDate); // not provided → unchanged
     });
   });
 });
