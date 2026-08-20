@@ -637,6 +637,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   pageSize = signal<number>(20);
   totalExpenses = signal<number>(0);
   /**
+   * Monotonic id for ledger fetches. Every `fetchExpenses` call bumps it and
+   * captures the value; a response is only applied when it is still the latest
+   * request. This drops a late/out-of-order response (e.g. a slow page-3 reply
+   * arriving after a newer reload/replace) so it can never overwrite fresher
+   * data — the request-sequence equivalent of switchMap for this subscribe.
+   */
+  private fetchSeq = 0;
+  /**
    * Scope-wide monetary totals per currency from the backend, independent of
    * pagination — so the summary tiles show the true totals for the whole
    * filtered ledger, not just the pages loaded so far. Null until the first
@@ -1309,6 +1317,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     this.isMonthLocked.set(this.isPastEditWindow(`${y}-${m}-01`));
 
     if (g?.id) {
+      // A new month is a fresh list — start at page 1 so the replace fetch loads
+      // the new month's first page, never a stale deep page from the old month.
+      this.currentPage.set(1);
       this.fetchExpenses(g.id);
       this.fetchCarryForward(g.id);
       // Balances feed the "This Month" card + breakdown, whose period is the
@@ -1337,11 +1348,24 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
    * ledgerError) — it no longer touches the page-wide isLoading/showSkeleton
    * gate, which now only covers the brief window until getGroup() resolves.
    *
-   * `append`: false (default) replaces the list — used for the initial load
-   * and whenever filters/group/page reset to 1. true appends the fetched
-   * page to the existing list — used by infinite scroll (loadMoreExpenses).
+   * `mode`:
+   *  - 'replace' (default) fetches exactly the current page and replaces the
+   *    list — initial load, retry, and filter/group changes (which reset
+   *    currentPage to 1 first).
+   *  - 'append' fetches the next page and appends it — infinite scroll.
+   *  - 'reload' re-fetches every page the user has already scrolled through
+   *    (1..currentPage) in one authoritative request and replaces the list in
+   *    place. Used after a create/update/delete so the whole visible list stays
+   *    consistent with the backend instead of collapsing to a single page or
+   *    dropping the newest rows; it also clamps currentPage down when a delete
+   *    empties the final page (see below), so the user is never stranded past
+   *    the end of the ledger. Month/filter/sort are untouched throughout.
    */
-  fetchExpenses(groupId: string, append = false) {
+  fetchExpenses(
+    groupId: string,
+    mode: 'replace' | 'append' | 'reload' = 'replace',
+  ) {
+    const append = mode === 'append';
     if (append) {
       this.isLoadingMoreExpenses.set(true);
     } else {
@@ -1352,10 +1376,21 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     // unified filter's resolved range. Either way, the other dimensions apply.
     const { from, to } = this.effectiveDateRange();
 
+    // 'reload' collapses pages 1..currentPage into a single request (page 1,
+    // limit = loadedPages × pageSize) so a mutation refreshes the entire
+    // scrolled-through list at once; 'append'/'replace' fetch one page as before.
+    const loadedPages = Math.max(1, this.currentPage());
+    const requestPage = mode === 'reload' ? 1 : this.currentPage();
+    const requestLimit =
+      mode === 'reload' ? loadedPages * this.pageSize() : this.pageSize();
+
+    // Race/stale-response protection: only the latest fetch may apply its result.
+    const seq = ++this.fetchSeq;
+
     this.expensesService
       .getExpenses(groupId, {
-        page: this.currentPage(),
-        limit: this.pageSize(),
+        page: requestPage,
+        limit: requestLimit,
         startDate: from,
         endDate: to,
         ...this.appliedDimensionOptions(),
@@ -1364,6 +1399,8 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       })
       .subscribe({
         next: (res) => {
+          // A newer fetch superseded this one — drop the stale response.
+          if (seq !== this.fetchSeq) return;
           const mappedExpenses = (res.data as any[]).map((expense) => {
             const mappedSplits = (expense.splits || []).map((split: any) => {
               let email = split.participantUserEmail;
@@ -1411,7 +1448,20 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           } else {
             this.expenses.set(mappedExpenses);
           }
-          this.totalExpenses.set(res.meta?.totalItems || 0);
+          const total = res.meta?.totalItems || 0;
+          this.totalExpenses.set(total);
+          // After a reload, clamp currentPage to the last page that still holds
+          // data so a delete that emptied the final page moves the user to the
+          // previous valid page rather than stranding them past the end.
+          if (mode === 'reload') {
+            const lastValidPage = Math.max(
+              1,
+              Math.ceil(total / this.pageSize()),
+            );
+            if (this.currentPage() > lastValidPage) {
+              this.currentPage.set(lastValidPage);
+            }
+          }
           // Authoritative totals for the whole filtered scope — same on every
           // page, so setting on append is harmless and keeps them fresh.
           this.ledgerTotals.set(
@@ -1429,6 +1479,8 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.startDecryption();
         },
         error: () => {
+          // A newer fetch superseded this one — its failure is no longer relevant.
+          if (seq !== this.fetchSeq) return;
           this.isLoadingExpenses.set(false);
           this.isLoadingMoreExpenses.set(false);
           this.ledgerError.set(true);
@@ -1447,7 +1499,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     const g = this.group();
     if (!g?.id) return;
     this.currentPage.update((v) => v + 1);
-    this.fetchExpenses(g.id, true);
+    this.fetchExpenses(g.id, 'append');
   }
 
   /** Scroll handler for the bounded expense-list container — triggers the
@@ -1806,7 +1858,11 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   onExpenseCreated() {
     const g = this.group();
     if (g?.id) {
-      this.fetchExpenses(g.id);
+      // 'reload' keeps the user on the pages they've scrolled through: it
+      // refreshes the whole loaded list in place (newest row lands at the top
+      // naturally) instead of collapsing it to the current page, and clamps the
+      // page down if a delete emptied the final one. Month/filter/sort are kept.
+      this.fetchExpenses(g.id, 'reload');
       this.fetchBalances(g.id);
       this.fetchHistoryLogs(g.id);
       this.fetchDeletedExpenses(g.id);
@@ -1860,13 +1916,12 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   openExportModal(): void {
     const g = this.group();
     if (g?.groupType === 'household') {
-      // Household exports the current calendar month (via 'month' mode), matching
-      // the ledger's month-driven behavior.
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-      this.exportFromDate.set(`${month}-01`);
-      this.exportToDate.set(`${month}-${this.lastDayOfMonth(month)}`);
+      // Household exports the month currently on screen (via 'month' mode) —
+      // effectiveDateRange follows the household month navigator, so exporting
+      // while viewing July uses July, not the system month.
+      const { from, to } = this.effectiveDateRange();
+      this.exportFromDate.set(from ?? '');
+      this.exportToDate.set(to ?? '');
       this.exportRangeMode.set('month');
     } else {
       // Non-household seeds the currently applied filter's date range so the
@@ -1888,19 +1943,24 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   }
 
   /** Resolve the effective [from, to] for the export based on the chosen mode:
-   *  'month' = current calendar month; 'custom' = the picked date inputs. */
+   *  'month' = the period currently being viewed (household month navigation and
+   *  every date preset flow through the shared effectiveDateRange, so the export
+   *  always matches the on-screen month — never the system month); 'custom' = the
+   *  picked date inputs. */
   private resolveExportRange(): { from: string; to: string } {
     if (this.exportRangeMode() === 'month') {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-      return {
-        from: `${month}-01`,
-        to: `${month}-${this.lastDayOfMonth(month)}`,
-      };
+      const { from, to } = this.effectiveDateRange();
+      return { from: from ?? '', to: to ?? '' };
     }
     return { from: this.exportFromDate(), to: this.exportToDate() };
   }
+
+  /**
+   * Human label for the period the export will cover (e.g. "July 2026"), derived
+   * from the same shared TimeScope that drives the ledger — so the export button
+   * and the modal's period toggle always name the month/range on screen.
+   */
+  exportPeriodLabel = computed(() => this.timeScope().label);
 
   /**
    * Export the group ledger for the chosen date range to Excel.
@@ -1945,11 +2005,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         minAmount: dims.minAmount,
         maxAmount: dims.maxAmount,
       };
-      const datePart = new Date().toISOString().slice(0, 10);
       await this.expenseExportService.exportExpenses(
         filter,
         'xlsx',
-        `ledger-${this.sanitizeForFilename(g.name)}-${datePart}`,
+        this.buildExportFilenameBase(g.name, from, to),
       );
       this.isExporting.set(false);
       this.showExportModal.set(false);
@@ -1976,6 +2035,40 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       .trim()
       .replace(/[. ]+$/, '');
     return cleaned || 'group';
+  }
+
+  /**
+   * Download filename base for a ledger export, naming the selected period so the
+   * file is self-describing: a single whole calendar month → `<group>-July-2026`;
+   * any other explicit range → `<group>-<from>_to_<to>`; the whole ledger (both
+   * bounds blank, i.e. All Time) → `<group>-all-time`.
+   */
+  private buildExportFilenameBase(
+    groupName: string,
+    from: string,
+    to: string,
+  ): string {
+    const name = this.sanitizeForFilename(groupName);
+    if (!from && !to) return `${name}-all-time`;
+    if (from && to && this.isWholeCalendarMonth(from, to)) {
+      // formatDateRangeLabel yields "July 2026" for a single month.
+      const label = formatDateRangeLabel('this_month', from, to).replace(
+        /\s+/g,
+        '-',
+      );
+      return `${name}-${label}`;
+    }
+    return `${name}-${from || 'start'}_to_${to || 'end'}`;
+  }
+
+  /** True when [from, to] spans exactly one whole calendar month (first day
+   *  through its real last day, e.g. 2026-07-01 → 2026-07-31). */
+  private isWholeCalendarMonth(from: string, to: string): boolean {
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    if (!fy || !fm || !fd || !ty || !tm || !td) return false;
+    if (fy !== ty || fm !== tm || fd !== 1) return false;
+    return td === new Date(fy, fm, 0).getDate();
   }
 
   onImportFileSelected(event: Event) {

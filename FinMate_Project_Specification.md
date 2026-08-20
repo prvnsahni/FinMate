@@ -1135,6 +1135,27 @@ To reconcile zero-knowledge encryption with intelligent AI features, FinMate adh
 - **Next Actions:**
   - Immediate next step
 
+### 2026-08-20
+
+- **Summary:** Fixed month-aware group ledger export and pagination/list consistency after add/edit/delete. Frontend-only, no finance/API/E2EE changes.
+- **Changes Made:**
+  - Export now derives its period from the shared `effectiveDateRange()`/`timeScope()` (which follows the household month navigator and every date preset) instead of `new Date()`. `resolveExportRange()` (month mode) and `openExportModal()` (household seed) both use the on-screen period, so viewing July exports July, not the system month.
+  - Export button and modal period toggle now label the selected period (`Export July 2026`); the download filename base names the period too (`<group>-July-2026`, or `<from>_to_<to>`, or `<group>-all-time`).
+  - `fetchExpenses()` gained a `'reload'` mode that re-fetches every scrolled-through page (1..currentPage) in one authoritative request and replaces the list in place; it clamps `currentPage` to the last valid page when a delete empties the final page. Mutation refreshes (`onExpenseCreated`, covering create/edit/delete/restore/import) now use `'reload'` instead of a bare replace that collapsed the infinite-scroll list to a single page and dropped the newest rows.
+  - `changeMonth()` resets `currentPage` to 1 so month navigation loads the new month's first page rather than a stale deep page.
+  - Root causes: (export) `new Date()` used as the export period, ignoring `currentTimelineMonth`; (pagination) mutation refresh called `fetchExpenses` with `append=false` but never reset `currentPage`, so it re-requested only the current page and `.set()` the whole accumulated list to that slice.
+- **Artifacts Updated:**
+  - `frontend/src/app/features/groups/pages/group-detail/group-detail.component.ts`
+  - `frontend/src/app/features/groups/pages/group-detail/group-detail.component.html`
+  - `frontend/src/app/features/groups/pages/group-detail/group-detail.component.spec.ts` (13 new regression tests: 7 export, 6 pagination)
+  - `FinMate_Project_Specification.md`
+- **Decisions:**
+  - Kept the backend/API unchanged — the listing endpoint already supports month filtering, uncapped `limit`, deterministic sort (id tie-breaker), and `meta.totalItems`, so a single contiguous reload of the loaded pages is correct.
+  - Modeled the task's page-based semantics onto the app's actual infinite-scroll accumulator: "stay on page N" = keep pages 1..N loaded and fresh; "last-page delete → previous page" = clamp `currentPage`.
+- **Verification:** frontend `nx test` (586 passed) + `nx build` green; backend `nx test` (772 passed) incl. finance-golden parity specs green.
+- **Next Actions:**
+  - None.
+
 ### 2026-06-20
 
 - **Summary:** Fixed backend test harness regressions in the expenses controller and groups service specs.

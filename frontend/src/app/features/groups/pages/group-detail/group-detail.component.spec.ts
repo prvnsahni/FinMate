@@ -1247,4 +1247,304 @@ describe('GroupDetailComponent', () => {
       expect(rows[1].textContent).toContain('-$75.00');
     });
   });
+
+  // ── Issue 1: month-aware export (viewed period, never the system month) ──────
+  describe('month-aware export', () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    let exportSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      // Household group → the month navigator (currentTimelineMonth) is active,
+      // so effectiveDateRange follows the on-screen month.
+      component.group.set(mockGroup as any);
+      exportSpy = jest
+        .spyOn((component as any).expenseExportService, 'exportExpenses')
+        .mockResolvedValue(undefined);
+    });
+
+    /** Drive the household month navigator to a specific calendar month. */
+    const viewMonth = (year: number, month1: number) =>
+      component.currentTimelineMonth.set(new Date(year, month1 - 1, 1));
+
+    it('exports the current month when viewing the current month', async () => {
+      const now = new Date();
+      viewMonth(now.getFullYear(), now.getMonth() + 1);
+
+      component.openExportModal();
+      await component.exportLedger();
+
+      const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+      const lastDay = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+      ).getDate();
+      expect(exportSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: `${month}-01`,
+          to: `${month}-${pad(lastDay)}`,
+        }),
+        'xlsx',
+        expect.any(String),
+      );
+    });
+
+    it('exports the previous month (July 2026) when the user navigated back', async () => {
+      viewMonth(2026, 7);
+
+      component.openExportModal();
+      await component.exportLedger();
+
+      expect(exportSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-07-01', to: '2026-07-31' }),
+        'xlsx',
+        expect.stringContaining('July-2026'),
+      );
+    });
+
+    it('exports an older month (June 2026) when viewing it', async () => {
+      viewMonth(2026, 6);
+
+      component.openExportModal();
+      await component.exportLedger();
+
+      expect(exportSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-06-01', to: '2026-06-30' }),
+        'xlsx',
+        expect.stringContaining('June-2026'),
+      );
+    });
+
+    it('updates the export period when the viewed month changes', async () => {
+      viewMonth(2026, 7);
+      component.openExportModal();
+      await component.exportLedger();
+      expect(exportSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ from: '2026-07-01', to: '2026-07-31' }),
+        'xlsx',
+        expect.anything(),
+      );
+
+      viewMonth(2026, 6);
+      component.openExportModal();
+      await component.exportLedger();
+      expect(exportSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ from: '2026-06-01', to: '2026-06-30' }),
+        'xlsx',
+        expect.anything(),
+      );
+    });
+
+    it('never silently falls back to the system current month', async () => {
+      // A month guaranteed to differ from the real system month (one year back).
+      const now = new Date();
+      const target = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+      viewMonth(target.getFullYear(), target.getMonth() + 1);
+
+      component.openExportModal();
+      await component.exportLedger();
+
+      const call = exportSpy.mock.calls.at(-1)![0];
+      const systemMonthFrom = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+      const targetMonth = `${target.getFullYear()}-${pad(target.getMonth() + 1)}`;
+      expect(call.from).not.toBe(systemMonthFrom);
+      expect(call.from).toBe(`${targetMonth}-01`);
+    });
+
+    it('preserves the group scope in the export filter', async () => {
+      viewMonth(2026, 7);
+      component.openExportModal();
+      await component.exportLedger();
+
+      const call = exportSpy.mock.calls.at(-1)![0];
+      expect(call.groupId).toBe('group-1');
+      expect(call.type).toBe('group');
+    });
+
+    it('exportPeriodLabel names the viewed month', () => {
+      viewMonth(2026, 7);
+      expect(component.exportPeriodLabel()).toBe('July 2026');
+    });
+  });
+
+  // ── Issue 2: pagination stays consistent after add/update/delete ─────────────
+  describe('pagination consistency after mutations (infinite scroll)', () => {
+    /** Backend-accurate paging mock over a mutable master list. */
+    const makeLedgerMock = (master: () => any[], total: () => number) =>
+      jest.fn().mockImplementation((_gid: string, opts: any) => {
+        const page = opts.page ?? 1;
+        const limit = opts.limit ?? 20;
+        const start = (page - 1) * limit;
+        return of({
+          data: master().slice(start, start + limit),
+          meta: { totalItems: total() },
+        });
+      });
+
+    const item = (n: number) => ({
+      id: `exp-${n}`,
+      title: `E${n}`,
+      amountTotal: n,
+    });
+
+    const lastCallOpts = () =>
+      (mockExpensesService.getExpenses as jest.Mock).mock.calls.at(-1)![1];
+
+    beforeEach(() => {
+      // Small pages keep the fixtures readable (2 items per page).
+      component.pageSize.set(2);
+    });
+
+    it('after ADD on page 3, keeps the user on page 3 and reloads pages 1..3 in one request', () => {
+      let master = [1, 2, 3, 4, 5, 6].map(item);
+      mockExpensesService.getExpenses = makeLedgerMock(
+        () => master,
+        () => master.length,
+      ) as any;
+
+      fixture.detectChanges(); // page 1
+      component.loadMoreExpenses(); // page 2
+      component.loadMoreExpenses(); // page 3
+      expect(component.currentPage()).toBe(3);
+      expect(component.expenses().length).toBe(6);
+
+      // Add: the newest expense lands at the top of the ledger (date desc).
+      master = [item(0), ...master]; // total 7
+      const callsBefore = (mockExpensesService.getExpenses as jest.Mock).mock
+        .calls.length;
+      component.onExpenseCreated();
+
+      // Exactly one authoritative reload for pages 1..3 (page 1, limit 3×2).
+      expect((mockExpensesService.getExpenses as jest.Mock).mock.calls.length).toBe(
+        callsBefore + 1,
+      );
+      expect(lastCallOpts()).toEqual(
+        expect.objectContaining({ page: 1, limit: 6 }),
+      );
+
+      // Stays on page 3 (not bounced to page 1); newest is present; no stale
+      // page mixing and no duplicates; total count refreshed.
+      expect(component.currentPage()).toBe(3);
+      expect(component.expenses().map((e) => e.id)).toEqual([
+        'exp-0',
+        'exp-1',
+        'exp-2',
+        'exp-3',
+        'exp-4',
+        'exp-5',
+      ]);
+      expect(new Set(component.expenses().map((e) => e.id)).size).toBe(6);
+      expect(component.totalExpenses()).toBe(7);
+    });
+
+    it('after UPDATE, stays on the same page and preserves month/filter/sort in the reload', () => {
+      const master = [1, 2, 3, 4].map(item);
+      mockExpensesService.getExpenses = makeLedgerMock(
+        () => master,
+        () => master.length,
+      ) as any;
+
+      fixture.detectChanges(); // default load, page 1
+
+      // Switch to a non-default month + sort through the drawer, then scroll.
+      component.filterStore.openDraft();
+      component.filterStore.setDraftPreset('last_month');
+      component.filterStore.setDraftSort('amount', 'asc');
+      component.applyFilterDrawer();
+      fixture.detectChanges(); // applied() effect resets to page 1 + refetches
+      expect(component.currentPage()).toBe(1);
+
+      component.loadMoreExpenses(); // page 2
+      expect(component.currentPage()).toBe(2);
+
+      (mockExpensesService.getExpenses as jest.Mock).mockClear();
+      component.onExpenseCreated(); // an edit refreshes via the same path
+
+      expect(component.currentPage()).toBe(2);
+      expect(lastCallOpts()).toEqual(
+        expect.objectContaining({
+          page: 1,
+          limit: 4,
+          sortBy: 'amount',
+          sortOrder: 'asc',
+        }),
+      );
+    });
+
+    it('after deleting a middle item, stays on the page with a refreshed, de-duplicated list', () => {
+      let master = [1, 2, 3, 4, 5, 6].map(item);
+      mockExpensesService.getExpenses = makeLedgerMock(
+        () => master,
+        () => master.length,
+      ) as any;
+      mockExpensesService.deleteExpense = jest
+        .fn()
+        .mockReturnValue(of(undefined)) as any;
+
+      fixture.detectChanges();
+      component.loadMoreExpenses();
+      component.loadMoreExpenses(); // page 3, 6 items
+      expect(component.currentPage()).toBe(3);
+
+      master = master.filter((e) => e.id !== 'exp-3'); // remove a middle item
+      component.deleteExpenseId.set('exp-3');
+      component.onDeleteConfirmed();
+
+      expect(component.currentPage()).toBe(3);
+      const ids = component.expenses().map((e) => e.id);
+      expect(ids).toEqual(['exp-1', 'exp-2', 'exp-4', 'exp-5', 'exp-6']);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(component.totalExpenses()).toBe(5);
+    });
+
+    it('after deleting the final item on the final page, moves to the previous valid page', () => {
+      let master = [1, 2, 3, 4, 5].map(item); // 3 pages (2,2,1)
+      mockExpensesService.getExpenses = makeLedgerMock(
+        () => master,
+        () => master.length,
+      ) as any;
+      mockExpensesService.deleteExpense = jest
+        .fn()
+        .mockReturnValue(of(undefined)) as any;
+
+      fixture.detectChanges(); // page 1 [1,2]
+      component.loadMoreExpenses(); // page 2 [3,4]
+      component.loadMoreExpenses(); // page 3 [5]
+      expect(component.currentPage()).toBe(3);
+      expect(component.expenses().length).toBe(5);
+
+      master = master.filter((e) => e.id !== 'exp-5'); // 4 items → 2 pages
+      component.deleteExpenseId.set('exp-5');
+      component.onDeleteConfirmed();
+
+      // Page 3 became invalid → clamped to the new last valid page (2).
+      expect(component.currentPage()).toBe(2);
+      expect(component.expenses().map((e) => e.id)).toEqual([
+        'exp-1',
+        'exp-2',
+        'exp-3',
+        'exp-4',
+      ]);
+      expect(component.totalExpenses()).toBe(4);
+    });
+
+    it('resets to page 1 when the household month navigator changes month', () => {
+      const master = [1, 2, 3, 4].map(item);
+      mockExpensesService.getExpenses = makeLedgerMock(
+        () => master,
+        () => master.length,
+      ) as any;
+
+      fixture.detectChanges();
+      component.loadMoreExpenses(); // page 2
+      expect(component.currentPage()).toBe(2);
+
+      component.changeMonth(-1); // navigate to the previous month
+
+      expect(component.currentPage()).toBe(1);
+      expect(lastCallOpts()).toEqual(
+        expect.objectContaining({ page: 1, limit: 2 }),
+      );
+    });
+  });
 });

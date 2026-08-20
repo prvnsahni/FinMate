@@ -917,7 +917,7 @@
                     ></path>
                   </svg>
                   <span>{{
-                    isExporting() ? 'Exporting…' : 'Export Excel'
+                    isExporting() ? 'Exporting…' : 'Export ' + exportPeriodLabel()
                   }}</span>
                 </button>
               }
@@ -2784,7 +2784,7 @@
     >
       <h3 class="text-lg font-bold text-secondary mb-1">Export Ledger</h3>
       <p class="text-xs text-muted mb-5">
-        Choose the period to export. Defaults to this month.
+        Choose the period to export. Defaults to the period you're viewing.
       </p>
 
       <!-- Range mode toggle -->
@@ -2799,7 +2799,7 @@
               : 'flex-1 text-muted px-3 py-1.5 rounded-lg hover:text-secondary transition-colors'
           "
         >
-          This Month
+          {{ exportPeriodLabel() }}
         </button>
         <button
           type="button"
