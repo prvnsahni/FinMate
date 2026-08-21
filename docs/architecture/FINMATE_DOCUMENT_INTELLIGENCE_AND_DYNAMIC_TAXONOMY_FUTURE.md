@@ -517,3 +517,25 @@ GLOBAL / PERSONAL / GROUP tag definitions
 `C0 (this addendum — decisions)` → **`C1` custom-tag data model** (additive `custom_tag` table with E2EE name + scope; `tagScope` column on `expense_tags`; migration additive/reversible) → **`C2`** personal-then-group custom-tag CRUD (IDOR-scoped) → **`C3`** assignment/filter/analytics integration (unified `tagIds` resolver) → **`C4`** client-side classifier suggestion of custom tags → **`C5`** governance (request/candidate/promotion — gated on `[COUNSEL]`). **C1 requires a separate explicit authorisation and must not begin until the C0.2 E2EE-name decision is treated as fixed (it determines the schema).**
 
 **Status of this addendum:** *Approved architectural direction for future custom-tag work. Authorises no implementation. TAG-BATCH-C1 not started.*
+
+---
+
+## §C1 — Implementation note: custom-tag data model (TAG-BATCH-C1, 2026-08-22)
+
+**Nature:** additive implementation record. It does **not** rewrite §C0. **DATA-MODEL ONLY** — no CRUD, API, UI, filter, analytics, export, classifier, or governance was implemented (those remain C2–C5). No frozen document changed; no finance column, group-key/versionId architecture, or E2EE boundary changed.
+
+**Entity/table added — `custom_tags`** (`shared/data-models/src/lib/custom-tag.entity.ts`): the custom-tag DEFINITION layer, personal + group scope. Fields: `id (uuid)`, `scopeType ('personal'|'group')`, `ownerUser?` (personal, `ON DELETE CASCADE`; null for group), `group?` (group, `ON DELETE CASCADE`; null for personal), `createdByUser?` (creator provenance, `ON DELETE SET NULL`), `groupKeyVersion?` (group E2EE key-version, `ON DELETE SET NULL`), `encryptedName (text)`, `status ('active'|'deprecated')`, `version (@VersionColumn)`, `createdAt/updatedAt/deletedAt` (soft-delete). Modelled on the existing `note`/`expense` E2EE entities.
+
+**Encryption representation:** `encrypted_name` stores ONLY the client-produced `iv:ciphertext` (same format as `expense.title`/`note.title`) — **no new crypto primitive**; the existing client-side E2EE + key-wrapping stack is reused at write time (personal → master key; group → per-group AES key + `groupKeyVersion`). The server **never decrypts** it (plain `text` column, **no `ValueTransformer`**). There is **NO** `name`/`plaintextName`/`normalizedKey`/`nameHash`/`nameSearch` companion — de-duplication stays **client-side** per §C0.2.
+
+**`expense_tags` change (assignment layer, unchanged otherwise):** ONE additive column `tag_scope VARCHAR(20) NOT NULL DEFAULT 'global'`. Existing canonical assignments are correctly `'global'` with **no backfill**; canonical filtering/semantics and the existing `unique(expense_id, tag_id)` + `tag_id` index are **unchanged**. Per the §C0.7 unified namespace, `tag_id` holds a canonical slug when `tag_scope='global'` or a `custom_tags.id` UUID when `'personal'`/`'group'` — **no `customTagId` column and no second assignment/filter table.**
+
+**Constraints / indexes:** DB `CHECK chk_custom_tags_scope` enforces the scope invariant (personal ⇒ owner set/group null; group ⇒ group set/owner null). Indexes: `idx_custom_tags_owner (owner_user_id)`, `idx_custom_tags_group (group_id)`, `idx_custom_tags_scope_status (scope_type, status)` — sized for the future C2/C3 "list a user's/group's active tags" access. No new `expense_tags` index (the existing `tag_id` index already serves custom filtering).
+
+**Migration:** `backend/src/migrations/1720200000000-AddCustomTags.ts` — additive + reversible; `up()` creates `custom_tags` + adds `expense_tags.tag_scope`; `down()` drops the column then the table. No `INSERT`/`UPDATE`/backfill, no financial column, no E2EE data transformed. Registered in `migrations/index.ts`, `ormconfig.ts`, and `expenses.module` (`forFeature`, entity registration only — no service). **Not executed against any live DB in this batch** (runs on boot via `migrationsRun`).
+
+**Intentionally NOT implemented (C2+):** custom-tag create/list/rename/delete/merge APIs, assignment of custom tags, filters, analytics, export, classifier suggestions, OCR integration, taxonomy governance/promotion, and any UI.
+
+**Security reconciliation (verified, no STOP):** no server-side decryption; no plaintext custom-tag names; no keys/tokens stored (only a key-*version* reference); scope CHECK prevents cross-scope combos; no global taxonomy write path (canonical stays code-curated); no finance mutation (golden gate GREEN); no SEC-KI1/group-key rotation change; existing canonical `expense_tags` coexist safely.
+
+**Verification:** data-models 4 suites/26; backend 77 suites/803 (finance golden gate GREEN); backend + frontend builds clean; lint 0 errors.

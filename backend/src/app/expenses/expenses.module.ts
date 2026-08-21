@@ -4,6 +4,7 @@ import {
   AuditLog,
   Attachment,
   AttachmentVersion,
+  CustomTag,
   EncryptedExpenseKey,
   Expense,
   ExpenseSplit,
@@ -34,6 +35,7 @@ import {
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      CustomTag,
       Expense,
       ExpenseSplit,
       ExpensePayment,

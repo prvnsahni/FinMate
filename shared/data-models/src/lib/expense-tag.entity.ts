@@ -44,9 +44,24 @@ export class ExpenseTag {
   @ManyToOne(() => Expense, { nullable: false, onDelete: 'CASCADE' })
   expense!: Expense;
 
-  /** Stable canonical taxonomy id (e.g. 'milk'), NOT the display name. */
+  /**
+   * Stable tag id in the ONE unified namespace (TAG-BATCH-C0/C1): a canonical
+   * slug (e.g. 'milk') when `tagScope = 'global'`, or a `custom_tags.id` UUID
+   * when `tagScope` is 'personal'/'group'. NOT the display name. Resolved against
+   * the code taxonomy (global) or the `custom_tags` table (custom) — there is no
+   * second filter param and no second assignment table.
+   */
   @Column({ type: 'varchar', length: 64 })
   tagId!: string;
+
+  /**
+   * TAG-BATCH-C1 — which definition source `tagId` points at. Defaults to
+   * `global` so every existing (canonical) assignment stays valid with no
+   * backfill and canonical filtering is unchanged. `personal`/`group` mark a
+   * custom-tag assignment whose `tagId` is a `custom_tags.id`.
+   */
+  @Column({ type: 'varchar', length: 20, default: 'global' })
+  tagScope!: 'global' | 'personal' | 'group';
 
   /**
    * DOC-5 authority. `INFERRED` = engine suggestion; `USER_CORRECTED` = the

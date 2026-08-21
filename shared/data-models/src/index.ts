@@ -8,6 +8,7 @@ export * from './lib/direct-ledger-entry.entity';
 export * from './lib/expense-version.entity';
 export * from './lib/expense-split-version.entity';
 export * from './lib/expense-tag.entity';
+export * from './lib/custom-tag.entity';
 export * from './lib/recurring-expense.entity';
 export * from './lib/recurring-expense-split.entity';
 export * from './lib/contact.entity';

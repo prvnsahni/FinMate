@@ -4002,3 +4002,41 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Confirmation:** CODE CHANGED: NO. SCHEMA/MIGRATION: NO. PACKAGES: NO. PRODUCTION: NO. FINANCE/E2EE/SEC-KI1/
   group-key/recovery: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO (unchanged). STOP CONDITIONS: none hit.
   TAG-BATCH-C1: NOT STARTED. COMMIT: (this iteration, docs-only). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C1: custom-tag data model (personal + group, E2EE names)
+
+- **Summary:** Implemented ONLY the persistent **data model** for personal + group custom tags with **E2EE names**,
+  per the C0 decisions. **DATA-MODEL ONLY** — no CRUD/API/UI/filter/analytics/export/classifier/governance
+  (C2–C5). No new crypto primitive, no server-side decryption, no finance change, no group-key/SEC-KI1 change,
+  no second taxonomy/assignment table, no frozen-doc change. Reuses the existing `note`/`expense` E2EE pattern.
+- **STEP 1 (verified):** the established E2EE pattern is a plain `text` column holding client `iv:ciphertext`
+  (e.g. `note.title`, `expense.title`) + a `groupKeyVersion` reference for group scope; the `EncryptedEnvelope`
+  primitive is unused and the `encryptionTransformer` is server-side (2FA/avatar) — deliberately NOT used for
+  the E2EE name. Custom-tag names reuse the client-side pattern exactly → no new primitive.
+- **Entity added — `custom_tags`** (`shared/data-models/src/lib/custom-tag.entity.ts`): `id`, `scopeType`
+  (personal|group), `ownerUser?` (personal, CASCADE), `group?` (group, CASCADE), `createdByUser?` (provenance,
+  SET NULL), `groupKeyVersion?` (group E2EE key-version, SET NULL), `encryptedName (text)`, `status`
+  (active|deprecated), `@VersionColumn`, `createdAt/updatedAt/deletedAt`. DB `CHECK` enforces the scope invariant
+  (personal ⇒ owner set/group null; group ⇒ group set/owner null). **No plaintext/normalized/hash/search name
+  companion; no transformer** → server never decrypts; client-side dedup (C0.2).
+- **`expense_tags` change:** ONE additive column `tag_scope VARCHAR(20) NOT NULL DEFAULT 'global'`. Existing
+  canonical rows are correctly `global` (no backfill); the unified `tagIds` namespace holds a canonical slug
+  (global) or a `custom_tags.id` UUID (personal/group) — **no `customTagId` column, no second table.** Existing
+  `unique(expense_id, tag_id)` + `tag_id` index unchanged; canonical assignments/filtering untouched.
+- **Migration:** `1720200000000-AddCustomTags` — additive + reversible (`up` creates `custom_tags` + adds
+  `expense_tags.tag_scope`; `down` drops the column then the table); no INSERT/UPDATE/backfill, no financial
+  column, no E2EE data transformed. FK deletes safe: owner/group → CASCADE (definition only); creator/key-version
+  → SET NULL; expense→expense_tags cascade unchanged. Indexes: owner, group, (scope_type,status). Registered in
+  `migrations/index.ts`, `ormconfig.ts`, `expenses.module` (entity registration only, no service). **Not executed
+  against a live DB.**
+- **Files:** data-models — `custom-tag.entity.ts` (+ spec), `expense-tag.entity.ts` (+`tagScope`), `index.ts`.
+  backend — migration + spec, `ormconfig.ts`, `expenses.module.ts`, `migrations/index.ts`. Docs — §C1 note in the
+  FUTURE doc + this Progress Log.
+- **Verification:** data-models 4 suites/26; backend 77 suites/803 (finance golden gate GREEN); backend +
+  frontend builds clean; lint 0 errors (data-models, backend).
+- **Confirmation:** CODE CHANGED: YES (data model). SCHEMA CHANGED: YES (additive `custom_tags` + `expense_tags.
+  tag_scope`). MIGRATION CREATED: YES. MIGRATION EXECUTED: NO (runs on boot via `migrationsRun`). PACKAGES: NO.
+  PRODUCTION: NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (reused, no
+  new primitive, no server decryption). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit.
+  NOT IMPLEMENTED: custom-tag CRUD/API/UI/filter/analytics/classifier/governance (C2–C5). TAG-BATCH-C2: NOT
+  STARTED. COMMIT: (this iteration). PUSH: NO.
