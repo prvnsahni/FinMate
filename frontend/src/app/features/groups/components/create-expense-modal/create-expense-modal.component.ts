@@ -95,12 +95,30 @@ interface ExpenseSnapshot {
  * ONLY these non-finance-calculation fields. It never sets payer, split, refund, or
  * settlement — the user still chooses those and must explicitly submit. Ignored in edit mode.
  */
+/**
+ * TAG-BATCH-A — a confirmed DOC-5 taxonomy tag carried from a document draft into
+ * create-mode. Descriptive metadata only (never a finance field); the stable
+ * `tagId` references the shared canonical taxonomy. Server materializes ancestors
+ * and de-dups on persist.
+ */
+export interface ExpensePrefillTag {
+  tagId: string;
+  authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+  source: 'rule_based' | 'user';
+}
+
 export interface ExpenseDraftPrefill {
   title?: string | null;
   amountTotal?: number | null;
   currency?: string | null;
   category?: string | null;
   expenseDate?: string | null;
+  /**
+   * Confirmed DOC-5 tags from the receipt draft (TAG-BATCH-A). Advisory Zone-2
+   * metadata; carried through to the create payload only, never on edit, and
+   * never a finance value.
+   */
+  tags?: ExpensePrefillTag[];
 }
 
 @Component({
@@ -154,6 +172,14 @@ export class CreateExpenseModalComponent implements OnChanges {
    * never payer/split/refund/settlement. Ignored in edit mode. The user still submits.
    */
   @Input() prefill: ExpenseDraftPrefill | null = null;
+
+  /**
+   * TAG-BATCH-A — confirmed DOC-5 tags seeded from a receipt draft, sent with the
+   * create payload only. Advisory Zone-2 metadata; never affects payer/split/
+   * amount. Stays empty for manual creation and total-only receipts, and is never
+   * sent on edit.
+   */
+  private prefillTags: ExpensePrefillTag[] = [];
 
   @Output() expenseCreated = new EventEmitter<void>();
   @Output() closeModalEvent = new EventEmitter<void>();
@@ -309,6 +335,10 @@ export class CreateExpenseModalComponent implements OnChanges {
     if (prefill.category != null && prefill.category !== '') patch.category = prefill.category;
     if (prefill.expenseDate != null && prefill.expenseDate !== '') patch.expenseDate = prefill.expenseDate;
     this.expenseForm.patchValue(patch);
+    // TAG-BATCH-A: retain the confirmed tags to attach on the explicit submit
+    // (create only). Never a form/finance field — carried alongside, not into,
+    // the expense values.
+    this.prefillTags = prefill.tags ?? [];
     this.markChanged();
   }
 
@@ -1558,6 +1588,12 @@ export class CreateExpenseModalComponent implements OnChanges {
             ...existingAttachments,
             ...encryptedAttachments,
           ],
+          // TAG-BATCH-A: attach confirmed DOC-5 tags on CREATE only. Never on
+          // edit (`this.expense` set) — an edit must not reclassify. Plaintext
+          // Zone-2 metadata: passes through encryptPayload() unencrypted.
+          ...(!this.expense && this.prefillTags.length
+            ? { tags: this.prefillTags }
+            : {}),
         };
 
         // ExpensesService.createExpense()/updateExpense() do their own,

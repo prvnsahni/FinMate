@@ -15,6 +15,7 @@ import {
   ExpenseSplit,
   ExpensePayment,
   ExpenseSplitVersion,
+  ExpenseTag,
   ExpenseVersion,
   Group,
   GroupKeyVersion,
@@ -46,6 +47,7 @@ describe('ExpensesService', () => {
   let attachmentVersionRepository: jest.Mocked<Repository<AttachmentVersion>>;
   let receiptVersionRepository: jest.Mocked<Repository<ReceiptVersion>>;
   let entityManagerMock: { create: jest.Mock; save: jest.Mock };
+  let expenseTagRepositoryMock: { create: jest.Mock; save: jest.Mock };
 
   // Freeze the clock so the month-lock edit window (ExpenseEditPolicyService)
   // is deterministic. The fixtures below use fixed dates written against a
@@ -166,6 +168,11 @@ describe('ExpensesService', () => {
       create: jest.fn((data) => data),
     };
 
+    const mockExpenseTagRepository = {
+      save: jest.fn(async (data) => data),
+      create: jest.fn((data) => data),
+    };
+
     const mockExpensePaymentRepository = {
       softDelete: jest.fn(async () => ({ affected: 0 })),
       create: jest.fn((data) => data),
@@ -179,6 +186,7 @@ describe('ExpensesService', () => {
         if (entity === Expense) return mockExpenseRepository;
         if (entity === ExpenseSplit) return mockSplitRepository;
         if (entity === ExpensePayment) return mockExpensePaymentRepository;
+        if (entity === ExpenseTag) return mockExpenseTagRepository;
         if (entity === Group) return mockGroupRepository;
         if (entity === GroupMember) return mockGroupMemberRepository;
         if (entity === User) return mockUserRepository;
@@ -288,6 +296,7 @@ describe('ExpensesService', () => {
     );
     receiptVersionRepository = module.get(getRepositoryToken(ReceiptVersion));
     entityManagerMock = mockEntityManager;
+    expenseTagRepositoryMock = mockExpenseTagRepository;
   });
 
   it('should be defined', () => {
@@ -2693,6 +2702,195 @@ describe('ExpensesService', () => {
       expect(result).toEqual([
         { category: 'Utilities', amount: 600, currency: 'INR' },
       ]);
+    });
+  });
+
+  // ── TAG-BATCH-A — confirmed expense tag persistence ──────────────────────────
+  describe('confirmed expense tag persistence (TAG-BATCH-A)', () => {
+    const groupMember = {
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+      user: { id: 'caller-id' },
+    } as any;
+
+    const baseGroupDto = {
+      title: 'cipher:title',
+      amountTotal: 100,
+      currency: 'USD',
+      category: 'Food',
+      paidByUserId: 'caller-id',
+      groupId: 'group-id',
+      expenseDate: '2026-07-10',
+      groupKeyVersionId: 'v1-id',
+      splits: [
+        { participantUserId: 'caller-id', splitType: 'equal', shareValue: 1 },
+      ],
+    };
+
+    /** Prime the proven group create happy-path (mirrors the G-ROT create test). */
+    const primeHappyPath = () => {
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(groupMember);
+      groupMemberRepository.find.mockResolvedValue([groupMember]);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'USD',
+        isArchived: false,
+      } as any);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'v1-id',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+      expenseRepository.save.mockImplementation(async (data: any) => ({
+        ...data,
+        id: 'exp-1',
+      }));
+      expenseRepository.findOne.mockResolvedValue({
+        id: 'exp-1',
+        title: 'cipher:title',
+        amountTotal: 100,
+        currency: 'USD',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByGroupMember: { id: 'membership-id', user: { id: 'caller-id' } },
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'v1-id', version: 1 },
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+    };
+
+    it('persists NO tag when the payload has none (total-only / manual create)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', { ...baseGroupDto } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('persists confirmed tags with materialized ancestors and provenance', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user', confidence: 0.9 },
+        ],
+      } as any);
+
+      expect(expenseTagRepositoryMock.save).toHaveBeenCalledTimes(1);
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      const byId = new Map(savedRows.map((r) => [r.tagId, r]));
+      // milk → dairy → grocery → food all persisted (queryable at every level).
+      expect([...byId.keys()].sort()).toEqual(['dairy', 'food', 'grocery', 'milk']);
+      expect(byId.get('milk')).toMatchObject({
+        authority: 'USER_CONFIRMED',
+        source: 'user',
+        confidence: 0.9,
+        taxonomyVersion: 1,
+        createdByUser: { id: 'caller-id' },
+        expense: expect.objectContaining({ id: 'exp-1' }),
+      });
+      // Derived ancestors are INFERRED/rule_based.
+      expect(byId.get('food')).toMatchObject({ authority: 'INFERRED', source: 'rule_based' });
+    });
+
+    it('keeps USER_CONFIRMED over a later inferred ancestor (no silent downgrade)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'grocery', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'milk', authority: 'INFERRED', source: 'rule_based' },
+        ],
+      } as any);
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      const grocery = savedRows.find((r) => r.tagId === 'grocery');
+      expect(grocery.authority).toBe('USER_CONFIRMED');
+    });
+
+    it('drops deprecated/unknown tags and persists nothing when none are valid', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'misc', authority: 'USER_CONFIRMED' },
+          { tagId: 'does-not-exist', authority: 'INFERRED' },
+        ],
+      } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('never lets tags alter the expense financial fields', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'INFERRED' }],
+      } as any);
+      const createdExpense = (expenseRepository.create as jest.Mock).mock.calls[0][0];
+      expect(createdExpense).toEqual(
+        expect.objectContaining({ amountTotal: 100, currency: 'USD' }),
+      );
+      expect(createdExpense).not.toHaveProperty('tags');
+      expect(createdExpense).not.toHaveProperty('tagId');
+    });
+
+    it('attaches tags only to the caller-owned expense (no cross-user assignment)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'INFERRED' }],
+      } as any);
+      const createdExpense = (expenseRepository.create as jest.Mock).mock.calls[0][0];
+      expect(createdExpense.ownerUser).toEqual({ id: 'caller-id' });
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      expect(savedRows.every((r) => r.createdByUser?.id === 'caller-id')).toBe(true);
+      expect(savedRows.every((r) => r.expense?.id === 'exp-1')).toBe(true);
+    });
+
+    it('does not create tag assignments on an ordinary edit', async () => {
+      const expense = {
+        id: 'exp-1',
+        version: 1,
+        title: 'cipher:old',
+        description: null,
+        amountTotal: 100,
+        currency: 'USD',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByUser: { id: 'caller-id' },
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'v1-id', version: 1 },
+      } as any;
+      expenseRepository.findOne.mockResolvedValue(expense);
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(groupMember);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'USD',
+        isArchived: false,
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'v1-id',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+
+      await service.updateExpense('caller-id', 'exp-1', {
+        version: 1,
+        title: 'cipher:new',
+      } as any);
+
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
     });
   });
 });

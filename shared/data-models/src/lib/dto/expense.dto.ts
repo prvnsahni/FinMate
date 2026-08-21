@@ -6,14 +6,47 @@ import {
   IsEnum,
   IsNumber,
   Min,
+  Max,
   IsUUID,
   IsArray,
+  ArrayMaxSize,
   ValidateNested,
   IsInt,
   IsDateString,
   IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+
+/**
+ * TAG-BATCH-A — one confirmed DOC-5 taxonomy tag sent with an expense-create
+ * payload. Descriptive Zone-2 metadata only; carries a stable canonical `tagId`
+ * (never free text) and its DOC-5 authority/provenance. Ancestors and de-dup are
+ * resolved server-side by `materializeConfirmedExpenseTags`, so the client may
+ * send just the tags it confirmed.
+ */
+export class ConfirmedExpenseTagDto {
+  @IsString()
+  @IsNotEmpty({ message: 'tagId is required' })
+  @MaxLength(64, { message: 'tagId cannot exceed 64 characters' })
+  tagId!: string;
+
+  @IsIn(['INFERRED', 'USER_CORRECTED', 'USER_CONFIRMED'], {
+    message: 'authority must be INFERRED, USER_CORRECTED, or USER_CONFIRMED',
+  })
+  authority!: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+
+  @IsIn(['rule_based', 'user', 'model', 'population'], {
+    message: 'source must be rule_based, user, model, or population',
+  })
+  @IsOptional()
+  source?: 'rule_based' | 'user' | 'model' | 'population';
+
+  @IsNumber({}, { message: 'confidence must be a number' })
+  @Min(0, { message: 'confidence cannot be negative' })
+  @Max(1, { message: 'confidence cannot exceed 1' })
+  @IsOptional()
+  confidence?: number;
+}
 
 /** Per-participant wrapped content key for direct_shared expenses. */
 export class WrappedContentKeyDto {
@@ -173,6 +206,21 @@ export class CreateExpenseDto {
   @Type(() => EncryptedAttachmentDto)
   @IsOptional()
   encryptedAttachments?: EncryptedAttachmentDto[];
+
+  /**
+   * TAG-BATCH-A — confirmed DOC-5 taxonomy tags to persist against the new
+   * expense (descriptive Zone-2 metadata only; never touches finance). Present
+   * only when the expense was created from a confirmed document/receipt draft or
+   * explicit user selection. Absent for total-only receipts and manual creation.
+   * Deliberately NOT on `UpdateExpenseDto`: an ordinary edit must not
+   * reclassify or destroy confirmed tags.
+   */
+  @IsArray({ message: 'tags must be an array' })
+  @ArrayMaxSize(200, { message: 'tags cannot exceed 200 entries' })
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmedExpenseTagDto)
+  @IsOptional()
+  tags?: ConfirmedExpenseTagDto[];
 }
 
 export class UpdateExpenseDto {

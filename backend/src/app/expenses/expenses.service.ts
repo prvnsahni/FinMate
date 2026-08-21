@@ -15,11 +15,13 @@ import {
   ExpenseSplit,
   ExpensePayment,
   ExpenseSplitVersion,
+  ExpenseTag,
   ExpenseVersion,
   Group,
   GroupKeyVersion,
   GroupMember,
   GroupMemberContribution,
+  materializeConfirmedExpenseTags,
   ReceiptVersion,
   User,
 } from '@finmate/data-models';
@@ -1262,6 +1264,11 @@ export class ExpensesService {
         }
       }
 
+      // TAG-BATCH-A — persist confirmed DOC-5 tags (descriptive Zone-2 metadata
+      // only; never touches any financial column). No-op for total-only receipts
+      // and manual creation (no `dto.tags`).
+      await this.persistConfirmedExpenseTags(manager, expense, dto, ownerUser);
+
       await this.recordExpenseVersion(manager, expense, 'created', ownerUser);
       await this.recordSplitVersions(
         manager,
@@ -1309,6 +1316,60 @@ export class ExpensesService {
     });
 
     return this.mapExpenseResponse(saved);
+  }
+
+  /**
+   * TAG-BATCH-A — persist the confirmed DOC-5 taxonomy tags for a freshly
+   * created expense. Purely descriptive, server-readable Zone-2 metadata (the
+   * same classification as `expenses.category`): it NEVER reads or writes any
+   * financial field, so FIN-002 is unaffected.
+   *
+   * Privacy: the classifier input is ONLY the stable canonical `tagId` +
+   * authority the client already confirmed — never `title`/`description`, never
+   * keys. The server does not decrypt anything and does not classify from free
+   * text here; it only validates each id against the shared canonical taxonomy,
+   * materializes active ancestors (milk → dairy → grocery → food), de-dups by
+   * id keeping the highest authority (a `USER_CONFIRMED` tag is never downgraded
+   * by a derived `INFERRED` one), and drops unknown/deprecated ids.
+   *
+   * Runs inside the create transaction so tags commit atomically with the
+   * expense; the `ON DELETE CASCADE` FK removes them if the expense is hard
+   * deleted. No historical backfill — only tags supplied for THIS creation.
+   */
+  private async persistConfirmedExpenseTags(
+    manager: EntityManager,
+    expense: Expense,
+    dto: CreateExpenseDto,
+    createdByUser: User,
+  ): Promise<void> {
+    if (!dto.tags?.length) {
+      return;
+    }
+    const materialized = materializeConfirmedExpenseTags(
+      dto.tags.map((t) => ({
+        tagId: t.tagId,
+        authority: t.authority,
+        source: t.source,
+        confidence: t.confidence ?? null,
+      })),
+    );
+    if (materialized.length === 0) {
+      return;
+    }
+    const repo = manager.getRepository(ExpenseTag);
+    await repo.save(
+      materialized.map((m) =>
+        repo.create({
+          expense,
+          tagId: m.tagId,
+          authority: m.authority,
+          source: m.source,
+          confidence: m.confidence,
+          taxonomyVersion: m.taxonomyVersion,
+          createdByUser,
+        }),
+      ),
+    );
   }
 
   /**

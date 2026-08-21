@@ -3787,3 +3787,46 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   frontend build + lint clean; backend unchanged (772; finance golden gate PASS).
 - **Confirmation:** CODE CHANGED: YES (frontend only). DATABASE/SCHEMA/MIGRATION: NO. PACKAGES: NO. FINANCE:
   UNCHANGED (golden gate PASS). E2EE/SEC-KI1: UNCHANGED. PRODUCTION: NO. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-21 — TAG-BATCH-A: persist confirmed expense tags (additive `expense_tag`, no finance/E2EE change)
+
+- **Summary:** Made confirmed DOC-5 taxonomy tags **persist** against an expense as a real server-readable
+  **Zone-2** metadata dimension (same classification as the existing plaintext `expenses.category`), so tags can
+  later support filtering/search/analytics (Batch B — **not** built here). Purely additive and descriptive:
+  **no finance-calc change, no payer/split/refund/settlement/balance change, no E2EE change, no SEC-KI1/group-key
+  change, no taxonomy DB table, no line items, no custom tags, no ML/OCR, no historical backfill.**
+- **Architecture:** dedicated, explicitly expense-scoped `expense_tag` assignment (not polymorphic yet):
+  `Expense → expense_tag → canonical taxonomy tagId`. The shared code-seeded `CANONICAL_TAXONOMY` stays the
+  source of truth (no taxonomy table). Each row preserves `tagId`, `authority`, `source`, `confidence`,
+  `taxonomyVersion`, `createdByUser`.
+- **Provenance/authority (DOC-5):** `INFERRED` < `USER_CORRECTED` < `USER_CONFIRMED`; a `USER_CONFIRMED`
+  assignment is never silently downgraded by a later `INFERRED` one (rank-based de-dup, order-independent).
+- **Ancestors:** persisted via the existing bounded expansion — a confirmed `milk` materializes
+  `milk → dairy → grocery → food` rows (derived ancestors are `INFERRED`/`rule_based`), so the expense is
+  queryable at every level with a flat index (no recursive DB query).
+- **Privacy:** the server never decrypts `title`/`description` and never classifies from free text — the
+  materializer's only input is the stable `tagId` + authority the client already confirmed. Tag ids/assignments
+  are plaintext Zone-2 (like `category`); they pass through `encryptPayload()` unencrypted and touch no key
+  material. **Data Classification Matrix unchanged** (tags reuse the existing `category` Zone-2 class).
+- **DOC-4 integration:** the confirmed `ConfirmedDocumentDraft` is the sole source — `mapDraftToExpensePrefill`
+  now also carries the confirmed tags (de-duped) into the create-mode prefill; the modal attaches them to the
+  create payload **on explicit submit, create-only** (never on edit → no silent reclassify). Total-only receipts
+  and manual creation persist zero tags. No expense is auto-created.
+- **DB:** additive migration `1720100000000-AddExpenseTags` — creates `expense_tags` only; `expense_id` FK
+  `ON DELETE CASCADE` (hard delete of a draft removes its tags; posted expenses soft-delete so rows survive +
+  restore), `created_by_user_id` `ON DELETE SET NULL`, unique `(expense_id, tag_id)` + `tag_id` index.
+  **Reversible, transaction-safe, no backfill, no existing column touched.**
+- **Files:** data-models — `expense-tag.entity.ts` (new), `taxonomy/expense-tag-materializer.ts` (new, pure),
+  `taxonomy/classify.ts` (+`getActiveCanonicalTag`/`expandActiveWithAncestors`), `dto/expense.dto.ts`
+  (+`ConfirmedExpenseTagDto`, `tags?` on create only), `index.ts`. backend — `create-expense.dto.ts` (+`tags?`),
+  `expenses.service.ts` (+`persistConfirmedExpenseTags` inside the create tx), `expenses.module.ts`,
+  `ormconfig.ts`, migration + `migrations/index.ts`, `expenses.service.spec.ts` (+7). frontend —
+  `expense-draft-prefill.ts` (+tag collection), `create-expense-modal.component.ts` (prefill tags → payload),
+  `expense-draft-prefill.spec.ts` (updated boundary). New tests: materializer spec, migration spec.
+- **Verification:** data-models 3 suites/20; backend 75 suites/784 (finance golden gate PASS); frontend 70
+  suites/592; backend+frontend builds clean; lint 0 errors (all 3 projects).
+- **Confirmation:** CODE CHANGED: YES. SCHEMA CHANGED: YES (additive `expense_tags`). MIGRATION CREATED: YES.
+  MIGRATION EXECUTED: NO (runs on backend boot via `migrationsRun`; not run in this offline batch). PACKAGES: NO.
+  PRODUCTION: NO. FINANCE: UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data Classification
+  Matrix: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI: NO. Batch B/custom-tags/taxonomy-DB/line-items/CC-bank/ML/
+  cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

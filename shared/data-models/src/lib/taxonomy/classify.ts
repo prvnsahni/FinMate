@@ -35,6 +35,28 @@ export function normalizeTagKey(input: string): string {
 
 const activeById = new Map(CANONICAL_TAXONOMY.filter((t) => t.status === 'active').map((t) => [t.id, t]));
 
+/** Look up an ACTIVE canonical tag by its stable id ('deprecated'/unknown → undefined). */
+export function getActiveCanonicalTag(tagId: string): CanonicalTag | undefined {
+  return activeById.get(tagId);
+}
+
+/**
+ * Expand an ACTIVE tag id into itself followed by its ACTIVE ancestors, closest
+ * first (milk → dairy → grocery → food). Returns [] when the id is unknown or
+ * not active (a deprecated tag is never expanded/suggested). The walk stops at
+ * the first inactive parent, so only active ancestors are included. Pure and
+ * bounded — no recursion into the database.
+ */
+export function expandActiveWithAncestors(tagId: string): CanonicalTag[] {
+  const ordered: CanonicalTag[] = [];
+  let cur = activeById.get(tagId);
+  while (cur) {
+    ordered.push(cur);
+    cur = cur.parentId ? activeById.get(cur.parentId) : undefined;
+  }
+  return ordered;
+}
+
 /** Collect a tag and all its active ancestors (milk → dairy → grocery → food). */
 function withAncestors(tag: CanonicalTag, acc: Map<string, CanonicalTag>): void {
   if (acc.has(tag.id) || tag.status !== 'active') return;

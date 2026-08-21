@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -14,6 +15,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { ConfirmedExpenseTagDto } from '@finmate/data-models';
 import { ExpenseSplitInputDto } from './expense-split.dto';
 import { ExpensePaymentInputDto } from './expense-payment.dto';
 import { SplitPayloadValidator } from './split-payload.validator';
@@ -144,4 +146,18 @@ export class CreateExpenseDto {
     mimeType: string;
     sizeBytes: number;
   }>;
+
+  /**
+   * TAG-BATCH-A — confirmed DOC-5 taxonomy tags to persist against the new
+   * expense. Descriptive, server-readable Zone-2 metadata only (like `category`)
+   * — never influences any financial field. Sourced solely from the confirmed
+   * document/receipt draft or explicit user selection; the server materializes
+   * ancestors and de-dups. Absent for total-only receipts and manual creation.
+   */
+  @IsArray({ message: 'tags must be an array' })
+  @ArrayMaxSize(200, { message: 'tags cannot exceed 200 entries' })
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmedExpenseTagDto)
+  @IsOptional()
+  tags?: ConfirmedExpenseTagDto[];
 }
