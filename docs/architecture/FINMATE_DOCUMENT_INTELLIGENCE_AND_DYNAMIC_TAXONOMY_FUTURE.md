@@ -539,3 +539,42 @@ GLOBAL / PERSONAL / GROUP tag definitions
 **Security reconciliation (verified, no STOP):** no server-side decryption; no plaintext custom-tag names; no keys/tokens stored (only a key-*version* reference); scope CHECK prevents cross-scope combos; no global taxonomy write path (canonical stays code-curated); no finance mutation (golden gate GREEN); no SEC-KI1/group-key rotation change; existing canonical `expense_tags` coexist safely.
 
 **Verification:** data-models 4 suites/26; backend 77 suites/803 (finance golden gate GREEN); backend + frontend builds clean; lint 0 errors.
+
+---
+
+## §C2 — Implementation note: custom-tag management API + authorization (TAG-BATCH-C2, 2026-08-22)
+
+**Nature:** additive implementation record. It does **not** rewrite §C0/§C1. **CRUD + AUTHORIZATION ONLY** — no filtering/analytics/export (C3), no classifier suggestion (C4), no governance/promotion (C5), no UI. No frozen document changed; no new migration (reuses the C1 `custom_tags` table); no finance column, group-key/versionId architecture, or E2EE boundary changed. No new crypto primitive.
+
+**New module — `backend/src/app/custom-tags/`** (`CustomTagsModule`, registered in `app.module`; `TypeOrmModule.forFeature([CustomTag, GroupMember, GroupKeyVersion])`, one `CustomTagsService`). The global canonical taxonomy stays in the read-only `TaxonomyModule` and is untouched.
+
+**Final API surface** (all `@UseGuards(JwtAuthGuard)`; responses use the shared `SuccessResponse`):
+
+| Method & route | Scope | Authorization |
+| --- | --- | --- |
+| `POST /custom-tags` | personal | owner = authenticated user (route/JWT-derived) |
+| `GET /custom-tags` | personal | own active tags only |
+| `POST /groups/:groupId/custom-tags` | group | ACTIVE group membership |
+| `GET /groups/:groupId/custom-tags` | group | ACTIVE group membership |
+| `PATCH /custom-tags/:id` | both (by id) | owner (personal) / member (group) |
+| `DELETE /custom-tags/:id` | both (by id) | owner (personal) / member (group) — **safe deprecation** |
+
+Rationale for the by-id update/deprecate routes handling both scopes: a single scoped-by-id endpoint safely authorizes either scope (no duplicate group/personal update routes), matching the existing "load then authorize" pattern.
+
+**Authorization model.** Scope and ownership are **server-derived** — `scopeType`/`groupId`/`ownerUserId` are NEVER read from the request body, so a caller cannot inject a foreign scope/owner (the `whitelist` ValidationPipe also strips unknown fields). Group access reuses the established `GroupMember … joinStatus='active'` check (→ `ForbiddenException` for a non-member on the group-scoped `:groupId` routes, matching `GroupsService.listMembers`). The **by-id** `PATCH`/`DELETE` paths return **`NotFoundException`** on any authorization failure (non-owner personal, non-member group) — the repository's owner-scoped IDOR/existence-disclosure convention: an attacker enumerating ids cannot distinguish "not found" from "not yours".
+
+**E2EE boundary (unchanged from §C0.2/§C1).** The service handles the tag name ONLY as the opaque client `encryptedName` (`iv:ciphertext`, validated structurally by the existing `IsCiphertext` decorator — no plaintext accepted). It **never** decrypts, normalizes, hashes, searches, or logs the name; there is no decrypt/unwrap method on the service. Responses are mapped to a server-safe projection (`id/scopeType/encryptedName/status/version/groupId/groupKeyVersionId/timestamps`) that deliberately **excludes** the related `ownerUser`/`createdByUser`/`group` account entities. De-duplication remains client-side.
+
+**Group-key version discipline (reused, not reinvented).** Create/rename of a group tag resolves the key version exactly like the expense/recurring flow (`CustomTagsService.resolveGroupKeyVersion`): a declared `groupKeyVersionId` must belong to the group and not be `REVOKED` (else `VAL_INVALID_INPUT`); otherwise the group's current `ACTIVE` version is stamped. No auto-provisioning of a missing version (that stays group-key-management territory) and no re-encryption flow was invented — a rename across a rotation simply re-stamps the client-supplied version.
+
+**Optimistic locking.** `PATCH` (rename) requires the caller's last-seen `version` and returns the existing `PreconditionFailedException { errorCode: 'CON_VERSION_CONFLICT' }` on a stale value — identical to `GroupsService.updateGroup`. No new error format.
+
+**Lifecycle / deprecation.** `DELETE` performs a **safe deprecation** (`status → 'deprecated'`), never a hard delete: the tag disappears from the active `GET` lists (both list queries filter `status='active'`) while historical `expense_tags` assignments stay intact and resolvable. The service holds no expense/`expense_tags` repository, so it cannot rewrite or remove any financial record; deprecation is idempotent.
+
+**Global-taxonomy protection.** C2 adds **no** path to create/rename/delete a global canonical tag or to promote a custom tag into the canonical set — the service exposes no such method and the endpoints only ever read/write `custom_tags`. Canonical taxonomy stays code-curated behind read-only `GET /taxonomy`.
+
+**Intentionally deferred (unchanged):** custom-tag **assignment** to expenses, filtering, analytics, export columns, assignment UX (C3); classifier/OCR suggestion, population learning (C4); governance/request/promotion and any management UI (C5).
+
+**Security reconciliation (verified, no STOP condition hit):** no server-side decryption/plaintext search; no key material stored (only a key-*version* reference); scope is route-derived (no scope injection); IDOR closed on personal + group by-id paths; non-member and cross-group access denied; malformed/missing ciphertext rejected at the DTO boundary; stale entity/key versions rejected via the existing conventions; no finance mutation; no group-key rotation / SEC-KI1 change; no new migration.
+
+**Verification:** targeted `custom-tags` suite green (authz/E2EE/lifecycle/scope/finance-structural/adversarial); backend build + lint clean; FIN-002 finance-golden gate GREEN; working tree contains only the intended C2 files.

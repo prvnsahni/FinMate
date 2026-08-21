@@ -4040,3 +4040,50 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   new primitive, no server decryption). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit.
   NOT IMPLEMENTED: custom-tag CRUD/API/UI/filter/analytics/classifier/governance (C2–C5). TAG-BATCH-C2: NOT
   STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C2: custom-tag management API + authorization (personal + group)
+
+- **Summary:** Implemented the **CRUD + authorization** layer for personal and group custom tags on top of the
+  C1 data model. **CRUD + AUTHZ ONLY** — no filtering/analytics/export (C3), classifier (C4), governance (C5) or
+  UI. No new migration (reuses the C1 `custom_tags` table), no new crypto primitive, no server-side decryption,
+  no finance change, no group-key/SEC-KI1 change, no frozen-doc change.
+- **New module — `backend/src/app/custom-tags/`** (`CustomTagsModule` in `app.module`; `forFeature([CustomTag,
+  GroupMember, GroupKeyVersion])`, one `CustomTagsService`, two controllers). Canonical taxonomy stays in the
+  read-only `TaxonomyModule`, untouched.
+- **API surface** (all `JwtAuthGuard`, `SuccessResponse`): `POST /custom-tags` + `GET /custom-tags` (personal);
+  `POST /groups/:groupId/custom-tags` + `GET /groups/:groupId/custom-tags` (group, member-only);
+  `PATCH /custom-tags/:id` (rename) + `DELETE /custom-tags/:id` (safe deprecate) — the by-id routes authorize
+  either scope, so no duplicate personal/group update routes.
+- **Authorization:** scope/owner/group are **server-derived** (never from the body; `whitelist` pipe strips
+  extras) → no scope injection. Group access = existing `GroupMember joinStatus='active'` check
+  (`ForbiddenException` for non-member on `:groupId` routes). By-id `PATCH`/`DELETE` return **`NotFoundException`**
+  on any authz failure (non-owner personal / non-member group) — the repo's owner-scoped IDOR/existence-disclosure
+  convention.
+- **E2EE boundary:** name handled ONLY as opaque `encryptedName` (`iv:ciphertext`, validated by the existing
+  `IsCiphertext` decorator — no plaintext accepted); never decrypted/normalized/hashed/searched/logged; no
+  decrypt method on the service. Responses use a server-safe projection that **excludes** `ownerUser`/
+  `createdByUser`/`group` account entities. Dedup stays client-side.
+- **Group-key version:** create/rename reuse the expense/recurring resolver — declared `groupKeyVersionId` must
+  belong to the group and not be `REVOKED` (else `VAL_INVALID_INPUT`), else the `ACTIVE` version is stamped; no
+  auto-provision, no re-encryption flow invented.
+- **Optimistic locking:** rename requires last-seen `version`; stale → existing
+  `PreconditionFailedException { CON_VERSION_CONFLICT }`.
+- **Lifecycle:** `DELETE` = safe deprecation (`status → 'deprecated'`), never hard delete; drops out of the
+  active `GET` lists (both filter `status='active'`) while historical `expense_tags` stay intact/resolvable;
+  service holds no finance repo. Idempotent.
+- **Global-taxonomy protection:** no create/rename/delete/promote path for canonical tags — service exposes no
+  such method; endpoints only touch `custom_tags`.
+- **Files:** backend — `custom-tags/{custom-tags.module.ts, custom-tags.controller.ts, custom-tags.service.ts,
+  custom-tags.service.spec.ts}`, `custom-tags/dto/{create-custom-tag.dto.ts, update-custom-tag.dto.ts, index.ts}`,
+  `app.module.ts`. Docs — §C2 note in the FUTURE doc + this Progress Log.
+- **Tests:** `custom-tags.service.spec.ts` — authz (personal own/deny + group member/non-member), E2EE (plaintext
+  rejected, ciphertext stored unchanged, no account leak, no decrypt/logging), lifecycle (active-only list,
+  non-destructive deprecate, stale-version conflict), scope (route-derived, key-version rules, missing/REVOKED
+  version), finance-structural (no finance repos injected), adversarial (IDOR, malformed/missing payload).
+- **Verification:** targeted `custom-tags` suite green; backend build + lint clean; FIN-002 finance-golden gate
+  GREEN; no new migration; no frontend change; working tree = intended C2 files only.
+- **Confirmation:** CODE CHANGED: YES (API + authz). SCHEMA CHANGED: NO (reuses C1 table). MIGRATION: NO.
+  PACKAGES: NO. PRODUCTION: NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery:
+  UNCHANGED (reused, no new primitive, no server decryption). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP
+  CONDITIONS: none hit. NOT IMPLEMENTED: filtering/analytics/export (C3), classifier (C4), governance/UI (C5).
+  TAG-BATCH-C3: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
