@@ -1859,6 +1859,15 @@
               </form>
             </div>
 
+            <!-- TAG-BATCH-C5a — group custom-tag management (E2EE names; any active
+                 member per existing C2 policy; group-role policy is C5-c). -->
+            <div class="border-t border-border/5 pt-8">
+              <app-custom-tag-management
+                scope="group"
+                [groupId]="group()?.id ?? null"
+              ></app-custom-tag-management>
+            </div>
+
             <!-- Monthly Household Contribution Settings -->
             @if (group()!.groupType === 'household') {
               <div class="border-t border-border/5 pt-8">

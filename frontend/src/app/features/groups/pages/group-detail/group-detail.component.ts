@@ -43,6 +43,7 @@ import { Store } from '@ngxs/store';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import { GroupKeyService } from '../../../../core/services/group-key.service';
 import { CustomTagService } from '../../../../core/services/custom-tag.service';
+import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../../../../core/constants/crypto.constants';
 import { MONTH_LOCK_DAY } from '../../../../core/constants/app.constants';
 import { ExpenseDecryptCoordinator } from '../../../../core/services/expense-decrypt-coordinator.service';
@@ -162,6 +163,7 @@ export interface LedgerTotals {
     CryptoRecoveryPanelComponent,
     DecimalPipe,
     NgTemplateOutlet,
+    CustomTagManagementComponent,
   ],
   templateUrl: './group-detail.component.html',
   styleUrls: ['./group-detail.component.scss'],

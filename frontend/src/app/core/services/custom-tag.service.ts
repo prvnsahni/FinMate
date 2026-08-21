@@ -35,6 +35,22 @@ export interface CustomTagView {
 }
 
 /**
+ * TAG-BATCH-C5a — a custom tag for the MANAGEMENT surface: the same safe
+ * metadata as the API row plus the CLIENT-decrypted `name` (null → show a
+ * non-sensitive "Encrypted tag" fallback). `version` drives the C2 optimistic
+ * lock on rename; the server still only ever holds the opaque `encryptedName`.
+ */
+export interface ManagedCustomTag {
+  id: string;
+  name: string | null;
+  scopeType: 'personal' | 'group';
+  status: 'active' | 'deprecated';
+  version: number;
+  groupId: string | null;
+  groupKeyVersionId: string | null;
+}
+
+/**
  * TAG-BATCH-C3 — client for the C2 custom-tag endpoints, plus CLIENT-SIDE name
  * decryption for the tag surfaces (selector/chips/analytics labels).
  *
@@ -149,5 +165,172 @@ export class CustomTagService {
       });
     }
     return out;
+  }
+
+  // ─── TAG-BATCH-C5a — management (list-with-version + client-side writes) ─────
+
+  /** Map an API row to a managed view, using an already-resolved decryption key. */
+  private async toManaged(
+    row: CustomTagApiRow,
+    key: CryptoKey | null,
+  ): Promise<ManagedCustomTag> {
+    return {
+      id: row.id,
+      name: key ? await this.decryptName(row.id, row.encryptedName, key) : null,
+      scopeType: row.scopeType,
+      status: row.status,
+      version: row.version,
+      groupId: row.groupId,
+      groupKeyVersionId: row.groupKeyVersionId,
+    };
+  }
+
+  /**
+   * Resolve the caller's personal master key for encrypting/decrypting personal
+   * custom-tag names (reused expense-title crypto — no new primitive).
+   */
+  private async personalKey(): Promise<CryptoKey> {
+    const key = (await this.cryptoSession.ensureCryptoContext()).masterKey;
+    if (!key) throw new Error('CUSTOM_TAG_NO_KEY');
+    return key;
+  }
+
+  /**
+   * Resolve the group's CURRENT (active) key + version for encrypting a group
+   * custom-tag name. Reuses the same write-path resolver as a group expense
+   * title, so no new crypto/key discipline is introduced.
+   */
+  private async groupWriteKey(
+    groupId: string,
+  ): Promise<{ key: CryptoKey; versionId?: string }> {
+    const res = await this.cryptoSession.ensureGroupKey(groupId, 'write');
+    if (res.status !== 'ready') throw new Error('CUSTOM_TAG_NO_KEY');
+    return { key: res.key, versionId: res.versionId };
+  }
+
+  /** List the caller's own ACTIVE personal custom tags for management (with version). */
+  async getManagedPersonalTags(): Promise<ManagedCustomTag[]> {
+    const rows = await firstValueFrom(
+      this.http.get<CustomTagApiRow[]>(`${this.baseUrl}/custom-tags`),
+    );
+    if (!rows.length) return [];
+    let key: CryptoKey | null = null;
+    try {
+      key = await this.personalKey();
+    } catch {
+      key = null;
+    }
+    const out: ManagedCustomTag[] = [];
+    for (const row of rows) out.push(await this.toManaged(row, key));
+    return out;
+  }
+
+  /** List a group's ACTIVE custom tags for management (member-only, with version). */
+  async getManagedGroupTags(groupId: string): Promise<ManagedCustomTag[]> {
+    const rows = await firstValueFrom(
+      this.http.get<CustomTagApiRow[]>(
+        `${this.baseUrl}/groups/${groupId}/custom-tags`,
+      ),
+    );
+    if (!rows.length) return [];
+    const keyByVersion = new Map<string, CryptoKey | null>();
+    const keyFor = async (versionId: string | null): Promise<CryptoKey | null> => {
+      const cacheKey = versionId ?? 'active';
+      if (keyByVersion.has(cacheKey)) return keyByVersion.get(cacheKey) ?? null;
+      let key: CryptoKey | null = null;
+      try {
+        const res = await this.cryptoSession.ensureGroupKey(
+          groupId,
+          'read',
+          versionId ?? undefined,
+        );
+        key = res.status === 'ready' ? res.key : null;
+      } catch {
+        key = null;
+      }
+      keyByVersion.set(cacheKey, key);
+      return key;
+    };
+    const out: ManagedCustomTag[] = [];
+    for (const row of rows) {
+      out.push(await this.toManaged(row, await keyFor(row.groupKeyVersionId)));
+    }
+    return out;
+  }
+
+  /**
+   * Create a PERSONAL custom tag. The name is encrypted CLIENT-SIDE with the
+   * master key before the request — the server only ever receives `encryptedName`.
+   */
+  async createPersonalTag(name: string): Promise<ManagedCustomTag> {
+    const key = await this.personalKey();
+    const encryptedName = await this.encryption.encrypt(name.trim(), key);
+    const row = await firstValueFrom(
+      this.http.post<CustomTagApiRow>(`${this.baseUrl}/custom-tags`, {
+        encryptedName,
+      }),
+    );
+    this.nameCache.set(row.id, name.trim());
+    return this.toManaged(row, key);
+  }
+
+  /**
+   * Create a GROUP custom tag (member-only, server-enforced). The name is
+   * encrypted CLIENT-SIDE with the current group key; only `encryptedName` +
+   * the resolved `groupKeyVersionId` leave the browser.
+   */
+  async createGroupTag(groupId: string, name: string): Promise<ManagedCustomTag> {
+    const { key, versionId } = await this.groupWriteKey(groupId);
+    const encryptedName = await this.encryption.encrypt(name.trim(), key);
+    const row = await firstValueFrom(
+      this.http.post<CustomTagApiRow>(
+        `${this.baseUrl}/groups/${groupId}/custom-tags`,
+        { encryptedName, groupKeyVersionId: versionId },
+      ),
+    );
+    this.nameCache.set(row.id, name.trim());
+    return this.toManaged(row, key);
+  }
+
+  /**
+   * Rename a custom tag — the NEW name is encrypted CLIENT-SIDE (personal → master
+   * key; group → current group key, re-stamping the version). `version` carries
+   * the C2 optimistic lock; a stale value surfaces the server's
+   * `CON_VERSION_CONFLICT` for the caller to handle.
+   */
+  async renameTag(tag: ManagedCustomTag, newName: string): Promise<ManagedCustomTag> {
+    const trimmed = newName.trim();
+    let encryptedName: string;
+    let groupKeyVersionId: string | undefined;
+    let key: CryptoKey;
+    if (tag.scopeType === 'group' && tag.groupId) {
+      const gk = await this.groupWriteKey(tag.groupId);
+      key = gk.key;
+      groupKeyVersionId = gk.versionId;
+      encryptedName = await this.encryption.encrypt(trimmed, key);
+    } else {
+      key = await this.personalKey();
+      encryptedName = await this.encryption.encrypt(trimmed, key);
+    }
+    const row = await firstValueFrom(
+      this.http.patch<CustomTagApiRow>(`${this.baseUrl}/custom-tags/${tag.id}`, {
+        encryptedName,
+        version: tag.version,
+        ...(groupKeyVersionId ? { groupKeyVersionId } : {}),
+      }),
+    );
+    this.nameCache.set(row.id, trimmed);
+    return this.toManaged(row, key);
+  }
+
+  /**
+   * Deprecate a custom tag (safe, non-destructive — C2 keeps historical
+   * `expense_tags` intact). No name material is sent.
+   */
+  async deprecateTag(id: string): Promise<void> {
+    await firstValueFrom(
+      this.http.delete<CustomTagApiRow>(`${this.baseUrl}/custom-tags/${id}`),
+    );
+    this.nameCache.delete(id);
   }
 }

@@ -21,6 +21,7 @@ import { DashboardAnalyticsComponent } from '../../components/dashboard-analytic
 import { DashboardGoalsComponent } from '../../components/dashboard-goals/dashboard-goals.component';
 import { DashboardSettingsComponent } from '../../components/dashboard-settings/dashboard-settings.component';
 import { DashboardProfileComponent } from '../../components/dashboard-profile/dashboard-profile.component';
+import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
 import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
 
 @Component({
@@ -36,6 +37,7 @@ import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
     DashboardGoalsComponent,
     DashboardSettingsComponent,
     DashboardProfileComponent,
+    CustomTagManagementComponent,
   ],
   templateUrl: './dashboard.component.html',
 })

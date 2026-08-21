@@ -4173,3 +4173,43 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   learning, global promotion, governance, custom-tag CRUD/UI redesign, new backend endpoints/tables, persistent
   correction memory, export tag columns, statement classification, group-modal suggestions (C5/FUTURE).
   TAG-BATCH-C5: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C5a: custom-tag management UI (personal + group)
+
+- **Summary:** Added the user-facing management UI for the existing custom tags — FRONTEND-ONLY, over the existing
+  C2 API + C3 crypto. No backend/endpoint/schema/migration/package change; no finance/E2EE/group-key/SEC-KI1
+  change; no frozen-doc change. Only the C5-a slice from the read-only C5 assessment. NOT included: restore, hard
+  delete, merge, aliases, ordering persistence, role governance (C5-c), canonical requests (C5-d), persistent
+  learning, population/ML, global promotion.
+- **Service (`core/services/custom-tag.service.ts`, extended):** `ManagedCustomTag` (+version) and management
+  methods `getManagedPersonalTags`/`getManagedGroupTags`, `createPersonalTag`/`createGroupTag`,
+  `renameTag`, `deprecateTag`. Names encrypted CLIENT-SIDE before every write (personal→master key via
+  `ensureCryptoContext`; group→`ensureGroupKey(groupId,'write')` current `{key,versionId}` — reused expense-title
+  crypto, no new primitive). Writes send only `encryptedName` (+ `groupKeyVersionId` + optimistic `version`);
+  server never receives plaintext. Reuses the in-memory decrypted-name cache (update on create/rename, clear on
+  deprecate); no persistent storage. Rename surfaces `412 CON_VERSION_CONFLICT`.
+- **Component (`shared/components/custom-tag-management/`):** ONE scope-parameterized widget (`scope` +
+  `groupId`), no personal/group duplication. Create (validated ≤100), inline rename (encrypt-new-name +
+  optimistic version; 412 → notice + refresh), two-step deprecate confirm (explains historical expenses kept; row
+  drops from active list). Active-only list; undecryptable name → safe "Encrypted tag" placeholder (never
+  fabricated/logged); honest loading/empty/error/network states; name-free error messages. Manages CUSTOM tags
+  only — no path to edit canonical taxonomy.
+- **Navigation (reused, no new architecture):** personal → Dashboard→Settings tab (below `app-dashboard-settings`);
+  group → Group detail→Settings tab (below the Group Settings form). No routes/guards/layout added or changed.
+- **Group policy:** preserves C2 "any active member can rename/deprecate" (server-enforced membership); role
+  gating is deferred to C5-c.
+- **Files:** frontend — `core/services/custom-tag.service.ts (+spec)`,
+  `shared/components/custom-tag-management/{component.ts, component.html, component.spec.ts}`,
+  `features/dashboard/pages/dashboard/dashboard.component.{ts,html}`,
+  `features/groups/pages/group-detail/group-detail.component.{ts,html}`. Docs — §C5a note + this Progress Log.
+- **Tests:** +1 suite / +20 tests — service (encrypt-before-send + no-plaintext-in-body, personal/group scope +
+  groupId, rename version + 412 surface, deprecate DELETE + no-body, decrypt fail-safe, no-storage); component
+  (load/scope/create/rename/deprecate/conflict/empty/error/fallback-name/no-storage).
+- **Verification:** frontend 76 suites/674 (was 75/654); frontend build + lint clean (0 errors); backend untouched
+  — 78 suites/851 still green, FIN-002 finance-golden GREEN; C3/C4 tests intact. No migration, no package change.
+- **Confirmation:** CODE CHANGED: YES (frontend UI). SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES: NO. PRODUCTION:
+  NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (C3 crypto reused, no new
+  primitive, no server decryption). BACKEND: UNTOUCHED. NEW BACKEND ENDPOINTS: NONE (reused C2). FROZEN
+  SRS/LEDGER/ADR/Matrix/OpenAPI: NO (no API contract change). STOP CONDITIONS: none hit. NOT IMPLEMENTED: restore,
+  hard delete, merge, aliases, ordering persistence, role governance (C5-c), canonical-tag requests (C5-d),
+  persistent learning, population/ML, global promotion. COMMIT: (this iteration). PUSH: NO.
