@@ -37,6 +37,16 @@ export interface GroupExpenseDimensionFilters {
    * filter drops unknown members), so a stale id simply widens nothing.
    */
   tagIds?: string[];
+  /**
+   * TAG-BATCH-C3 — custom-tag ids (personal/group `custom_tags.id` UUIDs) that
+   * the caller has ALREADY been authorized to filter by, resolved server-side
+   * (`resolveAccessibleCustomTagIds` — the client-supplied scope is never
+   * trusted). Matched in the SAME `EXISTS` as the canonical ids, so the unified
+   * `tagIds` namespace keeps OR-within-tags / AND-across-dimensions. Empty when
+   * nothing resolved (unknown / inaccessible / deprecated ids are dropped, like
+   * the canonical fail-safe), so a stale id simply widens nothing.
+   */
+  customTagIds?: string[];
 }
 
 /**
@@ -178,9 +188,18 @@ export function applyExpenseDimensionFilters<T>(
   // only; it selects WHICH expenses match and never reads any financial column.
   // Unknown/deprecated ids are dropped so a stale selection can never widen the
   // result or resurrect a deprecated tag as a filter.
-  if (filter.tagIds?.length) {
-    const activeTagIds = filter.tagIds.filter((id) => !!getActiveCanonicalTag(id));
-    if (activeTagIds.length) {
+  // TAG-BATCH-C3 — the unified tag dimension now matches canonical ids AND the
+  // pre-authorized custom-tag ids in the SAME correlated EXISTS (still one
+  // namespace, still match-ANY). Canonical ids are re-validated here (active
+  // only); custom ids arrive already authorized server-side. Scope of the outer
+  // query (owner / group membership) still bounds every match, so a custom id
+  // can never surface another user's/group's rows.
+  if (filter.tagIds?.length || filter.customTagIds?.length) {
+    const activeTagIds = (filter.tagIds ?? []).filter(
+      (id) => !!getActiveCanonicalTag(id),
+    );
+    const matchIds = [...activeTagIds, ...(filter.customTagIds ?? [])];
+    if (matchIds.length) {
       qb.andWhere((sub) => {
         const inner = sub
           .subQuery()
@@ -191,7 +210,7 @@ export function applyExpenseDimensionFilters<T>(
           .getQuery();
         return `EXISTS ${inner}`;
       });
-      qb.setParameter('gefTagIds', activeTagIds);
+      qb.setParameter('gefTagIds', matchIds);
     }
   }
 }

@@ -42,6 +42,7 @@ import {
 import { Store } from '@ngxs/store';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import { GroupKeyService } from '../../../../core/services/group-key.service';
+import { CustomTagService } from '../../../../core/services/custom-tag.service';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../../../../core/constants/crypto.constants';
 import { MONTH_LOCK_DAY } from '../../../../core/constants/app.constants';
 import { ExpenseDecryptCoordinator } from '../../../../core/services/expense-decrypt-coordinator.service';
@@ -175,6 +176,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   private destroyRef = inject(DestroyRef);
   private encryptionService = inject(ClientEncryptionService);
   private groupKeyService = inject(GroupKeyService);
+  private customTagService = inject(CustomTagService);
   private decryptCoordinator = inject(ExpenseDecryptCoordinator);
   private expenseDecryption = inject(ExpenseDecryptionService);
   private store = inject(Store);
@@ -208,6 +210,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         const g = this.group();
         if (g?.id) {
           this.initializeGroupKeysAndSelfHeal(g.id);
+          // TAG-BATCH-C3 — resolve this group's custom-tag names now the key is
+          // available, so they join the unified tag facet alongside canonical tags.
+          this.loadGroupCustomTags(g.id);
         }
       }
     });
@@ -392,6 +397,38 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         error: () => {
           // Leave the tag facet empty on failure — never block the drawer.
         },
+      });
+  }
+
+  /**
+   * TAG-BATCH-C3 — merge this group's custom tags into the SAME unified tag facet
+   * as the canonical taxonomy. Names are decrypted CLIENT-SIDE (group key, reusing
+   * the expense-title crypto) by `CustomTagService`; a tag whose name cannot be
+   * decrypted (key not ready / no access) is left out of the facet rather than
+   * shown as an opaque id or a fabricated label. Best-effort: any failure leaves
+   * the canonical-only facet intact. Runs once the crypto session is ready.
+   */
+  private loadGroupCustomTags(groupId: string): void {
+    void this.customTagService
+      .getGroupCustomTags(groupId)
+      .then((tags) => {
+        const named = tags.filter((t) => !!t.name);
+        if (!named.length) return;
+        for (const t of named) this.tagLabelById.set(t.id, t.name as string);
+        // Append the named custom tags to the canonical pills (one namespace),
+        // de-duping by id, and keep the list alphabetically sorted.
+        const byValue = new Map(
+          this.tagPillOptions().map((o) => [o.value, o]),
+        );
+        for (const t of named) {
+          byValue.set(t.id, { value: t.id, label: t.name as string });
+        }
+        this.tagPillOptions.set(
+          [...byValue.values()].sort((a, b) => a.label.localeCompare(b.label)),
+        );
+      })
+      .catch(() => {
+        // Never block the ledger/filter drawer on custom-tag resolution.
       });
   }
 

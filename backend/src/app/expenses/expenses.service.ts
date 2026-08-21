@@ -21,6 +21,8 @@ import {
   GroupKeyVersion,
   GroupMember,
   GroupMemberContribution,
+  CustomTag,
+  getActiveCanonicalTag,
   materializeConfirmedExpenseTags,
   ReceiptVersion,
   User,
@@ -131,6 +133,8 @@ export class ExpensesService {
     private readonly expenseSplitRepository: Repository<ExpenseSplit>,
     @InjectRepository(ExpenseTag)
     private readonly expenseTagRepository: Repository<ExpenseTag>,
+    @InjectRepository(CustomTag)
+    private readonly customTagRepository: Repository<CustomTag>,
     @InjectRepository(ExpensePayment)
     private readonly expensePaymentRepository: Repository<ExpensePayment>,
     @InjectRepository(Group)
@@ -553,11 +557,14 @@ export class ExpensesService {
         createdAt: attachment.createdAt,
       })),
       wrappedContentKeys,
-      // TAG-BATCH-B1 — advisory canonical tags (server-readable Zone-2 metadata,
-      // like `category`). Ids only + provenance; the client resolves display
-      // names via GET /taxonomy. Never a financial value, never E2EE plaintext.
+      // TAG-BATCH-B1/C3 — advisory tags (server-readable Zone-2 metadata, like
+      // `category`). Ids + scope + provenance only; NEVER a financial value and
+      // NEVER an E2EE plaintext name. `tagScope` tells the client how to resolve
+      // the display name: `global` → GET /taxonomy; `personal`/`group` → the
+      // encrypted custom-tag payload (GET /custom-tags), decrypted client-side.
       tags: tags.map((t) => ({
         tagId: t.tagId,
+        tagScope: t.tagScope,
         authority: t.authority,
         source: t.source,
       })),
@@ -1397,6 +1404,8 @@ export class ExpensesService {
     if (!dto.tags?.length) {
       return;
     }
+    // Canonical (global) tags: expanded with active ancestors, deprecated/unknown
+    // dropped — unchanged TAG-BATCH-A behaviour.
     const materialized = materializeConfirmedExpenseTags(
       dto.tags.map((t) => ({
         tagId: t.tagId,
@@ -1405,15 +1414,31 @@ export class ExpensesService {
         confidence: t.confidence ?? null,
       })),
     );
-    if (materialized.length === 0) {
+
+    // TAG-BATCH-C3 — custom (personal/group) tags in the SAME unified namespace.
+    // Every id the canonical taxonomy does NOT resolve as active is treated as a
+    // candidate custom-tag id and validated server-side against `custom_tags`
+    // (the client-supplied scope is never trusted). Only ACTIVE tags whose scope
+    // matches this expense are assigned; invalid / deprecated / inaccessible /
+    // cross-scope ids are silently dropped, exactly like an unknown canonical id
+    // — never an error, never another owner's/group's tag.
+    const customRows = await this.resolveAssignableCustomTags(
+      manager,
+      dto.tags,
+      createdByUser.id,
+      dto.groupId,
+    );
+
+    if (materialized.length === 0 && customRows.length === 0) {
       return;
     }
     const repo = manager.getRepository(ExpenseTag);
-    await repo.save(
-      materialized.map((m) =>
+    const rows = [
+      ...materialized.map((m) =>
         repo.create({
           expense,
           tagId: m.tagId,
+          tagScope: 'global' as const,
           authority: m.authority,
           source: m.source,
           confidence: m.confidence,
@@ -1421,7 +1446,144 @@ export class ExpensesService {
           createdByUser,
         }),
       ),
-    );
+      ...customRows.map((c) =>
+        repo.create({
+          expense,
+          tagId: c.tagId,
+          tagScope: c.tagScope,
+          authority: c.authority,
+          source: c.source,
+          confidence: c.confidence,
+          // Custom tags are not part of the code-curated canonical taxonomy, so
+          // there is no canonical version to stamp — 0 marks a non-canonical row.
+          taxonomyVersion: 0,
+          createdByUser,
+        }),
+      ),
+    ];
+    await repo.save(rows);
+  }
+
+  /**
+   * TAG-BATCH-C3 — resolve which of the confirmed tag inputs are CUSTOM tags the
+   * creator may attach to THIS expense, authorizing every one server-side:
+   *  - personal custom tag → must be owned by the creator AND the expense must be
+   *    personal (no group), so a private tag never lands on a shared row;
+   *  - group custom tag → must belong to the expense's own group (no cross-group
+   *    assignment; group membership is already enforced by the create flow).
+   * Only `active` tags qualify; unknown / deprecated / inaccessible / cross-scope
+   * ids are dropped (returned set excludes them). Names are never read here — the
+   * server authorizes on the opaque id + scope only.
+   */
+  private async resolveAssignableCustomTags(
+    manager: EntityManager,
+    inputs: NonNullable<CreateExpenseDto['tags']>,
+    creatorUserId: string,
+    groupId?: string,
+  ): Promise<
+    Array<{
+      tagId: string;
+      tagScope: 'personal' | 'group';
+      authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+      source: 'rule_based' | 'user' | 'model' | 'population';
+      confidence: number | null;
+    }>
+  > {
+    // Candidate custom ids = every confirmed id the active canonical taxonomy
+    // does not claim, de-duplicated. (A deprecated canonical id is not active,
+    // so it falls through to the DB lookup, finds nothing, and is dropped.)
+    const byId = new Map<string, (typeof inputs)[number]>();
+    for (const t of inputs) {
+      if (!getActiveCanonicalTag(t.tagId) && !byId.has(t.tagId)) {
+        byId.set(t.tagId, t);
+      }
+    }
+    if (byId.size === 0) return [];
+
+    const rows = await manager.getRepository(CustomTag).find({
+      where: { id: In([...byId.keys()]), status: 'active' },
+      relations: ['ownerUser', 'group'],
+    });
+
+    const out: Array<{
+      tagId: string;
+      tagScope: 'personal' | 'group';
+      authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+      source: 'rule_based' | 'user' | 'model' | 'population';
+      confidence: number | null;
+    }> = [];
+    for (const tag of rows) {
+      const input = byId.get(tag.id);
+      if (!input) continue;
+      const authorized =
+        tag.scopeType === 'personal'
+          ? tag.ownerUser?.id === creatorUserId && !groupId
+          : !!groupId && tag.group?.id === groupId;
+      if (!authorized) continue;
+      out.push({
+        tagId: tag.id,
+        tagScope: tag.scopeType,
+        authority: input.authority,
+        source: input.source ?? 'user',
+        confidence: input.confidence ?? null,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * TAG-BATCH-C3 — resolve which of the requested filter `tagIds` are CUSTOM tags
+   * the caller may filter by, authorizing every one server-side (the client scope
+   * is never trusted): personal customs must be owned by the caller; group
+   * customs must belong to a group the caller is an ACTIVE member of (and, for a
+   * group-scoped query, that same group). Only `active` tags qualify — mirroring
+   * the canonical "deprecated dropped from filters" fail-safe. Unknown /
+   * inaccessible ids are dropped. Names are never read.
+   */
+  private async resolveAccessibleCustomTagIds(
+    userId: string,
+    tagIds: string[] | undefined,
+    groupId?: string,
+  ): Promise<string[]> {
+    if (!tagIds?.length) return [];
+    const candidates = tagIds.filter((id) => !getActiveCanonicalTag(id));
+    if (!candidates.length) return [];
+
+    const rows = await this.customTagRepository.find({
+      where: { id: In(candidates), status: 'active' },
+      relations: ['ownerUser', 'group'],
+    });
+    if (!rows.length) return [];
+
+    const groupTagGroupIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.scopeType === 'group' && r.group)
+          .map((r) => r.group!.id),
+      ),
+    ];
+    let memberGroupIds = new Set<string>();
+    if (groupTagGroupIds.length) {
+      const memberships = await this.groupMemberRepository.find({
+        where: {
+          user: { id: userId },
+          group: { id: In(groupTagGroupIds) },
+          joinStatus: 'active',
+        },
+        relations: ['group'],
+      });
+      memberGroupIds = new Set(memberships.map((m) => m.group.id));
+    }
+
+    const out: string[] = [];
+    for (const tag of rows) {
+      if (tag.scopeType === 'personal') {
+        if (tag.ownerUser?.id === userId) out.push(tag.id);
+      } else if (tag.group && memberGroupIds.has(tag.group.id)) {
+        if (!groupId || tag.group.id === groupId) out.push(tag.id);
+      }
+    }
+    return out;
   }
 
   /**
@@ -1591,6 +1753,11 @@ export class ExpensesService {
       this.resolveGroupMemberRefs(params.memberIds, params.groupId),
       this.resolveGroupMemberRefs(params.paidByIds, params.groupId),
     ]);
+    const listCustomTagIds = await this.resolveAccessibleCustomTagIds(
+      userId,
+      params.tagIds,
+      params.groupId,
+    );
     applyExpenseDimensionFilters(query, {
       categories: params.categories,
       transactionType: params.transactionType,
@@ -1599,6 +1766,7 @@ export class ExpensesService {
       minAmount: params.minAmount,
       maxAmount: params.maxAmount,
       tagIds: params.tagIds,
+      customTagIds: listCustomTagIds,
     });
 
     if (params.cursor) {
@@ -2730,9 +2898,14 @@ export class ExpensesService {
   private async resolveAnalyticsDimensions(
     filter: AnalyticsFilter,
   ): Promise<GroupExpenseDimensionFilters> {
-    const [member, paidBy] = await Promise.all([
+    const [member, paidBy, customTagIds] = await Promise.all([
       this.resolveGroupMemberRefs(filter.memberIds, filter.groupId),
       this.resolveGroupMemberRefs(filter.paidByIds, filter.groupId),
+      this.resolveAccessibleCustomTagIds(
+        filter.userId,
+        filter.tagIds,
+        filter.groupId,
+      ),
     ]);
     return {
       categories: filter.categories,
@@ -2742,6 +2915,7 @@ export class ExpensesService {
       minAmount: filter.minAmount,
       maxAmount: filter.maxAmount,
       tagIds: filter.tagIds,
+      customTagIds,
     };
   }
 
@@ -3486,9 +3660,10 @@ export class ExpensesService {
     if (filter?.to) {
       query.andWhere('expense.expenseDate <= :trashTo', { trashTo: filter.to });
     }
-    const [member, paidBy] = await Promise.all([
+    const [member, paidBy, trashCustomTagIds] = await Promise.all([
       this.resolveGroupMemberRefs(filter?.memberIds, groupId),
       this.resolveGroupMemberRefs(filter?.paidByIds, groupId),
+      this.resolveAccessibleCustomTagIds(userId, filter?.tagIds, groupId),
     ]);
     applyExpenseDimensionFilters(query, {
       categories: filter?.categories,
@@ -3498,6 +3673,7 @@ export class ExpensesService {
       minAmount: filter?.minAmount,
       maxAmount: filter?.maxAmount,
       tagIds: filter?.tagIds,
+      customTagIds: trashCustomTagIds,
     });
 
     query.orderBy('expense.deletedAt', 'DESC');
@@ -3803,8 +3979,12 @@ export class ExpensesService {
 
     for (const item of items) {
       const list = byExpId.get(item.id as string) ?? [];
+      // TAG-BATCH-C3 — carry `tagScope` so the client knows how to resolve each
+      // name (global → /taxonomy; personal/group → decrypt the custom-tag
+      // payload). Still ids + scope + provenance only — never an E2EE plaintext.
       item.tags = list.map((t) => ({
         tagId: t.tagId,
+        tagScope: t.tagScope,
         authority: t.authority,
         source: t.source,
       }));

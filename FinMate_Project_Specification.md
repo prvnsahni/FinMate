@@ -4087,3 +4087,46 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   UNCHANGED (reused, no new primitive, no server decryption). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP
   CONDITIONS: none hit. NOT IMPLEMENTED: filtering/analytics/export (C3), classifier (C4), governance/UI (C5).
   TAG-BATCH-C3: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C3: integrate custom tags with expenses (assignment, filter, analytics, export, UI)
+
+- **Summary:** Wired custom tags through the EXISTING expense-tag pipeline (assign → response → filter →
+  analytics → export → UI). INTEGRATION ONLY — no classifier (C4), governance (C5), no new taxonomy, no new
+  finance calc, no new migration (reuses C1 `custom_tags` + `expense_tags.tag_scope`), no new crypto, no
+  group-key/SEC-KI1 change, no frozen-doc change. One unified `tagIds` namespace end-to-end.
+- **Assignment (create):** `persistConfirmedExpenseTags` now writes custom rows into the SAME `expense_tags`
+  table. `resolveAssignableCustomTags` authorizes SERVER-SIDE (client scope never trusted): personal tag → owned
+  by creator + personal expense; group tag → the expense's own group. Invalid/deprecated/inaccessible/cross-scope
+  dropped silently (like unknown canonical). Custom rows: `tag_scope`=personal/group, `taxonomy_version`=0.
+  Update path unchanged (never touches `expense_tags`).
+- **Response:** list+detail tag projection now carries `tagScope` (ids + scope + provenance only; NEVER a
+  plaintext name). Client resolves names: global → /taxonomy; personal/group → decrypt the custom-tag payload.
+- **Filter (list/trash/analytics/export):** unified `tagIds` now matches custom ids in the SAME correlated
+  EXISTS (OR-within/AND-across preserved; no new param). `resolveAccessibleCustomTagIds` authorizes custom ids
+  (personal owned by caller; group = active membership; active only); outer query scope still bounds every match
+  (IDOR-safe). Export stays group-scoped, group customs only, no tag column, no plaintext.
+- **Analytics:** custom tags flow through with zero server name work — aggregation groups by opaque `tagId` over
+  the scoped set; client resolves names. Overlap semantics unchanged.
+- **Frontend:** new `core/services/custom-tag.service.ts` fetches + decrypts custom-tag names CLIENT-SIDE reusing
+  the expense-title crypto (`CryptoSessionManager` master/group key + `ClientEncryptionService.decrypt`) — no new
+  primitive; in-memory cache only, never localStorage/URL/logs; undecryptable → opaque (left out), no fabricated
+  label. `group-detail` merges this group's custom tags into the SAME unified facet (`tagLabelById`/
+  `tagPillOptions`) so selector, row chips and tag analytics resolve custom names via the one existing mechanism
+  and feed the one `tagIds` filter; best-effort, infinite-scroll/ledger unchanged.
+- **Files:** backend — `expenses.service.ts` (assign + resolvers + `tagScope` in 2 tag projections + 3 filter
+  sites), `group-expense-filters.util.ts` (`customTagIds` in EXISTS), `services/expenses-export-query.service.ts`
+  (group-custom resolver), + specs (`expenses.service.spec.ts`, `group-expense-filters.util.spec.ts`,
+  `expenses-export-query.service.spec.ts`). frontend — `custom-tag.service.ts` (+ spec), `group-detail.component.ts`.
+  Docs — §C3 note + this Progress Log.
+- **Tests:** backend +20 (assignment authz incl. cross-scope/cross-group drops, filter IDOR personal+group,
+  response `tagScope` + no-plaintext, analytics opaque-id, util canonical+custom matching); frontend new
+  `CustomTagService` spec (client decrypt, opaque-on-failure, cache, no-N+1 key resolution, no plaintext to API,
+  HTTP-error → []).
+- **Verification:** backend 78 suites/851 (finance golden gate GREEN); frontend 72 suites/622; backend + frontend
+  builds clean; lint 0 errors (both). No migration; no package change; no unrelated files.
+- **Confirmation:** CODE CHANGED: YES (integration). SCHEMA CHANGED: NO (reuses C1). MIGRATION: NO. PACKAGES: NO.
+  PRODUCTION: NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (reused, no
+  new primitive, no server decryption of custom-tag names). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP
+  CONDITIONS: none hit. NOT IMPLEMENTED: classifier/OCR/population (C4), governance/promotion/tag-mgmt-UI (C5),
+  export tag columns, personal/dashboard custom-name display beyond group-detail (service ready). TAG-BATCH-C4:
+  NOT STARTED. COMMIT: (this iteration). PUSH: NO.

@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
+  CustomTag,
   EncryptedExpenseKey,
   Expense,
   ExpenseSplit,
@@ -109,12 +110,14 @@ describe('ExpenseExportQueryService', () => {
   let splitRepo: { createQueryBuilder: jest.Mock };
   let keyRepo: { find: jest.Mock };
   let memberRepo: { findOne: jest.Mock };
+  let customTagRepo: { find: jest.Mock };
 
   beforeEach(async () => {
     expenseRepo = { createQueryBuilder: jest.fn() };
     splitRepo = { createQueryBuilder: jest.fn() };
     keyRepo = { find: jest.fn().mockResolvedValue([]) };
     memberRepo = { findOne: jest.fn().mockResolvedValue(null) };
+    customTagRepo = { find: jest.fn().mockResolvedValue([]) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -126,6 +129,7 @@ describe('ExpenseExportQueryService', () => {
           useValue: keyRepo,
         },
         { provide: getRepositoryToken(GroupMember), useValue: memberRepo },
+        { provide: getRepositoryToken(CustomTag), useValue: customTagRepo },
       ],
     }).compile();
 
