@@ -34,6 +34,8 @@ export interface ExportFilter {
   /** Inclusive amount bounds. */
   minAmount?: number;
   maxAmount?: number;
+  /** Canonical tag ids — matches ANY (TAG-BATCH-B). Filters rows only; no new column. */
+  tagIds?: string[];
 }
 
 /**

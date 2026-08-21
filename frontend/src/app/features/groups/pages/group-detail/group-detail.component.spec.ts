@@ -127,6 +127,8 @@ describe('GroupDetailComponent', () => {
       getExpenses: jest
         .fn()
         .mockReturnValue(of({ data: [], meta: { totalItems: 0 } })),
+      // TAG-BATCH-B: ngOnInit loads the taxonomy for the tag filter facet.
+      getTaxonomy: jest.fn().mockReturnValue(of([])),
     } as any;
 
     mockRecurringExpensesService = {

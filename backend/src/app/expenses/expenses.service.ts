@@ -63,6 +63,8 @@ interface ExpenseListParams {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). */
+  tagIds?: string[];
   sortBy?: 'date' | 'amount';
   sortOrder?: 'asc' | 'desc';
 }
@@ -78,6 +80,14 @@ interface AnalyticsFilter {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). */
+  tagIds?: string[];
+}
+
+interface TagTotal {
+  tagId: string;
+  total: number;
+  currency: string;
 }
 
 interface MonthlyTotal {
@@ -1546,6 +1556,7 @@ export class ExpensesService {
       paidBy: paidByRefs,
       minAmount: params.minAmount,
       maxAmount: params.maxAmount,
+      tagIds: params.tagIds,
     });
 
     if (params.cursor) {
@@ -2496,6 +2507,73 @@ export class ExpensesService {
     return results.sort((a, b) => b.total - a.total);
   }
 
+  /**
+   * TAG-BATCH-B — READ-ONLY tag spending distribution, parallel to
+   * `getCategoryDistribution`. Aggregates the SAME authoritative expense amounts
+   * (`amountTotal`, refund-signed) grouped by canonical tag id, over the same
+   * scoped + dimension-filtered expense set. Purely descriptive: it never reads
+   * or writes payer/split/refund/settlement/balance and cannot alter any finance
+   * value (FIN-002 untouched).
+   *
+   * Because ancestors are materialized, an expense tagged `milk` contributes its
+   * amount to `milk`, `dairy`, `grocery` AND `food` — so totals are a hierarchical
+   * roll-up (a `food` total is the sum of its family), not a partition; tag totals
+   * may therefore overlap and need not sum to the overall spend. Scoped to a
+   * month via `startDate`/`endDate` this is the "monthly tag spending" report.
+   */
+  async getTagDistribution(filter: AnalyticsFilter): Promise<TagTotal[]> {
+    const { userId, groupId, startDate, endDate } = filter;
+
+    await this.assertGroupAccess(userId, groupId);
+
+    const dimensions = await this.resolveAnalyticsDimensions(filter);
+
+    const rows = await this.buildBaseAnalyticsQuery(
+      userId,
+      groupId,
+      startDate,
+      endDate,
+      dimensions,
+    )
+      // INNER JOIN so only tagged expenses contribute; one row per (expense, tag)
+      // — the (expense_id, tag_id) uniqueness means each expense counts once per
+      // tag, never double within a tag. Relation-property condition (like the
+      // shared EXISTS helper) so the naming strategy maps the FK column.
+      .innerJoin(ExpenseTag, 'tag', 'tag.expense = expense.id')
+      .select([
+        'tag.tagId AS "tagId"',
+        'expense.amountTotal AS "amountTotal"',
+        'expense.transactionType AS "transactionType"',
+        'expense.currency AS "currency"',
+      ])
+      .getRawMany<{
+        tagId: string;
+        amountTotal: string;
+        transactionType: 'expense' | 'refund';
+        currency: string;
+      }>();
+
+    const groups = new Map<string, { tagId: string; total: number; currency: string }>();
+    for (const row of rows) {
+      const key = `${row.tagId} ${row.currency}`;
+      const existing = groups.get(key) ?? {
+        tagId: row.tagId,
+        total: 0,
+        currency: row.currency,
+      };
+      existing.total += this.signedAmount(row.amountTotal, row.transactionType);
+      groups.set(key, existing);
+    }
+
+    return [...groups.values()]
+      .map((v) => ({
+        tagId: v.tagId,
+        total: Math.round(v.total * 100) / 100,
+        currency: v.currency,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }
+
   private buildBaseAnalyticsQuery(
     userId: string,
     groupId?: string,
@@ -2548,6 +2626,7 @@ export class ExpensesService {
       paidBy,
       minAmount: filter.minAmount,
       maxAmount: filter.maxAmount,
+      tagIds: filter.tagIds,
     };
   }
 
@@ -3303,6 +3382,7 @@ export class ExpensesService {
       paidBy,
       minAmount: filter?.minAmount,
       maxAmount: filter?.maxAmount,
+      tagIds: filter?.tagIds,
     });
 
     query.orderBy('expense.deletedAt', 'DESC');

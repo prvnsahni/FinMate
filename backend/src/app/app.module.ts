@@ -20,6 +20,7 @@ import { UsersModule } from './users/users.module';
 import { GroupsModule } from './groups/groups.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { TaxonomyModule } from './taxonomy/taxonomy.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { PeopleModule } from './people/people.module';
 import { ImportModule } from './import/import.module';
@@ -179,6 +180,7 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
     GroupsModule,
     ContactsModule,
     ExpensesModule,
+    TaxonomyModule,
     SettlementsModule,
     PeopleModule,
     ImportModule,

@@ -51,13 +51,18 @@ export interface GroupFilter {
   /** Inclusive amount bounds on `amountTotal`. */
   minAmount?: number;
   maxAmount?: number;
+  /**
+   * Canonical taxonomy tag ids (e.g. `milk`, `grocery`). Multi-select — matches
+   * ANY (TAG-BATCH-B). Ancestors are materialized server-side, so selecting
+   * `grocery` already matches milk/bread. Descriptive Zone-2 metadata only.
+   */
+  tagIds?: string[];
   /** Ledger ordering (ledger tab only). Defaults to date/desc server-side. */
   sortBy?: GroupSortBy;
   sortOrder?: SortOrder;
   // ── Reserved future slots (no UI/query yet) ──────────────────────────────
   // search?: string;   // blocked server-side: titles/notes are E2E-encrypted
   // paymentMethod?: string[];
-  // tags?: string[];
   // createdById?: string[];
 }
 
@@ -93,6 +98,7 @@ export function countActiveFilters(f: GroupFilter): number {
   n += f.categories?.length ?? 0;
   n += f.memberIds?.length ?? 0;
   n += f.paidByIds?.length ?? 0;
+  n += f.tagIds?.length ?? 0;
   if (f.transactionType && f.transactionType !== 'both') n += 1;
   if (f.minAmount != null || f.maxAmount != null) n += 1;
   return n;
@@ -106,6 +112,7 @@ export function cloneFilter(f: GroupFilter): GroupFilter {
     categories: f.categories ? [...f.categories] : undefined,
     memberIds: f.memberIds ? [...f.memberIds] : undefined,
     paidByIds: f.paidByIds ? [...f.paidByIds] : undefined,
+    tagIds: f.tagIds ? [...f.tagIds] : undefined,
   };
 }
 
@@ -120,6 +127,7 @@ export interface GroupFilterQueryParams {
   categories?: string | null;
   memberIds?: string | null;
   paidByIds?: string | null;
+  tagIds?: string | null;
   txType?: string | null;
   minAmount?: string | null;
   maxAmount?: string | null;
@@ -139,6 +147,7 @@ export function filterToQueryParams(f: GroupFilter): GroupFilterQueryParams {
     categories: csv(f.categories),
     memberIds: csv(f.memberIds),
     paidByIds: csv(f.paidByIds),
+    tagIds: csv(f.tagIds),
     txType:
       f.transactionType && f.transactionType !== 'both'
         ? f.transactionType
@@ -203,6 +212,7 @@ export function filterFromQueryParams(
     categories: parseCsv(params['categories']),
     memberIds: parseCsv(params['memberIds']),
     paidByIds: parseCsv(params['paidByIds']),
+    tagIds: parseCsv(params['tagIds']),
     transactionType,
     minAmount: parseNum(params['minAmount']),
     maxAmount: parseNum(params['maxAmount']),

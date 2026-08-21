@@ -39,6 +39,30 @@ describe('GroupFilterStore', () => {
     expect(store.draft().categories).toEqual(['Travel']);
   });
 
+  // ── TAG-BATCH-B — tag filter facet ───────────────────────────────────────────
+  it('toggles tags in the draft and counts them toward the badge', () => {
+    store.openDraft();
+    store.toggleDraftTag('milk');
+    store.toggleDraftTag('grocery');
+    expect(store.draft().tagIds).toEqual(['milk', 'grocery']);
+    store.toggleDraftTag('milk');
+    expect(store.draft().tagIds).toEqual(['grocery']);
+    store.apply();
+    // one date-default (no) + one tag = activeCount 1
+    expect(store.applied().tagIds).toEqual(['grocery']);
+    expect(store.activeCount()).toBe(1);
+  });
+
+  it('removeAppliedTag drops a single applied tag and re-syncs the draft', () => {
+    store.openDraft();
+    store.toggleDraftTag('milk');
+    store.toggleDraftTag('fuel');
+    store.apply();
+    store.removeAppliedTag('milk');
+    expect(store.applied().tagIds).toEqual(['fuel']);
+    expect(store.draft().tagIds).toEqual(['fuel']);
+  });
+
   it('cancelDraft() discards draft edits', () => {
     store.openDraft();
     store.toggleDraftCategory('Travel');
@@ -111,5 +135,21 @@ describe('GroupFilterStore', () => {
     expect(rebuilt.transactionType).toBe('expense');
     expect(rebuilt.minAmount).toBe(100);
     expect(rebuilt.maxAmount).toBe(500);
+  });
+
+  it('round-trips tagIds through the URL params', () => {
+    store.openDraft();
+    store.toggleDraftTag('milk');
+    store.toggleDraftTag('grocery');
+    store.apply();
+
+    const params = filterToQueryParams(store.applied());
+    expect(params.tagIds).toBe('milk,grocery');
+
+    const raw: Record<string, string> = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null) raw[k] = v;
+    }
+    expect(filterFromQueryParams(raw).tagIds).toEqual(['milk', 'grocery']);
   });
 });

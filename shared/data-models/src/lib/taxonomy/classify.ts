@@ -41,6 +41,15 @@ export function getActiveCanonicalTag(tagId: string): CanonicalTag | undefined {
 }
 
 /**
+ * The ACTIVE canonical taxonomy — the only tags selectable for filtering/UI.
+ * Deprecated terms are excluded so a stale term can never resurface as a new
+ * selection. Returns the shared seed rows (safe metadata only; no user data).
+ */
+export function getActiveCanonicalTaxonomy(): CanonicalTag[] {
+  return CANONICAL_TAXONOMY.filter((t) => t.status === 'active');
+}
+
+/**
  * Expand an ACTIVE tag id into itself followed by its ACTIVE ancestors, closest
  * first (milk → dairy → grocery → food). Returns [] when the id is unknown or
  * not active (a deprecated tag is never expanded/suggested). The walk stops at

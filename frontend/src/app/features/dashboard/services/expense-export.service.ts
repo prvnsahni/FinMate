@@ -58,6 +58,9 @@ export class ExpenseExportService {
     if (filter.paidByIds?.length) {
       params = params.set('paidByIds', filter.paidByIds.join(','));
     }
+    if (filter.tagIds?.length) {
+      params = params.set('tagIds', filter.tagIds.join(','));
+    }
     if (filter.transactionType && filter.transactionType !== 'both') {
       params = params.set('transactionType', filter.transactionType);
     }

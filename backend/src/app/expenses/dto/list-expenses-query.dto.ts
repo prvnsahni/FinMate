@@ -60,4 +60,9 @@ export class ListExpensesQueryDto {
   @IsOptional()
   @IsIn(['expense', 'refund', 'both'])
   transactionType?: 'expense' | 'refund' | 'both';
+
+  /** Canonical tag ids (comma-separated) — matches ANY (TAG-BATCH-B). */
+  @IsOptional()
+  @IsString()
+  tagIds?: string;
 }

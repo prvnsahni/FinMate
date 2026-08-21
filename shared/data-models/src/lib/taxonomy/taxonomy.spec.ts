@@ -1,11 +1,34 @@
 import { CANONICAL_TAXONOMY } from './canonical-taxonomy';
-import { classifyLabel, normalizeTagKey } from './classify';
+import {
+  classifyLabel,
+  getActiveCanonicalTag,
+  getActiveCanonicalTaxonomy,
+  normalizeTagKey,
+} from './classify';
 
 describe('normalizeTagKey', () => {
   it('lowercases, strips punctuation, collapses whitespace', () => {
     expect(normalizeTagKey('  Whole-Milk!! ')).toBe('whole milk');
     expect(normalizeTagKey('PETROL')).toBe('petrol');
     expect(normalizeTagKey('')).toBe('');
+  });
+});
+
+describe('getActiveCanonicalTaxonomy / getActiveCanonicalTag (TAG-BATCH-B)', () => {
+  it('returns only active tags (excludes deprecated seed terms)', () => {
+    const active = getActiveCanonicalTaxonomy();
+    expect(active.length).toBeGreaterThan(0);
+    expect(active.every((t) => t.status === 'active')).toBe(true);
+    // `misc` is deprecated in the seed and must never be returned.
+    expect(active.find((t) => t.id === 'misc')).toBeUndefined();
+    // sanity: a known active tag is present with its hierarchy.
+    expect(active.find((t) => t.id === 'milk')?.parentId).toBe('dairy');
+  });
+
+  it('looks up active tags by id and rejects deprecated/unknown ids', () => {
+    expect(getActiveCanonicalTag('grocery')?.canonicalName).toBe('Grocery');
+    expect(getActiveCanonicalTag('misc')).toBeUndefined();
+    expect(getActiveCanonicalTag('does-not-exist')).toBeUndefined();
   });
 });
 

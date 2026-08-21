@@ -90,7 +90,7 @@ import { formatDateRangeLabel } from '../../utils/date-preset.util';
 
 /** A single removable filter-summary chip. Per-value for multi-select dimensions. */
 export interface FilterChip {
-  kind: 'date' | 'category' | 'member' | 'paidBy' | 'type' | 'amount';
+  kind: 'date' | 'category' | 'member' | 'paidBy' | 'tag' | 'type' | 'amount';
   key: string;
   label: string;
   value?: string;
@@ -289,6 +289,45 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     })),
   );
 
+  /**
+   * TAG-BATCH-B — canonical tag pills for the filter drawer, loaded from the
+   * read-only `/taxonomy` endpoint (active tags only). Empty until loaded and
+   * on failure, so the facet degrades gracefully to "no tags" without blocking
+   * the rest of the filter drawer.
+   */
+  readonly tagPillOptions = signal<DropdownOption[]>([]);
+  private readonly tagLabelById = new Map<string, string>();
+
+  /** Resolve a canonical tag id to its display name for summary chips. */
+  tagNameById(id: string): string {
+    return this.tagLabelById.get(id) ?? id;
+  }
+
+  /**
+   * Load the read-only shared canonical taxonomy once for the tag filter facet.
+   * Best-effort: a failure just leaves the facet empty (the rest of the drawer
+   * works). No user/E2EE data is involved — the taxonomy is static reference data.
+   */
+  private loadTaxonomy(): void {
+    this.expensesService
+      .getTaxonomy()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (tags) => {
+          this.tagLabelById.clear();
+          for (const t of tags) this.tagLabelById.set(t.id, t.canonicalName);
+          this.tagPillOptions.set(
+            tags
+              .map((t) => ({ value: t.id, label: t.canonicalName }))
+              .sort((a, b) => a.label.localeCompare(b.label)),
+          );
+        },
+        error: () => {
+          // Leave the tag facet empty on failure — never block the drawer.
+        },
+      });
+  }
+
   /** Sort options (field + direction combined into one dropdown value). */
   readonly sortOptions: DropdownOption[] = [
     { value: 'date_desc', label: 'Newest first' },
@@ -329,6 +368,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       this.filterStore.draft().paidByIds ?? [],
       nextValues,
       (value) => this.filterStore.toggleDraftPaidBy(value),
+    );
+  }
+
+  onDraftTagsChange(nextValues: string[]): void {
+    this.syncDraftArray(
+      this.filterStore.draft().tagIds ?? [],
+      nextValues,
+      (value) => this.filterStore.toggleDraftTag(value),
     );
   }
 
@@ -442,6 +489,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         label: 'Paid by: ' + this.memberNameById(p),
       });
     }
+    for (const t of f.tagIds ?? []) {
+      chips.push({
+        kind: 'tag',
+        key: 'tag:' + t,
+        value: t,
+        label: 'Tag: ' + this.tagNameById(t),
+      });
+    }
     if (f.transactionType && f.transactionType !== 'both') {
       chips.push({
         kind: 'type',
@@ -492,6 +547,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         break;
       case 'paidBy':
         if (chip.value) this.filterStore.removeAppliedPaidBy(chip.value);
+        break;
+      case 'tag':
+        if (chip.value) this.filterStore.removeAppliedTag(chip.value);
         break;
       case 'type':
         this.filterStore.clearAppliedTxType();
@@ -547,6 +605,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       categories: applied.categories,
       memberIds: applied.memberIds,
       paidByIds: applied.paidByIds,
+      tagIds: applied.tagIds,
       transactionType:
         applied.transactionType === 'both'
           ? undefined
@@ -563,6 +622,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       categories: a.categories,
       memberIds: a.memberIds,
       paidByIds: a.paidByIds,
+      tagIds: a.tagIds,
       transactionType:
         a.transactionType === 'both' ? undefined : a.transactionType,
       minAmount: a.minAmount,
@@ -957,6 +1017,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   ngOnInit() {
     this.currentUserId.set(this.getCurrentUserId());
     this.closeMonthSelected.set(this.getCurrentMonthString());
+    this.loadTaxonomy();
 
     // Subscribe to query parameters to sync the active tab. Filter query params
     // are owned by the GroupFilterStore + its effect (see the constructor), not
@@ -2001,6 +2062,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         categories: dims.categories,
         memberIds: dims.memberIds,
         paidByIds: dims.paidByIds,
+        tagIds: dims.tagIds,
         transactionType: dims.transactionType,
         minAmount: dims.minAmount,
         maxAmount: dims.maxAmount,

@@ -98,6 +98,11 @@ export class ExportExpensesQueryDto {
   @Transform(({ value }) => toNum(value))
   @IsNumber()
   maxAmount?: number;
+
+  /** TAG-BATCH-B — canonical tag ids (comma-separated) — matches ANY. Filters only. */
+  @IsOptional()
+  @Transform(({ value }) => splitCsv(value))
+  tagIds?: string[];
 }
 
 function splitCsv(value: unknown): string[] | undefined {

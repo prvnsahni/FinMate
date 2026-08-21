@@ -2893,4 +2893,38 @@ describe('ExpensesService', () => {
       expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
     });
   });
+
+  // ── TAG-BATCH-B — tag spending distribution (read-only analytics) ────────────
+  describe('getTagDistribution (TAG-BATCH-B)', () => {
+    it('aggregates refund-signed amounts by tag and never writes finance', async () => {
+      const rows = [
+        { tagId: 'milk', amountTotal: '50', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'grocery', amountTotal: '50', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'grocery', amountTotal: '30', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'grocery', amountTotal: '20', transactionType: 'refund', currency: 'INR' },
+      ];
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(qb as any);
+
+      const result = await service.getTagDistribution({ userId: 'user-1' });
+
+      // grocery: 50 + 30 − 20 (refund) = 60; milk: 50. Sorted total desc.
+      expect(result).toEqual([
+        { tagId: 'grocery', total: 60, currency: 'INR' },
+        { tagId: 'milk', total: 50, currency: 'INR' },
+      ]);
+      // READ-ONLY: no finance write ever happens.
+      expect(expenseRepository.save).not.toHaveBeenCalled();
+      expect(splitRepository.save).not.toHaveBeenCalled();
+    });
+  });
 });

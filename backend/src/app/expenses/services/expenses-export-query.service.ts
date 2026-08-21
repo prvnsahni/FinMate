@@ -44,6 +44,8 @@ export interface ExportFilter {
   /** Inclusive amount bounds. */
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). Filters only; no new columns. */
+  tagIds?: string[];
 }
 
 /**
@@ -363,6 +365,7 @@ export class ExpenseExportQueryService {
       paidBy,
       minAmount: filter.minAmount,
       maxAmount: filter.maxAmount,
+      tagIds: filter.tagIds,
     });
 
     const expenses = await qb.take(MAX_EXPORT_ROWS + 1).getMany();

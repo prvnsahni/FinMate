@@ -92,6 +92,7 @@ describe('ExpensesController', () => {
       'refund',
       '100',
       '500',
+      'milk,grocery',
       'amount',
       'asc',
       {
@@ -113,6 +114,7 @@ describe('ExpensesController', () => {
       transactionType: 'refund',
       minAmount: 100,
       maxAmount: 500,
+      tagIds: ['milk', 'grocery'],
       sortBy: 'amount',
       sortOrder: 'asc',
     });

@@ -742,6 +742,21 @@
                   }
                 </div>
 
+                <!-- Tags (multi-select) — TAG-BATCH-B -->
+                @if (tagPillOptions().length) {
+                  <div>
+                    <p class="text-label">Tags</p>
+                    <app-dropdown
+                      [ngModel]="filterStore.draft().tagIds ?? []"
+                      (ngModelChange)="onDraftTagsChange($event)"
+                      [options]="tagPillOptions()"
+                      placeholder="All Tags"
+                      size="md"
+                      [multiple]="true"
+                    ></app-dropdown>
+                  </div>
+                }
+
                 <!-- Transaction Type -->
                 <div>
                   <p class="text-label">Transaction Type</p>

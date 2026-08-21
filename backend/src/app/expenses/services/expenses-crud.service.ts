@@ -21,6 +21,8 @@ export interface ExpenseListParams {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** Canonical tag ids — matches ANY (TAG-BATCH-B). */
+  tagIds?: string[];
   sortBy?: 'date' | 'amount';
   sortOrder?: 'asc' | 'desc';
 }

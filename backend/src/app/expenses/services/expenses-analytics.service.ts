@@ -16,6 +16,8 @@ export interface AnalyticsFilter {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). */
+  tagIds?: string[];
 }
 
 export interface MonthlyTotal {
@@ -26,6 +28,12 @@ export interface MonthlyTotal {
 
 export interface CategoryTotal {
   category: string;
+  total: number;
+  currency: string;
+}
+
+export interface TagTotal {
+  tagId: string;
   total: number;
   currency: string;
 }
@@ -48,6 +56,11 @@ export class ExpensesAnalyticsService {
     filter: AnalyticsFilter,
   ): Promise<CategoryTotal[]> {
     return this.expensesService.getCategoryDistribution(filter);
+  }
+
+  /** TAG-BATCH-B — canonical tag spending distribution (read-only). */
+  async getTagDistribution(filter: AnalyticsFilter): Promise<TagTotal[]> {
+    return this.expensesService.getTagDistribution(filter);
   }
 
   async getCombinedMonthlyAnalytics(

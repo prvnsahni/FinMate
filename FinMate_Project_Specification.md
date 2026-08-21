@@ -3830,3 +3830,53 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   PRODUCTION: NO. FINANCE: UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data Classification
   Matrix: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI: NO. Batch B/custom-tags/taxonomy-DB/line-items/CC-bank/ML/
   cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-21 — TAG-BATCH-B: expense tag filtering + reporting (no migration, no finance/E2EE change)
+
+- **Summary:** Made the persisted canonical expense tags (TAG-BATCH-A) usable for **filtering, search and
+  reporting**. Additive across list/analytics/export/trash/balances plus a read-only taxonomy endpoint and a
+  tag filter facet in the group ledger. **No migration** (reuses the TAG-BATCH-A `expense_tags` indexes),
+  **no finance-calc change**, **no E2EE/SEC-KI1/group-key change**, **no second/DB taxonomy**, **no custom tags**.
+- **AND/OR decision (STEP 3):** the repo's every multi-select dimension (categories/members/payers) is
+  **match-ANY**; tags follow the same convention — **multiple tags = match ANY** (OR within the tag dimension,
+  AND across dimensions). Natural for hierarchical tags: ancestor materialization means selecting `grocery`
+  already matches milk/bread. Documented; no boolean query syntax.
+- **Backend filtering:** single choke-point — added a correlated `EXISTS` over `expense_tags` in the shared
+  `applyExpenseDimensionFilters`, so list + analytics + export + trash + balances all gain `tagIds` at once.
+  Unknown/**deprecated** ids are dropped (via `getActiveCanonicalTag`), like the member filter drops unknown
+  members — a deprecated tag can never become a new selection or widen results. Scope/auth/IDOR/spectator rules
+  are untouched (tag clause is an added AND on the already-scoped query). Wired through `ExpenseListParams`,
+  `AnalyticsFilter`, `RawGroupExpenseFilter`, list/category/export DTOs and the controller (`?tagIds=`).
+- **Taxonomy endpoint (STEP 4):** new read-only `GET /taxonomy` (`TaxonomyModule`/`TaxonomyController`, JWT-guarded)
+  returns ONLY active canonical tags projected to safe metadata (id/canonicalName/normalizedKey/parentId/status/
+  version) from the one code-seed. No user/E2EE/expense data; deprecated tags excluded. No taxonomy DB table.
+- **Tag analytics (STEP 5):** new `getTagDistribution` + `GET /expenses/analytics/tags` parallel to category
+  distribution — aggregates the SAME refund-signed `amountTotal` grouped by canonical tag over the scoped,
+  dimension-filtered set (a date range = monthly tag spending). READ-ONLY: never reads/writes any finance field
+  (totals are a hierarchical roll-up, so tag totals overlap by design).
+- **Frontend (STEP 6):** extended the unified group filter — `tagIds` in `GroupFilter` (badge count, clone,
+  URL round-trip), `toggleDraftTag`/`removeAppliedTag` in the store, a **Tags** multi-select facet + summary
+  chips in the group-detail drawer (options loaded from `/taxonomy`), and `tagIds` threaded into the ledger
+  fetch, analytics, and export via the existing option builders. Preserves month/group/category/paid-by/type/
+  amount/sort, infinite scroll, mutation-window reload, and stale-response (`fetchSeq`) guards. `expenses.service`
+  gained `getTaxonomy()`/`getTagAnalytics()` and a `tagIds` param.
+- **STEP 7 (analytics chart UI) — DEFERRED & REPORTED:** the tag-distribution **API + frontend service method
+  are delivered**, but rendering a new chart on the large analytics tab is a sizeable UI surface; per STEP 7's
+  "STOP and report if UI scope becomes large", the chart is deferred to a follow-up rather than expanding this
+  batch. Backend data is ready for it.
+- **STEP 8 (export):** export now **filters** by tag (rows respect the tag selection) via the shared helper —
+  no contract change. Tag **columns** are NOT added (would change the export file/contract); deferred per STEP 8.
+- **Regression (verified green):** group-detail month-aware export, month not reset by tag filter, infinite-scroll
+  append + `currentPage` clamp, and `fetchSeq` stale-response protection all still pass (`f61326f`/`9f54cad` intact).
+- **Files:** backend — `group-expense-filters.util.ts`(+spec), `expenses.service.ts`(+spec),
+  `expenses.controller.ts`(+spec), `expenses-analytics.service.ts`, `expenses-crud.service.ts`,
+  `expenses-export-query.service.ts`, `dto/{list,export}` , `app.module.ts`, new `taxonomy/`{controller,module,spec};
+  data-models — `classify.ts`(+`getActiveCanonicalTaxonomy`/`getActiveCanonicalTag`, spec). frontend —
+  `group-filter.model.ts`, `group-filter.store.ts`(+spec), `expenses.service.ts`(+spec), group-detail
+  `.ts/.html/.spec`, dashboard `expense-export.service.ts` + `export/expense-export.types.ts`.
+- **Verification:** data-models 3 suites/22; backend 76 suites/792 (finance golden gate PASS); frontend
+  70 suites/598; backend+frontend builds clean; lint 0 errors (all 3 projects).
+- **Confirmation:** CODE CHANGED: YES. SCHEMA CHANGED: NO. MIGRATION CREATED: NO. MIGRATION EXECUTED: N/A.
+  PACKAGES: NO. PRODUCTION: NO. FINANCE: UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data
+  Classification Matrix: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI: NO. TAG-BATCH-C (custom tags)/taxonomy-DB/
+  line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

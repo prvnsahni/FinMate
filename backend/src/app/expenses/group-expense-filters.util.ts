@@ -1,4 +1,4 @@
-import { ExpenseSplit } from '@finmate/data-models';
+import { ExpenseSplit, ExpenseTag, getActiveCanonicalTag } from '@finmate/data-models';
 import { SelectQueryBuilder } from 'typeorm';
 
 /**
@@ -29,6 +29,14 @@ export interface GroupExpenseDimensionFilters {
   member?: MemberRef[];
   minAmount?: number;
   maxAmount?: number;
+  /**
+   * TAG-BATCH-B — canonical taxonomy tag ids (e.g. `milk`, `grocery`). Multi-select
+   * — matches ANY, consistent with the other dimensions. Because ancestors are
+   * materialized (milk → dairy → grocery → food), selecting `grocery` already
+   * matches milk/bread rows. Unknown/deprecated ids are dropped (like the member
+   * filter drops unknown members), so a stale id simply widens nothing.
+   */
+  tagIds?: string[];
 }
 
 /**
@@ -44,6 +52,7 @@ export interface RawGroupExpenseFilter {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  tagIds?: string[];
 }
 
 /** Parse raw query strings (comma-separated arrays, numbers) into a filter. */
@@ -56,6 +65,7 @@ export function parseRawGroupExpenseFilter(q: {
   transactionType?: string;
   minAmount?: string;
   maxAmount?: string;
+  tagIds?: string;
 }): RawGroupExpenseFilter {
   const csv = (v?: string): string[] | undefined => {
     if (!v) return undefined;
@@ -82,6 +92,7 @@ export function parseRawGroupExpenseFilter(q: {
         : undefined,
     minAmount: num(q.minAmount),
     maxAmount: num(q.maxAmount),
+    tagIds: csv(q.tagIds),
   };
 }
 
@@ -159,5 +170,28 @@ export function applyExpenseDimensionFilters<T>(
     });
     qb.setParameter('gefMemGm', gmIds);
     if (userIds.length) qb.setParameter('gefMemUser', userIds);
+  }
+
+  // TAG-BATCH-B — canonical-tag filter (match ANY). Correlated EXISTS over
+  // `expense_tags` (never a JOIN), so it never multiplies rows — counts,
+  // pagination and scope-wide totals stay correct. Descriptive Zone-2 metadata
+  // only; it selects WHICH expenses match and never reads any financial column.
+  // Unknown/deprecated ids are dropped so a stale selection can never widen the
+  // result or resurrect a deprecated tag as a filter.
+  if (filter.tagIds?.length) {
+    const activeTagIds = filter.tagIds.filter((id) => !!getActiveCanonicalTag(id));
+    if (activeTagIds.length) {
+      qb.andWhere((sub) => {
+        const inner = sub
+          .subQuery()
+          .select('1')
+          .from(ExpenseTag, 'gefTag')
+          .where(`gefTag.expense = ${alias}.id`)
+          .andWhere('gefTag.tagId IN (:...gefTagIds)')
+          .getQuery();
+        return `EXISTS ${inner}`;
+      });
+      qb.setParameter('gefTagIds', activeTagIds);
+    }
   }
 }

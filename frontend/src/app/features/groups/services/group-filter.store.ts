@@ -138,6 +138,13 @@ export class GroupFilterStore {
     }));
   }
 
+  toggleDraftTag(value: string): void {
+    this._draft.update((d) => ({
+      ...d,
+      tagIds: toggleInArray(d.tagIds, value),
+    }));
+  }
+
   setDraftTxType(transactionType: TransactionTypeFilter): void {
     this._draft.update((d) => ({ ...d, transactionType }));
   }
@@ -207,6 +214,15 @@ export class GroupFilterStore {
     this._applied.update((a) => ({
       ...a,
       paidByIds: toggleInArray(a.paidByIds, value),
+    }));
+    this.syncDraftToApplied();
+  }
+
+  /** Remove one tag value (chip); clears the field when empty. */
+  removeAppliedTag(value: string): void {
+    this._applied.update((a) => ({
+      ...a,
+      tagIds: toggleInArray(a.tagIds, value),
     }));
     this.syncDraftToApplied();
   }

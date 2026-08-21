@@ -129,4 +129,35 @@ describe('applyExpenseDimensionFilters', () => {
     expect(qb.lastSub?.conditions).toContain('gefSplit.expense = expense.id');
     expect(qb.lastSub?.conditions).toContain('gefSplit.deletedAt IS NULL');
   });
+
+  // ── TAG-BATCH-B — canonical tag filter (match ANY, correlated EXISTS) ─────────
+  describe('tag filter', () => {
+    it('filters by active tag ids via a correlated EXISTS with IN (match ANY)', () => {
+      const qb = apply({ tagIds: ['milk', 'grocery'] });
+      expect(qb.clauses.some((c) => c.startsWith('EXISTS'))).toBe(true);
+      // IN (...) is match-ANY, consistent with the other multi-select dimensions.
+      expect(qb.lastSub?.conditions).toContain('gefTag.tagId IN (:...gefTagIds)');
+      // Correlated to the outer expense — never multiplies rows.
+      expect(qb.lastSub?.conditions).toContain('gefTag.expense = expense.id');
+      expect(qb.params['gefTagIds']).toEqual(['milk', 'grocery']);
+    });
+
+    it('drops unknown/deprecated tag ids (no clause when none are active)', () => {
+      // `misc` is a deprecated seed tag; `not-a-tag` is unknown.
+      const qb = apply({ tagIds: ['misc', 'not-a-tag'] });
+      expect(qb.clauses.some((c) => c.startsWith('EXISTS'))).toBe(false);
+      expect(qb.params['gefTagIds']).toBeUndefined();
+    });
+
+    it('keeps only the active ids from a mixed list', () => {
+      const qb = apply({ tagIds: ['milk', 'misc'] });
+      expect(qb.params['gefTagIds']).toEqual(['milk']);
+    });
+
+    it('adds no clause for an empty tag list', () => {
+      const qb = apply({ tagIds: [] });
+      expect(qb.clauses).toEqual([]);
+      expect(qb.params['gefTagIds']).toBeUndefined();
+    });
+  });
 });
