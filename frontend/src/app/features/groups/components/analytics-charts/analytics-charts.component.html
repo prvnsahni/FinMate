@@ -324,3 +324,56 @@
     </ul>
   }
 </div>
+
+<!-- TAG-BATCH-B2: Tag trend (month × tag). Same "spending by tag" overlap
+     semantics; shown only when the selected range spans ≥2 months. Clicking a
+     tag row applies the unified tag filter (reuses tagSelected). -->
+@if (!isLoading && tagTrendMonths.length >= 2 && tagTrendRows.length > 0) {
+  <div
+    class="bg-white/70 dark:bg-finmate-card/70 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl shadow-black/5 mb-8"
+    data-testid="tag-trend-card"
+  >
+    <h3 class="text-lg font-bold mb-1">Tag trend</h3>
+    <p class="text-xs text-muted mb-4">
+      Spending by tag over time. Tags can overlap (an item tagged “milk” also
+      counts under dairy, grocery and food), so totals aren’t exclusive.
+    </p>
+    <div class="overflow-x-auto -mx-1 px-1">
+      <table class="w-full min-w-[360px] text-sm border-collapse">
+        <thead>
+          <tr class="text-muted">
+            <th class="text-left font-semibold py-1.5 pr-3">Tag</th>
+            @for (m of tagTrendMonths; track m) {
+              <th class="text-right font-semibold py-1.5 px-2 whitespace-nowrap">
+                {{ tagTrendMonthLabel(m) }}
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of tagTrendRows; track row.tagId) {
+            <tr class="border-t border-slate-100 dark:border-white/5">
+              <td class="py-1.5 pr-3">
+                <button
+                  type="button"
+                  (click)="onTagBarActivate(row.tagId)"
+                  [attr.aria-label]="'Filter ledger by ' + row.name"
+                  class="capitalize font-semibold text-slate-700 dark:text-slate-200 hover:text-finmate-primary cursor-pointer min-h-[32px] text-left"
+                >
+                  {{ row.name }}
+                </button>
+              </td>
+              @for (cell of row.cells; track $index) {
+                <td
+                  class="text-right py-1.5 px-2 tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300"
+                >
+                  {{ cell | currency: currency }}
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+}

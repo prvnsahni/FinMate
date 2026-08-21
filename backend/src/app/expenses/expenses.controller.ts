@@ -314,6 +314,43 @@ export class ExpensesController {
     );
   }
 
+  /**
+   * TAG-BATCH-B2 — monthly canonical tag spending trend for the requested date
+   * range + scope + filters. READ-ONLY; one query grouped by month in the service.
+   */
+  @Get('analytics/tags-trend')
+  async tagTrend(
+    @Query('groupId') groupId: string | undefined,
+    @Query('startDate') startDate: string | undefined,
+    @Query('endDate') endDate: string | undefined,
+    @Query('categories') categories: string | undefined,
+    @Query('memberIds') memberIds: string | undefined,
+    @Query('paidByIds') paidByIds: string | undefined,
+    @Query('transactionType') transactionType: string | undefined,
+    @Query('minAmount') minAmount: string | undefined,
+    @Query('maxAmount') maxAmount: string | undefined,
+    @Query('tagIds') tagIds: string | undefined,
+    @Req() req: Request & { user: { id: string } },
+  ) {
+    const result = await this.expensesAnalyticsService.getTagTrend({
+      userId: req.user.id,
+      groupId,
+      startDate,
+      endDate,
+      categories: csvParam(categories),
+      memberIds: csvParam(memberIds),
+      paidByIds: csvParam(paidByIds),
+      transactionType: normalizeTxType(transactionType),
+      minAmount: numParam(minAmount),
+      maxAmount: numParam(maxAmount),
+      tagIds: csvParam(tagIds),
+    });
+    return new SuccessResponse(
+      'Tag trend analytics retrieved successfully',
+      result,
+    );
+  }
+
   /** Combined category-level aggregated monthly expenditures (personal + group splits). */
   @Get('analytics/all-monthly')
   async allMonthlySummary(

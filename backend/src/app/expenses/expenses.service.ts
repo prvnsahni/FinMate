@@ -90,6 +90,14 @@ interface TagTotal {
   currency: string;
 }
 
+interface TagTrendPoint {
+  /** `YYYY-MM`. */
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
 interface MonthlyTotal {
   month: string;
   total: number;
@@ -2608,6 +2616,79 @@ export class ExpensesService {
       .sort((a, b) => b.total - a.total);
   }
 
+  /**
+   * TAG-BATCH-B2 — READ-ONLY monthly tag spending trend. ONE query (same shape as
+   * `getTagDistribution`, plus `expenseDate`) over the scoped, dimension-filtered
+   * set; months are grouped in JS (portable across Postgres/SQLite, no DB-specific
+   * date SQL), summing the SAME refund-signed `amountTotal` per (month, tag,
+   * currency). No N-per-month queries, no second analytics engine, no finance
+   * mutation (FIN-002 untouched). Overlap is inherent (ancestor tags), so callers
+   * must present this as "spending by tag", never an exclusive breakdown.
+   */
+  async getTagTrend(filter: AnalyticsFilter): Promise<TagTrendPoint[]> {
+    const { userId, groupId, startDate, endDate } = filter;
+
+    await this.assertGroupAccess(userId, groupId);
+
+    const dimensions = await this.resolveAnalyticsDimensions(filter);
+
+    const rows = await this.buildBaseAnalyticsQuery(
+      userId,
+      groupId,
+      startDate,
+      endDate,
+      dimensions,
+    )
+      .innerJoin(ExpenseTag, 'tag', 'tag.expense = expense.id')
+      .select([
+        'tag.tagId AS "tagId"',
+        'expense.expenseDate AS "expenseDate"',
+        'expense.amountTotal AS "amountTotal"',
+        'expense.transactionType AS "transactionType"',
+        'expense.currency AS "currency"',
+      ])
+      .getRawMany<{
+        tagId: string;
+        expenseDate: string | Date;
+        amountTotal: string;
+        transactionType: 'expense' | 'refund';
+        currency: string;
+      }>();
+
+    const groups = new Map<
+      string,
+      { month: string; tagId: string; total: number; currency: string }
+    >();
+    for (const row of rows) {
+      const month = this.monthKey(row.expenseDate);
+      const key = `${month} ${row.tagId} ${row.currency}`;
+      const existing = groups.get(key) ?? {
+        month,
+        tagId: row.tagId,
+        total: 0,
+        currency: row.currency,
+      };
+      existing.total += this.signedAmount(row.amountTotal, row.transactionType);
+      groups.set(key, existing);
+    }
+
+    return [...groups.values()]
+      .map((v) => ({
+        month: v.month,
+        tagId: v.tagId,
+        total: Math.round(v.total * 100) / 100,
+        currency: v.currency,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month) || b.total - a.total);
+  }
+
+  /** `YYYY-MM` for a `date`-column value (string 'YYYY-MM-DD' or a Date). */
+  private monthKey(value: string | Date): string {
+    return value instanceof Date
+      ? value.toISOString().slice(0, 7)
+      : String(value).slice(0, 7);
+  }
+
   private buildBaseAnalyticsQuery(
     userId: string,
     groupId?: string,
@@ -3684,7 +3765,50 @@ export class ExpensesService {
     const total = items.length;
     const pageItems = items.slice((p - 1) * l, (p - 1) * l + l);
 
+    // TAG-BATCH-B2 — attach advisory tags to the returned page in ONE bulk query
+    // (no N+1), matching the group-ledger shape from B1.
+    await this.attachTagsToItems(pageItems);
+
     return paginate(pageItems, total, p, l, '/api/v1/expenses/me', {});
+  }
+
+  /**
+   * TAG-BATCH-B2 — attach advisory canonical tags to already-built response
+   * items (which carry an `id`), in a single bulk query keyed on those ids. Used
+   * by the dashboard's `listMyExpenses`, whose items are hand-built rather than
+   * routed through `toExpenseResponse`. Descriptive Zone-2 metadata only (id +
+   * authority + source); never a financial value, never E2EE plaintext.
+   */
+  private async attachTagsToItems(
+    items: Array<Record<string, unknown>>,
+  ): Promise<void> {
+    const ids = items
+      .map((i) => i.id)
+      .filter((v): v is string => typeof v === 'string');
+    if (ids.length === 0) return;
+
+    const tags = await this.expenseTagRepository.find({
+      where: { expense: { id: In(ids) } },
+      relations: ['expense'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const byExpId = new Map<string, ExpenseTag[]>();
+    for (const tag of tags) {
+      const eid = tag.expense.id;
+      const arr = byExpId.get(eid);
+      if (arr) arr.push(tag);
+      else byExpId.set(eid, [tag]);
+    }
+
+    for (const item of items) {
+      const list = byExpId.get(item.id as string) ?? [];
+      item.tags = list.map((t) => ({
+        tagId: t.tagId,
+        authority: t.authority,
+        source: t.source,
+      }));
+    }
   }
 
   /**

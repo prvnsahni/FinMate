@@ -3922,3 +3922,48 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data Classification Matrix: UNCHANGED. FROZEN
   SRS/LEDGER/ADR/OpenAPI: NO. Deferred (reported): monthly tag trend + dashboard-row tag chips. TAG-BATCH-C
   (custom tags)/taxonomy-DB/line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-B2: complete tag UX (dashboard chips + monthly trend; no migration/finance/E2EE change)
+
+- **Summary:** Closed the two B1-deferred UX items — **dashboard expense-row tag chips** and a **monthly tag
+  trend**. Additive; **no migration, no schema change, no finance-calc/E2EE/SEC-KI1 change, no taxonomy DB, no
+  custom tags, no new analytics engine.** Reuses the B1 `tags` response shape, the shared `/taxonomy` cache,
+  and existing analytics chart conventions.
+- **Dashboard chips (STEP 2):** `listMyExpenses` now attaches advisory `tags` (id + authority + source only) to
+  the returned page via a **single bulk query** (`attachTagsToItems`, no N+1) — the dashboard items are
+  hand-built, not routed through `toExpenseResponse`, so a dedicated batch attach was added. `dashboard-home`
+  renders the same chip language as the group ledger (active tags only, unknown/deprecated dropped fail-safe,
+  user-authored before inferred, inferred = subtle dashed, `+N` overflow, mobile wrap, aria-labels). The
+  dashboard page loads `/taxonomy` once and passes a name map down (no per-row lookup).
+- **Dashboard tag→filter (STEP 3) — N/A, REPORTED:** the dashboard has **no unified tag-filter surface** (only a
+  simple all/personal/group_share view toggle, no `GroupFilterStore`). Connecting a tag→filter would require a
+  filter/navigation redesign, so per STEP 3 the dashboard chips are **display-only** (not clickable) and this is
+  reported rather than force-fit.
+- **Monthly tag trend (STEP 4-5):** implemented as an **additive read-only capability** — `getTagTrend` +
+  `GET /expenses/analytics/tags-trend`. **ONE query** (same shape as `getTagDistribution` plus `expenseDate`)
+  over the scoped, dimension-filtered set; months are grouped **in JS** (`monthKey`, portable across Postgres/
+  SQLite, no DB-specific date SQL), summing the SAME refund-signed `amountTotal` per (month, tag, currency). No
+  N-per-month calls, no per-month loops, no duplicated finance math. UI: a compact, horizontally-scrollable
+  month × tag table ("Tag trend") in `analytics-charts`, shown only when the selected range spans ≥2 months,
+  top-8 tags by spend, with the same overlap caveat ("spending by tag", not an exclusive breakdown).
+- **Chart→filter (STEP 6):** clicking a trend tag row reuses the existing `tagSelected` output → the parent
+  applies the unified `tagIds` filter and switches to the ledger. Match-ANY within tags, AND across dimensions;
+  no second filter state, no boolean config; month/group/category/paid-by/type/amount/existing tags preserved.
+- **Security/finance (STEP 8-9):** no title/description decryption, no keys, no OCR, no external provider; tags
+  stay descriptive Zone-2 metadata (id + provenance only). `getTagTrend` is read-only — never touches any
+  financial field; finance golden fixtures green.
+- **Regression (verified green):** group-detail month-aware export, tag filter not resetting the month,
+  infinite-scroll + `fetchSeq`/`myExpensesSeq` stale-response guards, mutation reload, dashboard scope — all
+  still pass (`f61326f`/`9f54cad`/`bde0912`/`8fe4832`/`31fd036` intact).
+- **Files:** backend — `expenses.service.ts` (`attachTagsToItems` + `getTagTrend` + `monthKey`) + spec,
+  `expenses.controller.ts` (tags-trend endpoint), `expenses-analytics.service.ts` (facade). frontend —
+  `dashboard-home.component.{ts,html}` (chips) + spec, `dashboard.component.{ts,html}` (taxonomy load + input) +
+  spec, `analytics-charts.component.{ts,html}` (trend) + spec, `expenses.service.ts` (`getTagTrend`) + spec,
+  `dashboard-analytics.component.spec.ts` (mock).
+- **Verification:** backend 76 suites/795 (finance golden gate PASS); frontend 71 suites/615; backend+frontend
+  builds clean; lint 0 errors. data-models untouched.
+- **Confirmation:** CODE CHANGED: YES. SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES: NO. PRODUCTION: NO. FINANCE:
+  UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data Classification Matrix: UNCHANGED. FROZEN
+  SRS/LEDGER/ADR/OpenAPI: NO. Reported: dashboard has no unified tag-filter surface (chips display-only).
+  TAG-BATCH-C (custom tags)/taxonomy-DB/line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration).
+  PUSH: NO.

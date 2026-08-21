@@ -38,6 +38,13 @@ export interface TagTotal {
   currency: string;
 }
 
+export interface TagTrendPoint {
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
 @Injectable()
 export class ExpensesAnalyticsService {
   constructor(private readonly expensesService: ExpensesService) {}
@@ -61,6 +68,11 @@ export class ExpensesAnalyticsService {
   /** TAG-BATCH-B — canonical tag spending distribution (read-only). */
   async getTagDistribution(filter: AnalyticsFilter): Promise<TagTotal[]> {
     return this.expensesService.getTagDistribution(filter);
+  }
+
+  /** TAG-BATCH-B2 — monthly canonical tag spending trend (read-only). */
+  async getTagTrend(filter: AnalyticsFilter): Promise<TagTrendPoint[]> {
+    return this.expensesService.getTagTrend(filter);
   }
 
   async getCombinedMonthlyAnalytics(

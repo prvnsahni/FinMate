@@ -2334,6 +2334,38 @@ describe('ExpensesService', () => {
       expect((result.data[0] as any).groupId).toBeNull();
     });
 
+    it('attaches advisory tags to dashboard items in one query (B2, no N+1)', async () => {
+      const personalExp = {
+        id: 'p-1',
+        title: 'enc:Groceries',
+        amountTotal: 200,
+        category: 'Food & Drinks',
+        expenseDate: '2026-07-01',
+        currency: 'USD',
+        status: 'posted',
+        encryptionScope: 'personal',
+        group: null,
+        paidByUser: { id: 'user-1' },
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(makeQb([personalExp]));
+      splitRepository.createQueryBuilder = jest.fn().mockReturnValue(makeQb([]));
+      expenseTagRepositoryMock.find.mockResolvedValue([
+        { expense: { id: 'p-1' }, tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { expense: { id: 'p-1' }, tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+
+      const result = await service.listMyExpenses('user-1', 1, 20);
+
+      expect((result.data[0] as any).tags).toEqual([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+      // A single bulk tag query for the whole page — never one per row.
+      expect(expenseTagRepositoryMock.find).toHaveBeenCalledTimes(1);
+    });
+
     it('returns group shares with expenseType GROUP_SHARE and myShare = amountOwed', async () => {
       expenseRepository.createQueryBuilder = jest
         .fn()
@@ -2954,6 +2986,46 @@ describe('ExpensesService', () => {
       // READ-ONLY: no finance write ever happens.
       expect(expenseRepository.save).not.toHaveBeenCalled();
       expect(splitRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── TAG-BATCH-B2 — monthly tag trend (read-only, one query, JS month grouping) ─
+  describe('getTagTrend (TAG-BATCH-B2)', () => {
+    it('groups refund-signed amounts by (month, tag) from a single query', async () => {
+      const rows = [
+        { tagId: 'grocery', expenseDate: '2026-07-05', amountTotal: '7200', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'grocery', expenseDate: '2026-08-10', amountTotal: '8420', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'grocery', expenseDate: '2026-08-15', amountTotal: '20', transactionType: 'refund', currency: 'INR' },
+        { tagId: 'food', expenseDate: '2026-08-01', amountTotal: '9870', transactionType: 'expense', currency: 'INR' },
+        { tagId: 'food', expenseDate: '2026-08-02', amountTotal: '50', transactionType: 'expense', currency: 'USD' },
+      ];
+      const getRawMany = jest.fn().mockResolvedValue(rows);
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany,
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(qb as any);
+
+      const result = await service.getTagTrend({ userId: 'user-1' });
+
+      // ONE query for the whole range (never one per month).
+      expect(getRawMany).toHaveBeenCalledTimes(1);
+      // Month keys are YYYY-MM; Aug grocery = 8420 − 20 refund = 8400.
+      expect(result).toContainEqual({ month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' });
+      expect(result).toContainEqual({ month: '2026-08', tagId: 'grocery', total: 8400, currency: 'INR' });
+      expect(result).toContainEqual({ month: '2026-08', tagId: 'food', total: 9870, currency: 'INR' });
+      // Distinct currency is preserved (not merged into INR).
+      expect(result).toContainEqual({ month: '2026-08', tagId: 'food', total: 50, currency: 'USD' });
+      // Sorted by month ascending.
+      expect(result[0].month <= result[result.length - 1].month).toBe(true);
+      // READ-ONLY.
+      expect(expenseRepository.save).not.toHaveBeenCalled();
     });
   });
 });

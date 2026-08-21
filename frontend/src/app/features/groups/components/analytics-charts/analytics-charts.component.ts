@@ -49,6 +49,20 @@ interface ProcessedTag {
   barWidth: number;
 }
 
+interface TagTrendData {
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
+/** A tag's monthly totals across the visible months (same order as `tagTrendMonths`). */
+interface ProcessedTagTrendRow {
+  tagId: string;
+  name: string;
+  cells: number[];
+}
+
 interface ProcessedCategory {
   category: string;
   total: number;
@@ -101,6 +115,9 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
   processedCategories: ProcessedCategory[] = [];
   processedMonths: ProcessedMonth[] = [];
   processedTags: ProcessedTag[] = [];
+  /** TAG-BATCH-B2 — monthly tag trend: month labels + one row of totals per top tag. */
+  tagTrendMonths: string[] = [];
+  tagTrendRows: ProcessedTagTrendRow[] = [];
 
   grandTotal = 0;
   hoveredCategory: ProcessedCategory | null = null;
@@ -133,23 +150,68 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
       categories: this.expensesService.getCategoryAnalytics(gId, this.filter),
       monthly: this.expensesService.getMonthlyAnalytics(gId, this.filter),
       tags: this.expensesService.getTagAnalytics(gId, this.filter),
+      tagTrend: this.expensesService.getTagTrend(gId, this.filter),
       taxonomy: this.expensesService.getTaxonomy(),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ categories, monthly, tags, taxonomy }) => {
+        next: ({ categories, monthly, tags, tagTrend, taxonomy }) => {
+          const nameById = new Map(taxonomy.map((t) => [t.id, t.canonicalName]));
           this.processCategoriesData(categories);
           this.processMonthlyData(monthly);
-          this.processTagsData(
-            tags,
-            new Map(taxonomy.map((t) => [t.id, t.canonicalName])),
-          );
+          this.processTagsData(tags, nameById);
+          this.processTagTrendData(tagTrend, nameById);
           this.isLoading = false;
         },
         error: () => {
           this.isLoading = false;
         },
       });
+  }
+
+  /**
+   * TAG-BATCH-B2 — build a compact month × tag matrix for the "Tag trend". Rows
+   * are the top tags by spend across the range; the same overlap caveat applies
+   * (ancestor tags), so it is presented as "spending by tag", not an exclusive
+   * breakdown. Only rendered when ≥2 months are present (a real trend).
+   */
+  private processTagTrendData(
+    data: TagTrendData[],
+    nameById: Map<string, string>,
+  ): void {
+    const matching = data.filter(
+      (d) => d.currency.toUpperCase() === this.currency.toUpperCase(),
+    );
+    const months = [...new Set(matching.map((d) => d.month))].sort();
+
+    const byTag = new Map<string, Map<string, number>>();
+    const tagTotals = new Map<string, number>();
+    for (const d of matching) {
+      const perMonth = byTag.get(d.tagId) ?? new Map<string, number>();
+      perMonth.set(d.month, Number(d.total));
+      byTag.set(d.tagId, perMonth);
+      tagTotals.set(d.tagId, (tagTotals.get(d.tagId) ?? 0) + Number(d.total));
+    }
+
+    const topTags = [...tagTotals.entries()]
+      .filter(([, total]) => total > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([tagId]) => tagId);
+
+    this.tagTrendMonths = months;
+    this.tagTrendRows = topTags.map((tagId) => ({
+      tagId,
+      name: nameById.get(tagId) ?? tagId,
+      cells: months.map((m) => byTag.get(tagId)?.get(m) ?? 0),
+    }));
+  }
+
+  /** Short label (e.g. `Aug`) for a `YYYY-MM` month key. */
+  tagTrendMonthLabel(month: string): string {
+    const [y, m] = month.split('-').map(Number);
+    if (!y || !m) return month;
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short' });
   }
 
   /**

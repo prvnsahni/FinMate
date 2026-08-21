@@ -39,6 +39,14 @@ export interface TagAnalyticsPoint {
   currency: string;
 }
 
+/** TAG-BATCH-B2 — one (month, tag) spending point for the monthly tag trend. */
+export interface TagTrendPoint {
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
 /** TAG-BATCH-B — safe read-only canonical taxonomy row from GET /taxonomy. */
 export interface CanonicalTaxonomyTag {
   id: string;
@@ -373,6 +381,21 @@ export class ExpensesService {
       .get<
         TagAnalyticsPoint[]
       >(`${this.baseUrl}/expenses/analytics/tags`, { params: this.buildAnalyticsParams(groupId, query) })
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  }
+
+  /**
+   * TAG-BATCH-B2 — monthly canonical tag spending trend, honoring the unified
+   * group filter. Read-only reporting; never mutates finance.
+   */
+  getTagTrend(
+    groupId?: string,
+    query?: GroupAnalyticsQuery,
+  ): Observable<TagTrendPoint[]> {
+    return this.http
+      .get<
+        TagTrendPoint[]
+      >(`${this.baseUrl}/expenses/analytics/tags-trend`, { params: this.buildAnalyticsParams(groupId, query) })
       .pipe(shareReplay({ bufferSize: 1, refCount: true }));
   }
 

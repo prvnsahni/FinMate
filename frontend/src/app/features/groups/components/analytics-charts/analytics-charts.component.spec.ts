@@ -15,6 +15,7 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
     getCategoryAnalytics: jest.Mock;
     getMonthlyAnalytics: jest.Mock;
     getTagAnalytics: jest.Mock;
+    getTagTrend: jest.Mock;
     getTaxonomy: jest.Mock;
   };
 
@@ -25,11 +26,13 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
       { id: 'food', canonicalName: 'Food', normalizedKey: 'food', status: 'active', version: 1 },
       { id: 'fuel', canonicalName: 'Fuel', normalizedKey: 'fuel', status: 'active', version: 1 },
     ],
+    trend: { month: string; tagId: string; total: number; currency: string }[] = [],
   ) => {
     expensesService = {
       getCategoryAnalytics: jest.fn().mockReturnValue(of([])),
       getMonthlyAnalytics: jest.fn().mockReturnValue(of([])),
       getTagAnalytics: jest.fn().mockReturnValue(of(tags)),
+      getTagTrend: jest.fn().mockReturnValue(of(trend)),
       getTaxonomy: jest.fn().mockReturnValue(of(taxonomy)),
     };
     TestBed.configureTestingModule({
@@ -93,5 +96,55 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
       '[data-testid="tag-spending-card"]',
     );
     expect(card?.textContent).toContain('No tagged spending');
+  });
+
+  // ── Tag trend (TAG-BATCH-B2) ─────────────────────────────────────────────────
+  it('builds a month × tag trend matrix and renders it for ≥2 months', () => {
+    setup(
+      [{ tagId: 'grocery', total: 8420, currency: 'INR' }],
+      undefined,
+      [
+        { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
+        { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+        { month: '2026-08', tagId: 'food', total: 9870, currency: 'INR' },
+      ],
+    );
+
+    expect(component.tagTrendMonths).toEqual(['2026-07', '2026-08']);
+    // food (9870) outranks grocery (7200+8420=15620)? grocery total is larger → first.
+    const grocery = component.tagTrendRows.find((r) => r.tagId === 'grocery');
+    expect(grocery?.cells).toEqual([7200, 8420]); // Jul, Aug in month order
+    const food = component.tagTrendRows.find((r) => r.tagId === 'food');
+    expect(food?.cells).toEqual([0, 9870]); // absent in Jul → 0
+
+    const card = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="tag-trend-card"]',
+    );
+    expect(card).not.toBeNull();
+  });
+
+  it('hides the trend card for a single-month range (not a real trend)', () => {
+    setup([{ tagId: 'grocery', total: 8420, currency: 'INR' }], undefined, [
+      { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+    ]);
+    expect(component.tagTrendMonths.length).toBe(1);
+    const card = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="tag-trend-card"]',
+    );
+    expect(card).toBeNull();
+  });
+
+  it('emits tagSelected when a trend tag row is activated', () => {
+    setup([{ tagId: 'grocery', total: 8420, currency: 'INR' }], undefined, [
+      { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
+      { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+    ]);
+    const emitted: string[] = [];
+    component.tagSelected.subscribe((id) => emitted.push(id));
+    const rowBtn = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="tag-trend-card"] tbody button',
+    ) as HTMLButtonElement;
+    rowBtn.click();
+    expect(emitted).toEqual(['grocery']);
   });
 });

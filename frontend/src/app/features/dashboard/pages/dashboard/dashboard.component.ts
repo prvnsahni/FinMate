@@ -91,6 +91,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   personalExpenses: GroupExpense[] = [];
   myExpenses: any[] = []; // personal + group shares
   totalMyExpenses = 0;
+  /**
+   * TAG-BATCH-B2 — active canonical tag id → display name, loaded once from the
+   * shared /taxonomy endpoint (same cached mechanism as the group ledger). Passed
+   * to dashboard-home so tag chips resolve names without any per-row lookup.
+   */
+  tagNameMap = new Map<string, string>();
   /** 1-based page of the unified /expenses/me list currently loaded. */
   expensesPage = 1;
   private readonly expensesPageSize = 50;
@@ -161,6 +167,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.aiOptIn = localStorage.getItem('finmate_ai_opt_in') === 'true';
     this.fetchStaticData();
     this.refreshExpenseData();
+    this.loadTaxonomy();
 
     const sub = this.expensesUiStore.expenseCreated$.subscribe(() => {
       this.refreshExpenseData();
@@ -177,6 +184,25 @@ export class DashboardComponent implements OnInit, OnDestroy {
    * Call after any expense create / edit / delete so that stats stay current
    * without reloading profile, groups, or invitations (which did not change).
    */
+  /**
+   * Load the read-only shared canonical taxonomy once for dashboard tag chips.
+   * Best-effort: a failure leaves the map empty (chips simply don't render). No
+   * user/E2EE data — static reference metadata, active tags only.
+   */
+  private loadTaxonomy(): void {
+    const sub = this.expensesService.getTaxonomy().subscribe({
+      next: (tags) => {
+        const map = new Map<string, string>();
+        for (const t of tags) map.set(t.id, t.canonicalName);
+        this.tagNameMap = map;
+      },
+      error: () => {
+        // Leave the map empty on failure — never block the dashboard.
+      },
+    });
+    this.destroy$.add(sub);
+  }
+
   refreshExpenseData() {
     this.isLoading = true;
 

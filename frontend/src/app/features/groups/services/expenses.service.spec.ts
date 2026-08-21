@@ -244,6 +244,24 @@ describe('ExpensesService', () => {
       expect(req.request.method).toBe('GET');
       req.flush(points);
     });
+
+    it('getTagTrend hits the tags-trend endpoint with the unified filter (B2)', (done) => {
+      const points = [
+        { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
+        { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+      ];
+      service
+        .getTagTrend('group-1', { startDate: '2026-07-01', endDate: '2026-08-31' })
+        .subscribe((res) => {
+          expect(res).toEqual(points);
+          done();
+        });
+      const req = httpMock.expectOne(
+        '/api/expenses/analytics/tags-trend?groupId=group-1&startDate=2026-07-01&endDate=2026-08-31',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(points);
+    });
   });
 
   // --- createExpense ---
