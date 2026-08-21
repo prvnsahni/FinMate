@@ -96,10 +96,19 @@ export interface FilterChip {
   value?: string;
 }
 
+/** TAG-BATCH-B1 — an advisory canonical tag as returned on an expense row. */
+export interface ExpenseTagView {
+  tagId: string;
+  authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+  source: 'rule_based' | 'user' | 'model' | 'population';
+}
+
 export interface GroupExpense extends Expense {
   paidByUserId: string | null;
   paidByGroupMemberId?: string | null;
   ownerUserId: string;
+  /** Advisory canonical tags (TAG-BATCH-B1). Display-only metadata. */
+  tags?: ExpenseTagView[];
   splits?: Array<
     ExpenseSplitInputDto & {
       participantUser?: {
@@ -301,6 +310,64 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   /** Resolve a canonical tag id to its display name for summary chips. */
   tagNameById(id: string): string {
     return this.tagLabelById.get(id) ?? id;
+  }
+
+  /** Max tag chips shown inline on a collapsed expense row (keeps rows compact on mobile). */
+  private readonly MAX_ROW_TAG_CHIPS = 4;
+
+  /**
+   * TAG-BATCH-B1 — advisory tag chips for an expense row. Resolves ids to display
+   * names via the loaded active taxonomy; ids not in it (deprecated/unknown) are
+   * dropped so the row only ever shows active tags (fail-safe). User-authored tags
+   * sort before inferred ones. `inferred` drives a subtle provenance indicator.
+   */
+  private sortedRowTags(
+    expense: GroupExpense,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    return (expense.tags ?? [])
+      .filter((t) => this.tagLabelById.has(t.tagId))
+      .map((t) => ({
+        tagId: t.tagId,
+        label: this.tagLabelById.get(t.tagId) as string,
+        inferred: t.authority === 'INFERRED',
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.inferred) - Number(b.inferred) ||
+          a.label.localeCompare(b.label),
+      );
+  }
+
+  /** Visible tag chips for a row (capped for compactness). */
+  rowTagChips(
+    expense: GroupExpense,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    return this.sortedRowTags(expense).slice(0, this.MAX_ROW_TAG_CHIPS);
+  }
+
+  /** Count of tags beyond the visible cap (rendered as a "+N" chip). */
+  rowTagOverflowCount(expense: GroupExpense): number {
+    return Math.max(0, this.sortedRowTags(expense).length - this.MAX_ROW_TAG_CHIPS);
+  }
+
+  /** Apply a tag from a row chip to the unified filter (adds to existing tag filter). */
+  applyTagFromChip(tagId: string): void {
+    const applied = this.filterStore.applied();
+    if (applied.tagIds?.includes(tagId)) return; // already active — no-op
+    this.filterStore.openDraft();
+    this.filterStore.toggleDraftTag(tagId);
+    this.filterStore.apply();
+  }
+
+  /**
+   * A "spending by tag" bar was activated in the analytics tab — apply the tag to
+   * the same unified filter and switch to the ledger so the user sees the matching
+   * expenses. No second filter state; every other dimension (month/category/…) is
+   * preserved by the store's openDraft copy.
+   */
+  onAnalyticsTagSelected(tagId: string): void {
+    this.applyTagFromChip(tagId);
+    this.setTab('ledger');
   }
 
   /**

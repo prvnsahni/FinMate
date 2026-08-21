@@ -259,3 +259,68 @@
     }
   </div>
 </div>
+
+<!-- TAG-BATCH-B1: Spending by tag. Bars are relative to the largest tag, not a
+     share of a whole — tags overlap (ancestor materialization), so this is NOT
+     a mutually-exclusive breakdown. Click a bar to filter the ledger by that tag. -->
+<div
+  class="bg-white/70 dark:bg-finmate-card/70 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl shadow-black/5 mb-8"
+  data-testid="tag-spending-card"
+>
+  <div class="flex items-start justify-between gap-3 mb-1">
+    <h3 class="text-lg font-bold">Spending by tag</h3>
+  </div>
+  <p class="text-xs text-muted mb-5">
+    Totals can overlap — an item tagged “milk” also counts under dairy, grocery
+    and food — so tags may add up to more than your total spend.
+  </p>
+
+  @if (isLoading) {
+    <div class="space-y-3 animate-pulse" aria-hidden="true">
+      @for (row of [1, 2, 3, 4]; track row) {
+        <div class="h-6 rounded-lg bg-slate-200 dark:bg-white/5"></div>
+      }
+    </div>
+  }
+
+  @if (!isLoading && processedTags.length === 0) {
+    <p class="text-sm text-slate-500 py-6 text-center">
+      No tagged spending in this period.
+    </p>
+  }
+
+  @if (!isLoading && processedTags.length > 0) {
+    <ul class="flex flex-col gap-2.5" data-testid="tag-spending-bars">
+      @for (tag of processedTags; track tag.tagId) {
+        <li>
+          <button
+            type="button"
+            (click)="onTagBarActivate(tag.tagId)"
+            [attr.aria-label]="
+              'Filter ledger by ' + tag.name + ', ' +
+              (tag.total | currency: currency)
+            "
+            class="w-full flex items-center gap-3 group cursor-pointer text-left min-h-[40px] rounded-xl px-1"
+          >
+            <span
+              class="w-24 sm:w-32 shrink-0 text-sm font-semibold capitalize truncate text-slate-700 dark:text-slate-200"
+              >{{ tag.name }}</span
+            >
+            <span
+              class="relative flex-1 h-4 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden"
+            >
+              <span
+                class="absolute inset-y-0 left-0 rounded-full bg-finmate-primary/70 group-hover:bg-finmate-primary transition-all"
+                [style.width.%]="tag.barWidth"
+              ></span>
+            </span>
+            <span
+              class="w-20 sm:w-24 shrink-0 text-right text-sm font-bold tabular-nums text-slate-800 dark:text-white"
+              >{{ tag.total | currency: currency }}</span
+            >
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</div>

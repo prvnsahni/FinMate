@@ -3880,3 +3880,45 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   PACKAGES: NO. PRODUCTION: NO. FINANCE: UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data
   Classification Matrix: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI: NO. TAG-BATCH-C (custom tags)/taxonomy-DB/
   line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-B1: tag visibility + analytics UI (no migration, no finance/E2EE change)
+
+- **Summary:** Finished the user-facing side of the canonical tag system — tag chips on expense rows and a
+  "Spending by tag" analytics visualization with chart→filter interaction. **No migration, no schema change, no
+  finance-calc change, no E2EE/SEC-KI1/group-key change, no taxonomy DB, no custom tags.** Reuses the existing
+  filter store, chart card conventions, and TAG-BATCH-B endpoints (`GET /taxonomy`, `GET /expenses/analytics/tags`).
+- **Expense tag visibility (STEP 2):** the expense list response now includes advisory `tags` (id + authority +
+  source only — no confidence, no finance, no E2EE plaintext), loaded via **one extra bulk query** in the
+  existing `batchMapExpenseResponses` (no N+1) and a single fetch in `mapExpenseResponse`. Group-detail rows
+  render resolved tag chips (names from the loaded `/taxonomy`); unknown/deprecated ids are dropped (fail-safe,
+  never shown as active), chips are capped (`+N` overflow) to keep rows compact, and clicking a chip applies the
+  unified tag filter. Dashboard rows deferred (separate `listMyExpenses` mapping) — reported as follow-up.
+- **Tag analytics (STEP 3):** added a **"Spending by tag"** card to `analytics-charts` (reusing the existing
+  card/chart conventions) — horizontal bars sized **relative to the largest tag**, NOT a share of a whole,
+  with helper text stating tags overlap (ancestor materialization), so no misleading exclusive-breakdown/
+  double-counting. Backend semantics preserved (read-only, refund-signed). Fed by `getTagAnalytics` +
+  `getTaxonomy` added to the component's existing `forkJoin`.
+- **Chart→filter (STEP 5):** clicking a tag bar emits `tagSelected`; the parent applies the tag to the **same
+  unified filter store** and switches to the ledger tab. No second filter state; month/category/paid-by/type/
+  amount/existing-tags all preserved (store `openDraft` copy).
+- **Semantics (STEP 6):** small helper text on the tag facet — "multiple tags match ANY; other filters combine
+  with and". **Provenance (STEP 7):** inferred tags render with a subtle dashed/muted chip; user-authored
+  (confirmed/corrected) render solid — no provenance-management UI. **Mobile/a11y (STEP 8):** chips flex-wrap
+  with `min-h` touch targets, `%`-width bars (no horizontal overflow), truncation, `aria-label`s on all
+  interactive chips/bars.
+- **Monthly tag trend (STEP 4) — DEFERRED & REPORTED:** the current `/analytics/tags` returns a single-period
+  distribution, not a time series; a monthly trend needs N per-month calls or a new endpoint (batch expansion),
+  so per STEP 4 it is deferred to a follow-up rather than expanding this batch.
+- **Regression (verified green):** group-detail month-aware export, tag filter not resetting the month,
+  infinite-scroll append + `fetchSeq` stale-response guards, and mutation reload all still pass
+  (`f61326f`/`9f54cad`/`bde0912`/`8fe4832` intact).
+- **Files:** backend — `expenses.service.ts` (batch/single tag load + `tags` in `toExpenseResponse`) + spec.
+  frontend — `analytics-charts.component.{ts,html}` (+ new spec), `group-detail.component.{ts,html}` (row chips,
+  `applyTagFromChip`/`onAnalyticsTagSelected`, helper text) + spec, `dashboard-analytics.component.spec.ts`
+  (mock updated).
+- **Verification:** backend 76 suites/793 (finance golden gate PASS); frontend 71 suites/607; backend+frontend
+  builds clean; lint 0 errors. data-models untouched.
+- **Confirmation:** CODE CHANGED: YES. SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES: NO. PRODUCTION: NO. FINANCE:
+  UNCHANGED (golden gate PASS). E2EE/SEC-KI1/group-key: UNCHANGED. Data Classification Matrix: UNCHANGED. FROZEN
+  SRS/LEDGER/ADR/OpenAPI: NO. Deferred (reported): monthly tag trend + dashboard-row tag chips. TAG-BATCH-C
+  (custom tags)/taxonomy-DB/line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

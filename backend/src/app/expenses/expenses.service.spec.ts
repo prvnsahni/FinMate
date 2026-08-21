@@ -47,7 +47,11 @@ describe('ExpensesService', () => {
   let attachmentVersionRepository: jest.Mocked<Repository<AttachmentVersion>>;
   let receiptVersionRepository: jest.Mocked<Repository<ReceiptVersion>>;
   let entityManagerMock: { create: jest.Mock; save: jest.Mock };
-  let expenseTagRepositoryMock: { create: jest.Mock; save: jest.Mock };
+  let expenseTagRepositoryMock: {
+    create: jest.Mock;
+    save: jest.Mock;
+    find: jest.Mock;
+  };
 
   // Freeze the clock so the month-lock edit window (ExpenseEditPolicyService)
   // is deterministic. The fixtures below use fixed dates written against a
@@ -171,6 +175,7 @@ describe('ExpensesService', () => {
     const mockExpenseTagRepository = {
       save: jest.fn(async (data) => data),
       create: jest.fn((data) => data),
+      find: jest.fn().mockResolvedValue([]),
     };
 
     const mockExpensePaymentRepository = {
@@ -233,6 +238,10 @@ describe('ExpensesService', () => {
         {
           provide: getRepositoryToken(ExpenseSplit),
           useValue: mockSplitRepository,
+        },
+        {
+          provide: getRepositoryToken(ExpenseTag),
+          useValue: mockExpenseTagRepository,
         },
         {
           provide: getRepositoryToken(ExpensePayment),
@@ -2770,6 +2779,26 @@ describe('ExpensesService', () => {
       primeHappyPath();
       await service.createExpense('caller-id', { ...baseGroupDto } as any);
       expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('includes persisted tags (id + provenance) in the mapped response (B1)', async () => {
+      primeHappyPath();
+      // The read path (mapExpenseResponse) resolves tags via the injected repo.
+      expenseTagRepositoryMock.find.mockResolvedValue([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+
+      const res = await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' }],
+      } as any);
+
+      // Ids + provenance only — no confidence, no finance, no E2EE plaintext.
+      expect(res['tags']).toEqual([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
     });
 
     it('persists confirmed tags with materialized ancestors and provenance', async () => {

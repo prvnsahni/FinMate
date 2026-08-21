@@ -1578,4 +1578,74 @@ describe('GroupDetailComponent', () => {
       );
     });
   });
+
+  // ── TAG-BATCH-B1 — tag visibility on rows + chart→filter interaction ─────────
+  describe('tag visibility + filtering (TAG-BATCH-B1)', () => {
+    beforeEach(() => {
+      mockExpensesService.getTaxonomy.mockReturnValue(
+        of([
+          { id: 'milk', canonicalName: 'Milk', normalizedKey: 'milk', parentId: 'dairy', status: 'active', version: 1 },
+          { id: 'grocery', canonicalName: 'Grocery', normalizedKey: 'grocery', status: 'active', version: 1 },
+        ]),
+      );
+      // Reload the taxonomy map now that the mock returns tags.
+      (component as unknown as { loadTaxonomy(): void }).loadTaxonomy();
+    });
+
+    it('renders resolved tag chips, dropping unknown/deprecated ids safely', () => {
+      const exp = {
+        id: 'e1',
+        tags: [
+          { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+          { tagId: 'zzz-unknown', authority: 'INFERRED', source: 'rule_based' },
+        ],
+      } as never;
+      const chips = component.rowTagChips(exp);
+      // Unknown id dropped; user-authored (milk) sorts before inferred (grocery).
+      expect(chips.map((c) => c.label)).toEqual(['Milk', 'Grocery']);
+      expect(chips.find((c) => c.tagId === 'grocery')?.inferred).toBe(true);
+      expect(chips.find((c) => c.tagId === 'milk')?.inferred).toBe(false);
+    });
+
+    it('renders safely for expenses with missing or empty tags', () => {
+      expect(component.rowTagChips({ id: 'e' } as never)).toEqual([]);
+      expect(component.rowTagOverflowCount({ id: 'e', tags: [] } as never)).toBe(0);
+    });
+
+    it('applyTagFromChip adds the tag to the unified filter, preserving other dimensions', () => {
+      component.filterStore.initialize({
+        date: { preset: 'this_month' },
+        categories: ['Food'],
+        transactionType: 'both',
+      } as never);
+      component.applyTagFromChip('milk');
+      expect(component.filterStore.applied().tagIds).toEqual(['milk']);
+      expect(component.filterStore.applied().categories).toEqual(['Food']);
+    });
+
+    it('applyTagFromChip is a no-op when the tag is already applied (no duplicate state)', () => {
+      component.filterStore.initialize({
+        date: { preset: 'this_month' },
+        tagIds: ['milk'],
+        transactionType: 'both',
+      } as never);
+      const applySpy = jest.spyOn(component.filterStore, 'apply');
+      component.applyTagFromChip('milk');
+      expect(applySpy).not.toHaveBeenCalled();
+    });
+
+    it('onAnalyticsTagSelected applies the tag and switches to the ledger tab', () => {
+      const setTabSpy = jest
+        .spyOn(component, 'setTab')
+        .mockImplementation(() => undefined);
+      component.filterStore.initialize({
+        date: { preset: 'this_month' },
+        transactionType: 'both',
+      } as never);
+      component.onAnalyticsTagSelected('grocery');
+      expect(component.filterStore.applied().tagIds).toEqual(['grocery']);
+      expect(setTabSpy).toHaveBeenCalledWith('ledger');
+    });
+  });
 });

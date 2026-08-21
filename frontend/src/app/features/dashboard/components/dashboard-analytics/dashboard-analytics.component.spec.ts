@@ -12,6 +12,9 @@ describe('DashboardAnalyticsComponent', () => {
     const mockExpensesService = {
       getCategoryAnalytics: jest.fn().mockReturnValue(of([])),
       getMonthlyAnalytics: jest.fn().mockReturnValue(of([])),
+      // TAG-BATCH-B1: analytics-charts now also loads tag distribution + taxonomy.
+      getTagAnalytics: jest.fn().mockReturnValue(of([])),
+      getTaxonomy: jest.fn().mockReturnValue(of([])),
     };
 
     await TestBed.configureTestingModule({

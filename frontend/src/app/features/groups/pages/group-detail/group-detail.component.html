@@ -754,6 +754,12 @@
                       size="md"
                       [multiple]="true"
                     ></app-dropdown>
+                    <!-- STEP 6: explain the (existing) match-ANY tag semantics. -->
+                    <p class="text-[11px] text-muted mt-1">
+                      Selecting multiple tags matches expenses with
+                      <strong>any</strong> of them. Other filters still combine
+                      with “and”.
+                    </p>
                   </div>
                 }
 
@@ -1285,6 +1291,39 @@
                               </span>
                             }
                           </p>
+                          <!-- TAG-BATCH-B1: advisory canonical tags. Click to filter.
+                               Inferred tags are shown more subtly than user-confirmed. -->
+                          @if (rowTagChips(expense).length) {
+                            <div
+                              class="flex flex-wrap items-center gap-1 mt-1"
+                              data-testid="expense-tag-chips"
+                            >
+                              @for (tag of rowTagChips(expense); track tag.tagId) {
+                                <button
+                                  type="button"
+                                  (click)="applyTagFromChip(tag.tagId); $event.stopPropagation()"
+                                  [attr.aria-label]="'Filter by tag ' + tag.label"
+                                  [class]="
+                                    'inline-flex items-center min-h-[22px] px-1.5 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition ' +
+                                    (tag.inferred
+                                      ? 'border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
+                                      : 'bg-surface text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700')
+                                  "
+                                >
+                                  {{ tag.label }}
+                                </button>
+                              }
+                              @if (rowTagOverflowCount(expense) > 0) {
+                                <span
+                                  class="inline-flex items-center min-h-[22px] px-1.5 py-0.5 rounded text-[10px] font-medium text-muted"
+                                  [attr.aria-label]="
+                                    rowTagOverflowCount(expense) + ' more tags'
+                                  "
+                                  >+{{ rowTagOverflowCount(expense) }}</span
+                                >
+                              }
+                            </div>
+                          }
                         </div>
                       </div>
 
@@ -1588,6 +1627,7 @@
               [groupId]="group()!.id"
               [currency]="group()!.currency"
               [filter]="analyticsFilter()"
+              (tagSelected)="onAnalyticsTagSelected($event)"
             ></app-analytics-charts>
           </div>
         }

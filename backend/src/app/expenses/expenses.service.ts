@@ -121,6 +121,8 @@ export class ExpensesService {
     private readonly expenseRepository: Repository<Expense>,
     @InjectRepository(ExpenseSplit)
     private readonly expenseSplitRepository: Repository<ExpenseSplit>,
+    @InjectRepository(ExpenseTag)
+    private readonly expenseTagRepository: Repository<ExpenseTag>,
     @InjectRepository(ExpensePayment)
     private readonly expensePaymentRepository: Repository<ExpensePayment>,
     @InjectRepository(Group)
@@ -492,6 +494,7 @@ export class ExpensesService {
     splits: ExpenseSplit[],
     attachments: Attachment[],
     wrappedContentKeys: Array<{ userId: string; wrappedKey: string }>,
+    tags: ExpenseTag[] = [],
   ): Record<string, unknown> {
     return {
       id: expense.id,
@@ -542,6 +545,14 @@ export class ExpensesService {
         createdAt: attachment.createdAt,
       })),
       wrappedContentKeys,
+      // TAG-BATCH-B1 — advisory canonical tags (server-readable Zone-2 metadata,
+      // like `category`). Ids only + provenance; the client resolves display
+      // names via GET /taxonomy. Never a financial value, never E2EE plaintext.
+      tags: tags.map((t) => ({
+        tagId: t.tagId,
+        authority: t.authority,
+        source: t.source,
+      })),
       version: expense.version,
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt,
@@ -566,11 +577,17 @@ export class ExpensesService {
 
     const wrappedContentKeys = await this.getWrappedContentKeys(expense.id);
 
+    const tags = await this.expenseTagRepository.find({
+      where: { expense: { id: expense.id } },
+      order: { createdAt: 'ASC' },
+    });
+
     return this.toExpenseResponse(
       expense,
       splits,
       attachments,
       wrappedContentKeys,
+      tags,
     );
   }
 
@@ -592,22 +609,29 @@ export class ExpensesService {
     // `relations: ['expense']` loads expense.id for grouping via the identity map;
     // TypeORM deduplicates entity instances within a single query so each unique
     // expense UUID is only instantiated once.
-    const [allSplits, allAttachments, allWrappedKeys] = await Promise.all([
-      this.expenseSplitRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'participantUser', 'participantGroupMember'],
-        order: { createdAt: 'ASC' },
-      }),
-      this.attachmentRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'uploaderUser'],
-        order: { createdAt: 'ASC' },
-      }),
-      this.encryptedExpenseKeyRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'user'],
-      }),
-    ]);
+    const [allSplits, allAttachments, allWrappedKeys, allTags] =
+      await Promise.all([
+        this.expenseSplitRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'participantUser', 'participantGroupMember'],
+          order: { createdAt: 'ASC' },
+        }),
+        this.attachmentRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'uploaderUser'],
+          order: { createdAt: 'ASC' },
+        }),
+        this.encryptedExpenseKeyRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'user'],
+        }),
+        // TAG-BATCH-B1 — one bulk tag fetch for the whole page (no N+1).
+        this.expenseTagRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense'],
+          order: { createdAt: 'ASC' },
+        }),
+      ]);
 
     // Group each batch result by expense ID for O(1) lookup during mapping.
     const splitsByExpId = new Map<string, ExpenseSplit[]>();
@@ -634,10 +658,19 @@ export class ExpensesService {
       else keysByExpId.set(eid, [key]);
     }
 
+    const tagsByExpId = new Map<string, ExpenseTag[]>();
+    for (const tag of allTags) {
+      const eid = tag.expense.id;
+      const arr = tagsByExpId.get(eid);
+      if (arr) arr.push(tag);
+      else tagsByExpId.set(eid, [tag]);
+    }
+
     return expenses.map((expense) => {
       const splits = splitsByExpId.get(expense.id) ?? [];
       const attachments = attachsByExpId.get(expense.id) ?? [];
       const wrappedKeys = keysByExpId.get(expense.id) ?? [];
+      const tags = tagsByExpId.get(expense.id) ?? [];
       const wrappedContentKeys = wrappedKeys.map((k) => ({
         userId: k.user.id,
         wrappedKey: k.wrappedKey,
@@ -648,6 +681,7 @@ export class ExpensesService {
         splits,
         attachments,
         wrappedContentKeys,
+        tags,
       );
     });
   }

@@ -1,6 +1,8 @@
 import {
   Component,
   Input,
+  Output,
+  EventEmitter,
   OnInit,
   OnChanges,
   SimpleChanges,
@@ -26,6 +28,25 @@ interface CategoryData {
   category: string;
   total: number;
   currency: string;
+}
+
+interface TagData {
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
+/**
+ * A processed "spending by tag" bar. `barWidth` is relative to the LARGEST tag
+ * (comparative magnitude), NOT a share of a whole — because ancestor tags are
+ * materialized (an item tagged milk also counts under dairy/grocery/food), tag
+ * totals overlap and must not be shown as mutually-exclusive slices.
+ */
+interface ProcessedTag {
+  tagId: string;
+  name: string;
+  total: number;
+  barWidth: number;
 }
 
 interface ProcessedCategory {
@@ -69,12 +90,17 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
 
   @Input() groupId: string | null = null;
   @Input() currency = 'USD';
-  /** Unified group filter (date range + category/member/payer/type). */
+  /** Unified group filter (date range + category/member/payer/type/tags). */
   @Input() filter?: GroupAnalyticsQuery;
+
+  /** TAG-BATCH-B1 — emitted when a "spending by tag" bar is activated, so the
+   *  parent can apply the existing unified tag filter. */
+  @Output() tagSelected = new EventEmitter<string>();
 
   isLoading = true;
   processedCategories: ProcessedCategory[] = [];
   processedMonths: ProcessedMonth[] = [];
+  processedTags: ProcessedTag[] = [];
 
   grandTotal = 0;
   hoveredCategory: ProcessedCategory | null = null;
@@ -100,22 +126,63 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
     const gId = this.groupId ? this.groupId : 'personal';
     this.analyticsSub?.unsubscribe();
 
-    // Load category distribution and monthly trends, honoring the group filter.
+    // Load category distribution, monthly trends and tag distribution, honoring
+    // the group filter. Taxonomy resolves tag ids → display names (shareReplay-
+    // cached, safe reference data only).
     this.analyticsSub = forkJoin({
       categories: this.expensesService.getCategoryAnalytics(gId, this.filter),
       monthly: this.expensesService.getMonthlyAnalytics(gId, this.filter),
+      tags: this.expensesService.getTagAnalytics(gId, this.filter),
+      taxonomy: this.expensesService.getTaxonomy(),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ categories, monthly }) => {
+        next: ({ categories, monthly, tags, taxonomy }) => {
           this.processCategoriesData(categories);
           this.processMonthlyData(monthly);
+          this.processTagsData(
+            tags,
+            new Map(taxonomy.map((t) => [t.id, t.canonicalName])),
+          );
           this.isLoading = false;
         },
         error: () => {
           this.isLoading = false;
         },
       });
+  }
+
+  /**
+   * TAG-BATCH-B1 — rank tags by spend for the "Spending by tag" bars. Bars are
+   * sized relative to the largest tag (comparative magnitude), never as a share
+   * of a whole, so overlapping ancestor totals are not implied to be exclusive.
+   * Only positive-net tags are shown, capped to the top entries for readability.
+   */
+  private processTagsData(data: TagData[], nameById: Map<string, string>): void {
+    const matching = data
+      .filter(
+        (d) =>
+          d.currency.toUpperCase() === this.currency.toUpperCase() &&
+          Number(d.total) > 0,
+      )
+      .map((d) => ({
+        tagId: d.tagId,
+        name: nameById.get(d.tagId) ?? d.tagId,
+        total: Number(d.total),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 12);
+
+    const max = Math.max(...matching.map((t) => t.total), 1);
+    this.processedTags = matching.map((t) => ({
+      ...t,
+      barWidth: Math.round((t.total / max) * 100),
+    }));
+  }
+
+  /** Emit a tag selection so the parent applies the unified tag filter (STEP 5). */
+  onTagBarActivate(tagId: string): void {
+    this.tagSelected.emit(tagId);
   }
 
   private processCategoriesData(data: CategoryData[]) {
