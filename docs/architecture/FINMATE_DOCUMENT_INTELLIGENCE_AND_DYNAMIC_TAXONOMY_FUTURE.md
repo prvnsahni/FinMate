@@ -431,3 +431,89 @@ None of the above is resolved by this document.
 ---
 
 *End of document. This is a parking document. It authorises no code, schema, migration, API, model, training, or SRS change. Any future work requires the §20 formal impact review and, if adopted, a new dated SRS revision (R2+).*
+
+---
+
+## §C0 — Addendum: Approved Custom-Tag / Dynamic-Taxonomy Direction (TAG-BATCH-C0, 2026-08-22)
+
+**Nature:** additive decision record. It does **not** rewrite any section above; it **resolves specific open questions** from §4–§14/§20 into an approved architectural direction for a future custom-tag implementation. It still authorises **no** code, schema, migration, entity, API, DTO, UI, package, model, or training change — **TAG-BATCH-C1 is NOT started.** Frozen documents (SRS v1.0, Decision Ledger, ADRs, API/OpenAPI contracts, Data Classification & Encryption Matrix, Key Management / Security / AI Firewall / IP / Threat Model / Ownership Map / Migration Plan) are **unchanged** by this addendum.
+
+**Basis:** the TAG-BATCH-C read-only product/architecture review (prior session) and the shipped tag stack — TAG-BATCH-A (persist confirmed expense tags, `bde0912`), B (filtering + analytics, `8fe4832`), B1 (visibility + analytics UI, `31fd036`), B2 (dashboard chips + monthly trend, `f316a3d`).
+
+**Frozen-boundary reconciliation (verified, no contradiction):** the direction below reuses the **existing** Data Classification pattern and E2EE/key stack — it introduces **no** new field classification, **no** new cryptographic primitive, and requires **no** change to the frozen Matrix, E2EE architecture, SEC-KI1 group-key/versionId discipline, group-key rotation, recovery/key-wrapping, or FIN-002. Custom-tag **names** map to the same class as `expense.title`/`description` (E2EE, Zone-1a); custom-tag **ids** map to the same class as `expense.category` (plaintext, Zone-2). See §C0.11.
+
+### §C0.1 Custom-tag scope — `[PRODUCT DECISION — APPROVED]`
+
+**TARGET.** Support **both** scopes, kept strictly separate from the global taxonomy:
+
+| Scope | Visibility | Name storage |
+|---|---|---|
+| **GLOBAL_CANONICAL** | all users | server-readable (Zone-2), code-curated |
+| **PERSONAL** (`ownerUserId`) | owner only | **E2EE** (Zone-1a) |
+| **GROUP** (`groupId`) | members of that group only | **E2EE** (Zone-1a) |
+
+A group tag MUST NOT resolve for another group; a personal tag MUST NOT resolve for another user (query-enforced exactly like expenses). Users MUST NOT directly create or promote a **global** tag.
+
+### §C0.2 Custom-tag name privacy — `[PRODUCT DECISION — APPROVED]` / `[COUNSEL-aligned]`
+
+**TARGET.** Custom-tag **names are E2EE**. The server MAY store: opaque `customTagId`, `scopeType`, `ownerUserId` (personal), `groupId` (group), lifecycle metadata, and **encrypted name/key material per the existing E2EE architecture**. The server MUST NOT decrypt custom-tag names and MUST NOT require plaintext names for server-side search/classification. Server-side **assignment, filtering, authorization, and analytics operate on the opaque id only.** No new encryption primitive — C1 will reuse the established client-side E2EE + key-wrapping stack (personal → master key; group → per-group AES-256-GCM key; recovery via existing RSA-wrapping). **Duplicate detection is client-side** (the owner holds decrypted names locally); no server-side normalization of E2EE names (a deterministic server hash would leak equality — rejected).
+
+### §C0.3 Sensitive tags — `[COUNSEL]` (unchanged gate)
+
+**CURRENT + TARGET.** The global canonical taxonomy continues to **exclude** sensitive categories (medical/pharmacy/health/religion/financial-hardship, etc.) unless explicitly approved through the required COUNSEL process. User-created private/group custom tags MAY contain arbitrary user intent, but their names remain **E2EE and private** and MUST NOT become global taxonomy automatically. **No automatic sensitive-tag promotion. No population learning from sensitive custom tags.**
+
+### §C0.4 Classification boundary — `[TARGET]`
+
+**CURRENT (unchanged):** DOC-0 `ClassificationEngine` → global canonical candidates → user review/confirmation (server input stays minimized: `itemLabel`/coarse `category`, never E2EE free-text). **TARGET (future, not implemented):** custom-tag suggestions MAY run **client-side** (the client can decrypt its own + its group's custom-tag names and the local expense/document text). The **server MUST NOT receive plaintext custom-tag names** merely to classify. The replaceable ClassificationEngine boundary is preserved.
+
+### §C0.5 Global taxonomy governance — `[PRODUCT DECISION — APPROVED]` + `[COUNSEL]`
+
+**TARGET.** The canonical taxonomy stays **code-curated**. Users may eventually **request** a new global tag but MUST NOT directly create / modify / rename / merge global tags or promote personal/group tags globally. Future global promotion path: **request/candidate → evidence/aggregate review → product/admin review → optional COUNSEL review → curated taxonomy update.** Population learning and ML remain **FUTURE / PARKED**.
+
+### §C0.6 Taxonomy lifecycle — `[TARGET]` (preserve existing states)
+
+Preserve `candidate → reviewed → active → deprecated`. Only **active** canonical tags may be suggested or offered for filtering. **Deprecated tags MUST NOT silently disappear from historical assignments** (assignments keep their id; the id resolves as deprecated). Lifecycle persistence is not implemented in C0.
+
+### §C0.7 Tag namespace — `[PRODUCT DECISION — APPROVED]`
+
+**TARGET.** Retain **ONE unified `tagIds` namespace.** Canonical ids stay stable slugs (`grocery`); future custom ids are **UUIDs**; the resolver distinguishes them internally (slug → canonical, else UUID → scoped custom). **Do NOT** introduce `canonicalTagIds` / `customTagIds` or a second filter state. Existing semantics stand: **OR within the tag dimension, AND across other filter dimensions.**
+
+### §C0.8 Assignment model — `[TARGET]`
+
+```
+GLOBAL / PERSONAL / GROUP tag definitions
+                 ↓
+          one assignment layer
+                 ↓
+            expense_tags   (existing join table — UNCHANGED in C0)
+                 ↓
+     filter / analytics / trend / export   (resolver scopes each id)
+```
+
+`expense_tags` remains the assignment/join layer. It is **not modified in C0**. (A future `tagScope` discriminator column + a scoped `custom_tag` definition table are C1 territory — additive, not done here.)
+
+### §C0.9 Learning policy — `[TARGET]` / `[COUNSEL]` / `[PARKED]`
+
+| Mechanism | Direction |
+|---|---|
+| A. deterministic alias mapping | **allowed / curated** |
+| B. personal user-correction memory | **potentially allowed, owner-scoped** |
+| C. aggregate cross-user statistics | **`[COUNSEL]` / privacy decision required** |
+| D. global taxonomy promotion | **product/admin governance + `[COUNSEL]` where applicable** |
+| E. population learning | **PARKED** |
+| F. ML / model training | **PARKED** |
+
+**No cross-user learning implementation is authorised.**
+
+### §C0.10 Security reconciliation — `[APPROVED / documented]`
+
+- Personal custom-tag names: **E2EE.** · Group custom-tag names: **E2EE.** · Global canonical names: **Zone-2 / server-readable** (unchanged).
+- Server uses **opaque ids** for custom tags (assignment, filter, auth, analytics). **No server-side decryption. No plaintext custom-tag search.**
+- **No cross-user / cross-group leakage** (scope query-enforced like expenses). **No global taxonomy poisoning** (canonical stays code-curated; users only request). **No automatic sensitive-tag promotion.**
+- **No new cryptography** — reuse the existing established E2EE / key-wrapping architecture at C1 time.
+
+### §C0.11 Recommended staged sequence (unchanged from review; nothing here authorises a batch)
+
+`C0 (this addendum — decisions)` → **`C1` custom-tag data model** (additive `custom_tag` table with E2EE name + scope; `tagScope` column on `expense_tags`; migration additive/reversible) → **`C2`** personal-then-group custom-tag CRUD (IDOR-scoped) → **`C3`** assignment/filter/analytics integration (unified `tagIds` resolver) → **`C4`** client-side classifier suggestion of custom tags → **`C5`** governance (request/candidate/promotion — gated on `[COUNSEL]`). **C1 requires a separate explicit authorisation and must not begin until the C0.2 E2EE-name decision is treated as fixed (it determines the schema).**
+
+**Status of this addendum:** *Approved architectural direction for future custom-tag work. Authorises no implementation. TAG-BATCH-C1 not started.*

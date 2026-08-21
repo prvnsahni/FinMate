@@ -3967,3 +3967,38 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   SRS/LEDGER/ADR/OpenAPI: NO. Reported: dashboard has no unified tag-filter surface (chips display-only).
   TAG-BATCH-C (custom tags)/taxonomy-DB/line-items/CC-bank/ML/cloud-OCR: NOT STARTED. COMMIT: (this iteration).
   PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C0: custom-tag / dynamic-taxonomy architecture decisions (documentation-only)
+
+- **Summary:** Recorded the approved architectural **direction** for a future custom-tag / dynamic-taxonomy phase,
+  based on the TAG-BATCH-C read-only review. **Documentation-only** — no code, schema, migration, entity, API,
+  DTO, UI, or package change; `expense_tags` untouched; **TAG-BATCH-C1 not started.**
+- **Where recorded:** an additive, dated **§C0 addendum** appended to (non-frozen)
+  `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md` — resolving specific
+  [PRODUCT DECISION REQUIRED] items into approved direction without rewriting prior sections. The dated
+  READINESS assessment was inspected but intentionally left unchanged (it is a point-in-time snapshot).
+- **Decisions recorded:** (1) support BOTH personal + group custom tags, global stays separate/curated; (2)
+  **custom-tag names are E2EE**, server stores only opaque id + scope + lifecycle + encrypted material, never
+  decrypts names, filters/analytics by id only; (3) global taxonomy keeps excluding sensitive categories (COUNSEL
+  gate), no auto sensitive promotion; (4) canonical classification unchanged, custom-tag suggestion is future +
+  client-side only; (5) global taxonomy stays code-curated, users may only *request*, promotion needs
+  evidence→admin→optional-COUNSEL; (6) preserve candidate→reviewed→active→deprecated, deprecated tags never
+  vanish from historical assignments; (7) ONE unified `tagIds` namespace (canonical slugs + custom UUIDs), no
+  second filter state, OR-within-tags / AND-across-dimensions preserved; (8) `expense_tags` remains the single
+  assignment layer; (9) learning policy — deterministic alias/personal-correction allowed, aggregate stats +
+  global promotion = COUNSEL, population-learning + ML = PARKED.
+- **Frozen-boundary reconciliation (verified, no contradiction / no STOP):** custom-tag **names** map to the same
+  class as `expense.title`/`description` (E2EE, Zone-1a); custom-tag **ids** to the same class as
+  `expense.category` (plaintext, Zone-2). Reuses the existing PBKDF2-master-key / per-group-AES-256-GCM /
+  RSA-wrapping stack — **no new field classification, no new crypto primitive**, and **no change** to the frozen
+  Data Classification Matrix, E2EE architecture, SEC-KI1 group-key/versionId, group-key rotation, recovery/key-
+  wrapping, or FIN-002.
+- **Recommended staged sequence (not authorised here):** C0 (this) → C1 custom-tag data model → C2 personal/group
+  CRUD → C3 assignment/filter/analytics integration → C4 client-side classifier suggestion → C5 governance
+  (COUNSEL-gated). C1 requires separate explicit authorisation.
+- **Files:** `FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md` (§C0 addendum) + this Progress Log.
+- **Verification:** documentation-only — `git diff` touches only these two `.md` files; no source/schema/API/entity
+  change; no build/test/migration/package change required.
+- **Confirmation:** CODE CHANGED: NO. SCHEMA/MIGRATION: NO. PACKAGES: NO. PRODUCTION: NO. FINANCE/E2EE/SEC-KI1/
+  group-key/recovery: UNCHANGED. FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO (unchanged). STOP CONDITIONS: none hit.
+  TAG-BATCH-C1: NOT STARTED. COMMIT: (this iteration, docs-only). PUSH: NO.
