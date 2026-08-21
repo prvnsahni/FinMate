@@ -99,6 +99,39 @@ export class DocumentReviewService {
     return { ...model, items };
   }
 
+  /**
+   * TAG-BATCH-C4 — merge CLIENT-SIDE custom-tag suggestions onto each item as
+   * advisory INFERRED chips, alongside (never replacing) the canonical tags. The
+   * `suggestFor` callback is the pure suggestion engine bound to the caller's
+   * authorized+decrypted tags + device-local correction memory — this method does
+   * NO I/O and never decrypts. Suggestions already present on the item (same
+   * tagId) are skipped, so re-running is idempotent and never disturbs a tag the
+   * user already added/kept. Nothing is auto-confirmed here (chips stay INFERRED
+   * until the user explicitly confirms the draft).
+   */
+  mergeCustomSuggestions(
+    model: ReviewModel,
+    suggestFor: (label: string | null) => { tagId: string; name: string; reason: string }[],
+  ): ReviewModel {
+    const items = model.items.map((it) => {
+      const suggestions = suggestFor(it.description.value);
+      if (suggestions.length === 0) return it;
+      const existing = new Set(it.tags.map((t) => t.tagId));
+      const additions: ReviewTag[] = suggestions
+        .filter((s) => !existing.has(s.tagId))
+        .map((s) => ({
+          tagId: s.tagId,
+          canonicalName: s.name,
+          authority: 'INFERRED' as const,
+          source: 'rule_based' as const,
+          custom: true,
+          reason: s.reason,
+        }));
+      return additions.length ? { ...it, tags: [...it.tags, ...additions] } : it;
+    });
+    return { ...model, items };
+  }
+
   /** Edit a header field → authority USER_CORRECTED. Returns a new model. */
   editHeaderField(model: ReviewModel, field: ReviewHeaderField, value: string): ReviewModel {
     if (field === 'documentTotal') {

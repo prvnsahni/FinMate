@@ -192,4 +192,76 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
     expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.source).toBe('user');
   });
+
+  // ── TAG-BATCH-C4 — custom-tag suggestions merged onto the review ─────────────
+  describe('mergeCustomSuggestions (TAG-BATCH-C4)', () => {
+    it('adds custom suggestions as INFERRED chips ALONGSIDE canonical tags (not replacing)', () => {
+      const m = svc.fromExtractionResult(
+        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      );
+      const merged = svc.mergeCustomSuggestions(m, (label) =>
+        label === 'Milk'
+          ? [{ tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' }]
+          : [],
+      );
+      const tags = merged.items[0].tags;
+      // Canonical tags survive untouched.
+      expect(tags.some((t) => t.tagId === 'milk' && !t.custom)).toBe(true);
+      // Custom suggestion added as INFERRED / rule_based / custom with a reason.
+      const custom = tags.find((t) => t.tagId === 'ct-1');
+      expect(custom).toMatchObject({
+        canonicalName: 'My Grocery',
+        authority: 'INFERRED',
+        source: 'rule_based',
+        custom: true,
+        reason: 'Matched tag name',
+      });
+    });
+
+    it('is idempotent — a suggestion already present is not duplicated', () => {
+      let m = svc.fromExtractionResult(
+        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      );
+      const suggest = () => [{ tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' }];
+      m = svc.mergeCustomSuggestions(m, suggest);
+      m = svc.mergeCustomSuggestions(m, suggest);
+      expect(m.items[0].tags.filter((t) => t.tagId === 'ct-1').length).toBe(1);
+    });
+
+    it('does NOT auto-assign — merged suggestions stay INFERRED until explicit confirm', () => {
+      let m = svc.fromExtractionResult(
+        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      );
+      m = svc.mergeCustomSuggestions(m, () => [
+        { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
+      ]);
+      expect(m.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority).toBe('INFERRED');
+      // Only on explicit confirm does a kept custom suggestion become USER_CONFIRMED.
+      const { model } = svc.confirm(m);
+      expect(model.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority).toBe('USER_CONFIRMED');
+    });
+
+    it('a rejected (removed) custom suggestion never reaches the confirmed draft', () => {
+      let m = svc.fromExtractionResult(
+        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      );
+      m = svc.mergeCustomSuggestions(m, () => [
+        { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
+      ]);
+      m = svc.removeTag(m, m.items[0].id, 'ct-1');
+      const { draft } = svc.confirm(m);
+      expect(draft.items[0].tags.some((t) => t.tagId === 'ct-1')).toBe(false);
+    });
+
+    it('never changes finance values when merging suggestions', () => {
+      const m = svc.fromExtractionResult(
+        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      );
+      const merged = svc.mergeCustomSuggestions(m, () => [
+        { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
+      ]);
+      expect(merged.items[0].lineTotal.value).toBe(120);
+      expect(merged.documentTotal.value).toBe(685);
+    });
+  });
 });

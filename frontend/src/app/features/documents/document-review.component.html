@@ -78,9 +78,22 @@
                     <div class="flex flex-wrap items-center gap-1">
                       <span class="text-xs text-gray-400">Tags:</span>
                       @for (t of it.tags; track t.tagId) {
-                        <span class="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 text-xs text-indigo-700 dark:text-indigo-300">
+                        <!-- TAG-BATCH-C4: custom suggestions are visually distinct
+                             (amber, dashed, ✨) from canonical tags and, while still
+                             INFERRED, from a confirmed tag; `reason` explains the match. -->
+                        <span
+                          [class]="
+                            t.custom
+                              ? 'inline-flex items-center gap-1 rounded-full border border-dashed border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300'
+                              : 'inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 text-xs text-indigo-700 dark:text-indigo-300'
+                          "
+                          [attr.title]="t.reason || null"
+                        >
+                          @if (t.custom && t.authority === 'INFERRED') {
+                            <span aria-hidden="true">✨</span>
+                          }
                           {{ t.canonicalName }}
-                          <button type="button" (click)="removeTag(it.id, t.tagId)" [attr.aria-label]="'Remove tag ' + t.canonicalName" class="text-indigo-500">✕</button>
+                          <button type="button" (click)="removeTag(it.id, t.tagId)" [attr.aria-label]="'Remove tag ' + t.canonicalName" class="text-current opacity-70">✕</button>
                         </span>
                       }
                       <input class="finmate-input text-xs w-24" placeholder="add tag" (keydown.enter)="addTag(it.id, $event)" />

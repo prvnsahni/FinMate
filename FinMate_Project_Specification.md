@@ -4130,3 +4130,46 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   CONDITIONS: none hit. NOT IMPLEMENTED: classifier/OCR/population (C4), governance/promotion/tag-mgmt-UI (C5),
   export tag columns, personal/dashboard custom-name display beyond group-detail (service ready). TAG-BATCH-C4:
   NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C4: client-side custom-tag suggestions + device-local correction memory
+
+- **Summary:** Added CLIENT-ONLY custom-tag suggestions to the DOC-4 review flow. FRONTEND-ONLY — no backend
+  file/endpoint/table/migration, no package change, no finance change, no E2EE/group-key/SEC-KI1 change, no
+  frozen-doc change. No ML/embeddings/LLM/cloud AI, no external network call, no population/cross-user learning,
+  no global-taxonomy mutation. Canonical DOC-5 `classifyLabel` unchanged (still the authoritative first layer).
+- **Pure engine** (`documents/services/custom-tag-suggestion.ts`): `suggestCustomTags(label, authorizedTags,
+  rememberedTagIds)` — pure, no I/O, deterministic, explainable. Signals (highest wins): correction memory (0.95)
+  > exact normalized name (0.8) > all-keywords-present (0.6). Only ranks tags the caller already authorized +
+  decrypted; output is advisory INFERRED. No semantic/vector/LLM.
+- **Correction memory** (`core/services/custom-tag-correction-memory.service.ts`): in-memory Map only, SESSION-
+  scoped; nothing to localStorage/sessionStorage/IndexedDB/URL (only opaque ids + normalized labels). Scope-keyed
+  `userId :: (personal|g:<groupId>) :: label` → isolated across users AND groups (and personal vs group). Never
+  sent to backend, never logged. Persistent memory deliberately NOT built (would need new encrypted storage — a
+  STOP condition).
+- **Orchestrator** (`documents/services/custom-tag-suggestion.service.ts`): ties C3 `CustomTagService` (authorized
+  fetch + client decrypt + cache — reused, no new crypto) + correction memory + pure engine; loads ONLY scoped
+  tags (personal/that-group), drops undecryptable names; userId from `AuthState`.
+- **UI (DOC-4 personal review):** `DocumentReviewService.mergeCustomSuggestions` (pure) adds custom INFERRED chips
+  ALONGSIDE canonical (idempotent, no finance touch); `DocumentReviewComponent` loads authorized personal customs
+  best-effort per extraction (failure/no-scope → canonical-only, no clobber) and records label→tagId on EXPLICIT
+  confirm only. Custom chips visually distinct (amber/dashed/✨ + reason). No auto-assign — INFERRED until confirm.
+- **Authority:** suggested = INFERRED; kept+confirmed = USER_CONFIRMED; manual = USER_CORRECTED. Custom tagId is a
+  custom_tags.id, so C3 server-side assignment authz re-validates scope on create — a suggestion is only a hint.
+- **Sensitive-tag safety:** engine never invents canonical/sensitive tags (only ranks the user's own customs);
+  canonical exclusion untouched; no new sensitive rule; no auto-promotion.
+- **Files:** frontend — `documents/services/{custom-tag-suggestion.ts (+spec), custom-tag-suggestion.service.ts
+  (+spec), document-review.service.ts (+spec)}`, `core/services/custom-tag-correction-memory.service.ts (+spec)`,
+  `documents/document-review.{model.ts, component.ts (+spec), component.html}`. Docs — §C4 note + this Progress Log.
+- **Tests:** +3 suites / +32 tests — pure engine (determinism, no-network tripwire, signals, scope, sensitive),
+  correction memory (user/group/personal isolation, no persistent storage, clear), orchestrator (scope, no-auto-
+  network, cross-user isolation), `mergeCustomSuggestions` (alongside-canonical, idempotent, no-auto-assign,
+  reject-not-in-draft, finance-untouched), component (merge, record-on-confirm-only, canonical-only-when-signed-out).
+- **Verification:** frontend 75 suites/654 (was 72/622); frontend build + lint clean (0 errors); backend untouched
+  — 78 suites/851 still green, FIN-002 finance-golden GREEN; C3 tests intact. No migration, no package change.
+- **Confirmation:** CODE CHANGED: YES (frontend only). SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES: NO. PRODUCTION:
+  NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (C3 crypto reused, no new
+  primitive, no server decryption). BACKEND: UNTOUCHED. EXTERNAL NETWORK/AI: NONE. FROZEN SRS/LEDGER/ADR/Matrix:
+  NO. STOP CONDITIONS: none hit. NOT IMPLEMENTED: ML/embeddings/LLM/cloud (C4-excluded), population/cross-user
+  learning, global promotion, governance, custom-tag CRUD/UI redesign, new backend endpoints/tables, persistent
+  correction memory, export tag columns, statement classification, group-modal suggestions (C5/FUTURE).
+  TAG-BATCH-C5: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

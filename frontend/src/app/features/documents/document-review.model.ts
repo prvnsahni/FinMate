@@ -73,6 +73,15 @@ export interface ReviewTag {
   authority: ExtractionAuthority;
   /** 'rule_based' (engine) or 'user' (a manual correction). */
   source: 'rule_based' | 'user';
+  /**
+   * TAG-BATCH-C4 — true for a user's own custom tag (a `custom_tags.id`), whose
+   * `canonicalName` is a CLIENT-DECRYPTED name. Distinguishes a custom suggestion
+   * from a canonical one in the UI and gates correction-memory recording. Absent
+   * / false for canonical taxonomy tags.
+   */
+  custom?: boolean;
+  /** TAG-BATCH-C4 — explainable reason for a custom suggestion (e.g. "Matched tag name"). */
+  reason?: string;
 }
 
 export interface ReviewLineItem {
