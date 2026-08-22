@@ -262,4 +262,52 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
       .flush({ errorCode: 'CON_VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
     await expect(promise).rejects.toMatchObject({ status: 412 });
   });
+
+  // ── TAG-C6-DISPLAY — getCustomTagNameMap (the one reusable resolver) ─────────
+
+  it('GROUP scope: resolves names via the GROUP endpoint/key only (active + deprecated, no dup)', async () => {
+    const promise = service.getCustomTagNameMap({ groupId: 'g-1' });
+    // Exactly two fetches — active + deprecated — both to the GROUP endpoint.
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags`)
+      .flush([row({ id: 'a', scopeType: 'group', groupId: 'g-1' })]);
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags?status=deprecated`)
+      .flush([row({ id: 'd', scopeType: 'group', groupId: 'g-1' })]);
+    // No personal endpoint touched (scope isolation); group key used for decrypt.
+    httpMock.expectNone(`${base}/custom-tags`);
+    const map = await promise;
+    expect(session.ensureGroupKey).toHaveBeenCalledWith('g-1', 'read', 'v-1');
+    expect(session.ensureCryptoContext).not.toHaveBeenCalled();
+    expect(map.get('a')).toEqual({ name: 'Groceries', deprecated: false });
+    expect(map.get('d')).toEqual({ name: 'Groceries', deprecated: true });
+  });
+
+  it('PERSONAL scope: resolves via the PERSONAL endpoint/master key only', async () => {
+    const promise = service.getCustomTagNameMap({});
+    httpMock
+      .expectOne(`${base}/custom-tags`)
+      .flush([row({ id: 'p', scopeType: 'personal', groupId: null, groupKeyVersionId: null })]);
+    httpMock
+      .expectOne(`${base}/custom-tags?status=deprecated`)
+      .flush([]);
+    httpMock.expectNone(`${base}/groups/g-1/custom-tags`);
+    const map = await promise;
+    expect(session.ensureCryptoContext).toHaveBeenCalled();
+    expect(session.ensureGroupKey).not.toHaveBeenCalled();
+    expect(map.get('p')).toEqual({ name: 'Groceries', deprecated: false });
+  });
+
+  it('is best-effort: a failed deprecated fetch still yields the active names', async () => {
+    const promise = service.getCustomTagNameMap({ groupId: 'g-1' });
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags`)
+      .flush([row({ id: 'a', scopeType: 'group', groupId: 'g-1' })]);
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags?status=deprecated`)
+      .flush('boom', { status: 500, statusText: 'Server Error' });
+    const map = await promise;
+    expect(map.get('a')).toEqual({ name: 'Groceries', deprecated: false });
+    expect(map.size).toBe(1);
+  });
 });

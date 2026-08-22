@@ -17,6 +17,13 @@ import {
   GroupAnalyticsQuery,
 } from '../../services/expenses.service';
 import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
+import { CustomTagNameEntry } from '../../../../core/services/custom-tag.service';
+
+/** Neutral, non-sensitive label for a custom tag whose name can't be resolved. */
+const CUSTOM_TAG_FALLBACK = 'Custom tag';
+/** Custom tag ids are UUIDs; canonical ids are readable slugs (e.g. `grocery`). */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface MonthlyData {
   month: string;
@@ -47,6 +54,7 @@ interface ProcessedTag {
   name: string;
   total: number;
   barWidth: number;
+  deprecated: boolean;
 }
 
 interface TagTrendData {
@@ -61,6 +69,7 @@ interface ProcessedTagTrendRow {
   tagId: string;
   name: string;
   cells: number[];
+  deprecated: boolean;
 }
 
 interface ProcessedCategory {
@@ -106,6 +115,14 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
   @Input() currency = 'USD';
   /** Unified group filter (date range + category/member/payer/type/tags). */
   @Input() filter?: GroupAnalyticsQuery;
+  /**
+   * TAG-C6-DISPLAY — custom-tag id → decrypted name/deprecated, resolved ONCE by
+   * the parent via `CustomTagService` (the single reusable path; correct scope
+   * key). Canonical names still come from `/taxonomy` here; custom ids resolve
+   * through this map. May arrive after the first load (async decrypt) — labels
+   * re-resolve on change without re-fetching analytics.
+   */
+  @Input() customTagNames?: Map<string, CustomTagNameEntry>;
 
   /** TAG-BATCH-B1 — emitted when a "spending by tag" bar is activated, so the
    *  parent can apply the existing unified tag filter. */
@@ -124,6 +141,13 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
   hoveredMonth: ProcessedMonth | null = null;
   categoryOptions = CATEGORY_OPTIONS;
 
+  // TAG-C6-DISPLAY — last-fetched raw tag data + canonical names, kept so tag
+  // labels can be re-resolved when `customTagNames` arrives/changes WITHOUT
+  // re-fetching analytics.
+  private lastTags: TagData[] = [];
+  private lastTagTrend: TagTrendData[] = [];
+  private canonicalNameById = new Map<string, string>();
+
   ngOnInit() {
     this.loadAnalytics();
   }
@@ -135,6 +159,12 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
       (changes['filter'] && !changes['filter'].firstChange)
     ) {
       this.loadAnalytics();
+      return;
+    }
+    // Custom names resolved after the initial fetch → just re-label, no re-fetch.
+    if (changes['customTagNames'] && !changes['customTagNames'].firstChange) {
+      this.processTagsData();
+      this.processTagTrendData();
     }
   }
 
@@ -156,11 +186,15 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: ({ categories, monthly, tags, tagTrend, taxonomy }) => {
-          const nameById = new Map(taxonomy.map((t) => [t.id, t.canonicalName]));
+          this.canonicalNameById = new Map(
+            taxonomy.map((t) => [t.id, t.canonicalName]),
+          );
+          this.lastTags = tags;
+          this.lastTagTrend = tagTrend;
           this.processCategoriesData(categories);
           this.processMonthlyData(monthly);
-          this.processTagsData(tags, nameById);
-          this.processTagTrendData(tagTrend, nameById);
+          this.processTagsData();
+          this.processTagTrendData();
           this.isLoading = false;
         },
         error: () => {
@@ -175,10 +209,28 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
    * (ancestor tags), so it is presented as "spending by tag", not an exclusive
    * breakdown. Only rendered when ≥2 months are present (a real trend).
    */
-  private processTagTrendData(
-    data: TagTrendData[],
-    nameById: Map<string, string>,
-  ): void {
+  /**
+   * TAG-C6-DISPLAY — resolve a tag id to a user-facing label + deprecated flag.
+   * Canonical ids → the taxonomy name; custom ids → the client-decrypted name
+   * from `customTagNames` (or the neutral "Custom tag" when undecryptable). A raw
+   * UUID is NEVER shown; an unknown non-UUID id (e.g. a deprecated canonical slug)
+   * keeps its readable slug.
+   */
+  private resolveTagLabel(tagId: string): { name: string; deprecated: boolean } {
+    const canonical = this.canonicalNameById.get(tagId);
+    if (canonical) return { name: canonical, deprecated: false };
+    const custom = this.customTagNames?.get(tagId);
+    if (custom) {
+      return { name: custom.name ?? CUSTOM_TAG_FALLBACK, deprecated: custom.deprecated };
+    }
+    return {
+      name: UUID_RE.test(tagId) ? CUSTOM_TAG_FALLBACK : tagId,
+      deprecated: false,
+    };
+  }
+
+  private processTagTrendData(): void {
+    const data = this.lastTagTrend;
     const matching = data.filter(
       (d) => d.currency.toUpperCase() === this.currency.toUpperCase(),
     );
@@ -200,11 +252,15 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
       .map(([tagId]) => tagId);
 
     this.tagTrendMonths = months;
-    this.tagTrendRows = topTags.map((tagId) => ({
-      tagId,
-      name: nameById.get(tagId) ?? tagId,
-      cells: months.map((m) => byTag.get(tagId)?.get(m) ?? 0),
-    }));
+    this.tagTrendRows = topTags.map((tagId) => {
+      const { name, deprecated } = this.resolveTagLabel(tagId);
+      return {
+        tagId,
+        name,
+        deprecated,
+        cells: months.map((m) => byTag.get(tagId)?.get(m) ?? 0),
+      };
+    });
   }
 
   /** Short label (e.g. `Aug`) for a `YYYY-MM` month key. */
@@ -220,18 +276,17 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
    * of a whole, so overlapping ancestor totals are not implied to be exclusive.
    * Only positive-net tags are shown, capped to the top entries for readability.
    */
-  private processTagsData(data: TagData[], nameById: Map<string, string>): void {
-    const matching = data
+  private processTagsData(): void {
+    const matching = this.lastTags
       .filter(
         (d) =>
           d.currency.toUpperCase() === this.currency.toUpperCase() &&
           Number(d.total) > 0,
       )
-      .map((d) => ({
-        tagId: d.tagId,
-        name: nameById.get(d.tagId) ?? d.tagId,
-        total: Number(d.total),
-      }))
+      .map((d) => {
+        const { name, deprecated } = this.resolveTagLabel(d.tagId);
+        return { tagId: d.tagId, name, deprecated, total: Number(d.total) };
+      })
       .sort((a, b) => b.total - a.total)
       .slice(0, 12);
 
@@ -242,8 +297,14 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
     }));
   }
 
-  /** Emit a tag selection so the parent applies the unified tag filter (STEP 5). */
-  onTagBarActivate(tagId: string): void {
+  /**
+   * Emit a tag selection so the parent applies the unified tag filter (STEP 5).
+   * TAG-C6-DISPLAY (F2): a DEPRECATED tag is not offered as a live filter — the
+   * backend would reject it and the ledger would come back empty — so activating
+   * it is a no-op (the bar is also visibly marked/disabled).
+   */
+  onTagBarActivate(tagId: string, deprecated = false): void {
+    if (deprecated) return;
     this.tagSelected.emit(tagId);
   }
 

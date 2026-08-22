@@ -295,17 +295,26 @@
         <li>
           <button
             type="button"
-            (click)="onTagBarActivate(tag.tagId)"
+            (click)="onTagBarActivate(tag.tagId, tag.deprecated)"
+            [disabled]="tag.deprecated"
             [attr.aria-label]="
-              'Filter ledger by ' + tag.name + ', ' +
-              (tag.total | currency: currency)
+              tag.deprecated
+                ? tag.name + ' (deprecated — historical only)'
+                : 'Filter ledger by ' + tag.name + ', ' +
+                  (tag.total | currency: currency)
             "
-            class="w-full flex items-center gap-3 group cursor-pointer text-left min-h-[40px] rounded-xl px-1"
+            class="w-full flex items-center gap-3 group text-left min-h-[40px] rounded-xl px-1"
+            [class.cursor-pointer]="!tag.deprecated"
+            [class.cursor-default]="tag.deprecated"
+            [class.opacity-70]="tag.deprecated"
           >
             <span
               class="w-24 sm:w-32 shrink-0 text-sm font-semibold capitalize truncate text-slate-700 dark:text-slate-200"
               >{{ tag.name }}</span
             >
+            @if (tag.deprecated) {
+              <span class="shrink-0 rounded-full bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-gray-500 dark:text-gray-400" data-testid="tag-deprecated-badge">Deprecated</span>
+            }
             <span
               class="relative flex-1 h-4 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden"
             >
@@ -356,11 +365,23 @@
               <td class="py-1.5 pr-3">
                 <button
                   type="button"
-                  (click)="onTagBarActivate(row.tagId)"
-                  [attr.aria-label]="'Filter ledger by ' + row.name"
-                  class="capitalize font-semibold text-slate-700 dark:text-slate-200 hover:text-finmate-primary cursor-pointer min-h-[32px] text-left"
+                  (click)="onTagBarActivate(row.tagId, row.deprecated)"
+                  [disabled]="row.deprecated"
+                  [attr.aria-label]="
+                    row.deprecated
+                      ? row.name + ' (deprecated — historical only)'
+                      : 'Filter ledger by ' + row.name
+                  "
+                  class="capitalize font-semibold text-slate-700 dark:text-slate-200 min-h-[32px] text-left"
+                  [class.hover:text-finmate-primary]="!row.deprecated"
+                  [class.cursor-pointer]="!row.deprecated"
+                  [class.cursor-default]="row.deprecated"
+                  [class.opacity-70]="row.deprecated"
                 >
                   {{ row.name }}
+                  @if (row.deprecated) {
+                    <span class="ml-1 text-[9px] uppercase tracking-wide text-gray-400">(deprecated)</span>
+                  }
                 </button>
               </td>
               @for (cell of row.cells; track $index) {

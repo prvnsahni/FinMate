@@ -35,6 +35,18 @@ export interface CustomTagView {
 }
 
 /**
+ * TAG-C6-DISPLAY — one custom tag's display info for name RESOLUTION across the
+ * read surfaces (analytics, ledger rows, filter chips). `name` is the
+ * client-decrypted plaintext, or `null` when it could not be decrypted (the
+ * caller then shows a neutral "Custom tag" fallback — never the raw id).
+ * `deprecated` lets a surface mark a historical-but-inactive tag.
+ */
+export interface CustomTagNameEntry {
+  name: string | null;
+  deprecated: boolean;
+}
+
+/**
  * TAG-BATCH-C5a — a custom tag for the MANAGEMENT surface: the same safe
  * metadata as the API row plus the CLIENT-decrypted `name` (null → show a
  * non-sensitive "Encrypted tag" fallback). `version` drives the C2 optimistic
@@ -350,6 +362,44 @@ export class CustomTagService {
       this.http.delete<CustomTagApiRow>(`${this.baseUrl}/custom-tags/${id}`),
     );
     this.nameCache.delete(id);
+  }
+
+  /**
+   * TAG-C6-DISPLAY — THE ONE reusable custom-tag name-resolution path. Returns a
+   * map `customTagId → { name, deprecated }` for a scope, covering BOTH active and
+   * deprecated tags (so historical spending on a since-deprecated tag still labels
+   * correctly). Names are decrypted CLIENT-SIDE with the correct scope key
+   * (personal → master key; group → per-group key/version) via the existing
+   * `getManaged*` path and the shared in-memory decrypt cache — no duplicate
+   * decryption logic, no new crypto, no plaintext ever sent/logged/persisted.
+   * Best-effort: any failure yields whatever resolved (callers fall back to a
+   * neutral label), never throwing into the page.
+   *
+   * @param scope `{ groupId }` for a group's tags, or `{}`/no groupId for the
+   *   caller's personal tags.
+   */
+  async getCustomTagNameMap(scope: {
+    groupId?: string | null;
+  }): Promise<Map<string, CustomTagNameEntry>> {
+    const load = (status: 'active' | 'deprecated') =>
+      (scope.groupId
+        ? this.getManagedGroupTags(scope.groupId, status)
+        : this.getManagedPersonalTags(status)
+      ).catch(() => [] as ManagedCustomTag[]);
+
+    const [active, deprecated] = await Promise.all([
+      load('active'),
+      load('deprecated'),
+    ]);
+
+    const map = new Map<string, CustomTagNameEntry>();
+    for (const t of active) map.set(t.id, { name: t.name, deprecated: false });
+    // Only add a deprecated entry if the id was not already seen as active
+    // (an id is exclusively one or the other, but this keeps active authoritative).
+    for (const t of deprecated) {
+      if (!map.has(t.id)) map.set(t.id, { name: t.name, deprecated: true });
+    }
+    return map;
   }
 
   /**

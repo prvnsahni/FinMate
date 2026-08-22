@@ -1627,6 +1627,7 @@
               [groupId]="group()!.id"
               [currency]="group()!.currency"
               [filter]="analyticsFilter()"
+              [customTagNames]="customTagNames()"
               (tagSelected)="onAnalyticsTagSelected($event)"
             ></app-analytics-charts>
           </div>

@@ -4213,3 +4213,119 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   SRS/LEDGER/ADR/Matrix/OpenAPI: NO (no API contract change). STOP CONDITIONS: none hit. NOT IMPLEMENTED: restore,
   hard delete, merge, aliases, ordering persistence, role governance (C5-c), canonical-tag requests (C5-d),
   persistent learning, population/ML, global promotion. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C5b: custom-tag lifecycle completion (restore + deprecated-rename guard)
+
+- **Summary:** Completed the custom-tag lifecycle: `deprecated → active` restore, blocked renaming a deprecated
+  tag (restore first), a deprecated-listing filter, preserved historical assignments + optimistic locking, and
+  kept hard delete disabled. Additive over the existing schema — no migration, no schema/package change, no new
+  crypto, no server-side decryption, no finance/E2EE/group-key/SEC-KI1 change, no Matrix/OpenAPI change. Only the
+  C5-b slice; C5-c (role governance) and C5-d (canonical requests) remain out of scope.
+- **Backend restore:** new additive `POST /custom-tags/:id/restore` (by-id, both scopes; dedicated endpoint since
+  rename PATCH requires an encryptedName restore must not send). `RestoreCustomTagDto { version }`.
+  `CustomTagsService.restore` reuses C2 authz (owner / member; IDOR → 404), optimistic-locked (stale →
+  `CON_VERSION_CONFLICT`), touches ONLY status; encryptedName/groupKeyVersion/expense_tags untouched; idempotent
+  no-op when already active.
+- **Deprecated-rename guard:** `rename` now throws `ConflictException { CUSTOM_TAG_DEPRECATED }` for a deprecated
+  tag (restore-before-rename policy for this batch); active rename unchanged (client-side E2EE, version, conflict).
+- **Deprecated listing:** `GET /custom-tags` + `GET /groups/:groupId/custom-tags` accept optional
+  `?status=deprecated` (default active — backward compatible; C3 facet unchanged); group listing still member-only.
+- **Frontend:** `CustomTagService.restoreTag` (POST restore, version-only; name carried over — no re-encryption/
+  key access) + `status` arg on the managed-list methods. Management widget gained an Active | Deprecated toggle:
+  Active keeps create/rename/deprecate; Deprecated shows Restore only (no rename, no delete); undecryptable name →
+  "Encrypted tag". Restore drops the row (notice); 412 → notice + refresh. In-memory only; name-free errors.
+- **Files:** backend — `custom-tags/{custom-tags.controller.ts, custom-tags.service.ts, custom-tags.service.spec.ts}`,
+  `custom-tags/dto/{restore-custom-tag.dto.ts, index.ts}`. frontend — `core/services/custom-tag.service.ts (+spec)`,
+  `shared/components/custom-tag-management/{component.ts, component.html, component.spec.ts}`. Docs — §C5b note +
+  this Progress Log.
+- **Tests:** backend +13 (restore personal/group, unauthorized/non-member → 404, stale-version conflict,
+  id/encryptedName/groupKeyVersion preserved, idempotent no-op, deprecated-rename → Conflict, active-rename still
+  works, deprecated list filter + active default, no hard-delete path); frontend +8 (deprecated `?status`
+  personal/group, restore version-only + no-encrypt, restore 412; component deprecated-view load, restore drops
+  row, restore 412 refresh).
+- **Verification:** backend 78 suites/864 (was 851); frontend 76 suites/682 (was 674); backend + frontend builds
+  clean; lint 0 errors (both); FIN-002 finance-golden GREEN; C3/C4/C5a intact. No migration, no package change.
+- **Confirmation:** CODE CHANGED: YES (backend + frontend). SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES: NO.
+  PRODUCTION: NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (no new
+  primitive, no server decryption; restore never touches encryptedName). EXPENSE_TAGS: UNTOUCHED (historical
+  assignments preserved). HARD DELETE: still unavailable. FROZEN SRS/LEDGER/ADR/Matrix/OpenAPI: NO (custom-tag API
+  stays internal; additive restore route + status query documented in the future doc). STOP CONDITIONS: none hit.
+  NOT IMPLEMENTED: C5-c role governance, C5-d canonical requests, global promotion, persistent correction memory,
+  population learning, ML/LLM, tag merge, tag aliases, tag ordering persistence, export tag columns.
+  TAG-BATCH-C5c: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-BATCH-C5c: group custom-tag authority (owner/admin governance)
+
+- **Assessment (grounded, read-only first):** the repo gates ALL group-shared-state mutation to owner/admin via
+  inline `role !== 'owner' && role !== 'admin'` service checks (settings, invites, roles, invite links, key
+  provision/rotation, contributions; archive = owner-only), while any active member creates personal content
+  (expenses). `GroupRolesGuard` resolves groupId from `params.id/groupId`/`body.groupId` → works for group create
+  but NOT the by-id `/custom-tags/:id` routes (there `params.id` is the tag id) → role enforced inline in the
+  service (dominant convention). Verdict: repository clearly supports Option B → implemented.
+- **Authority model — Option B (owner/admin governance):** group custom tag = shared group vocabulary, so
+  create/rename/deprecate/restore = owner/admin (CREATE included — adding to shared vocabulary is config creation,
+  which the repo treats as owner/admin, not member content). USAGE untouched: any member still sees/assigns/
+  filters (C3)/gets suggestions (C4); `listGroup` stays any-active-member. Personal tags unaffected (owner-only).
+- **Backend:** new `assertGroupGovernance(membership)` → `ForbiddenException { RES_FORBIDDEN }` when role not
+  owner/admin. `createGroup` gates after `assertActiveMembership`. `loadAuthorizedTag` now returns
+  `{ tag, membership }` (reuses the membership it already fetched — no extra query); rename/deprecate/restore gate
+  group tags. IDOR preserved: non-member → 404 (before the role gate); member-without-role → 403 (may see, not
+  govern). No route/DTO/controller/schema change; optimistic locking, E2EE opacity, expense_tags untouched.
+- **Frontend:** management widget gained a `canManage` input (default true → personal fully manageable);
+  `group-detail` passes `[canManage]="isOwnerOrAdmin()"`. Non-managing member → read-only active list + note, all
+  mutating affordances hidden (create/rename/remove/toggle/restore) and mutating methods early-return on
+  `!canManage` (defense-in-depth; server is authority). Managers keep full C5-a/b. C3/C4 unchanged.
+- **Files:** backend — `custom-tags/{custom-tags.service.ts, custom-tags.service.spec.ts}`. frontend —
+  `shared/components/custom-tag-management/{component.ts, component.html, component.spec.ts}`,
+  `features/groups/pages/group-detail/group-detail.component.html`. Docs — §C5c note + this Progress Log.
+- **Tests:** backend +8 (admin create/rename/deprecate allowed; member create/rename/deprecate/restore →
+  Forbidden; non-member → 404 unchanged; member LIST still allowed; personal unaffected); frontend +3 (non-manager
+  read-only list + hidden affordances + note; direct-call guards no-op; manager keeps affordances).
+- **Verification:** backend 78 suites/872 (was 864); frontend 76 suites/685 (was 682); backend + frontend builds
+  clean; lint 0 errors (both); FIN-002 finance-golden GREEN; C3/C4/C5a/C5b intact. No migration, no package change.
+- **Confirmation:** CODE CHANGED: YES (backend authz + frontend UX). SCHEMA CHANGED: NO. MIGRATION: NO. PACKAGES:
+  NO. NEW ROLE/GUARD/PERMISSION SYSTEM: NO (reused owner/admin + inline convention). PRODUCTION: NO. FINANCE:
+  UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key: UNCHANGED (no decryption). EXPENSE_TAGS: UNTOUCHED. IDOR:
+  member→403, non-member→404 (unchanged). FROZEN SRS/LEDGER/ADR/Matrix/OpenAPI: NO. STOP CONDITIONS: none hit.
+  NOT IMPLEMENTED: C5-d canonical requests, global promotion, persistent correction memory, population learning,
+  ML/LLM, tag merge, tag aliases, tag ordering persistence, export tag columns, aggregate cross-user learning.
+  TAG-BATCH-C5d: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-22 — TAG-C6-DISPLAY: custom-tag name display consistency (F1/F2/F3)
+
+- **Summary:** FRONTEND-ONLY fix for the three TAG-C6 audit findings — custom-tag names now resolve consistently
+  across analytics, ledger rows and the dashboard via ONE reusable path. No backend/API/schema/migration/package/
+  crypto/taxonomy/finance change; server still returns only opaque custom-tag ids.
+- **One resolver:** new `CustomTagService.getCustomTagNameMap(scope)` → `id → {name, deprecated}` (active +
+  deprecated), decrypted client-side with the correct scope key (personal→master via ensureCryptoContext;
+  group→per-group key/version via ensureGroupKey('read')) through the existing getManaged* path + shared decrypt
+  cache; best-effort. No duplicated decryption logic; no plaintext sent/stored/logged.
+- **F1 (analytics UUIDs):** `analytics-charts` gained a `customTagNames` input; canonical from /taxonomy, custom
+  from the map, unresolved → neutral "Custom tag" (never a UUID; non-UUID slugs kept). Distribution + trend share
+  one resolveTagLabel; caches raw rows and re-labels on input change WITHOUT re-fetching.
+- **F2 (deprecated dead-end):** deprecated tags label with their historical name, show a "Deprecated" badge, and
+  are non-clickable (onTagBarActivate no-op + disabled button) — never applies a filter the backend rejects.
+  Backend aggregation/history unchanged.
+- **F3 (personal on dashboard):** dashboard loads personal custom names once (getCustomTagNameMap({})); merges
+  active names into the row-chip tagNameMap (rows render names; undecryptable/deprecated omitted, no UUID) and
+  passes the full map to dashboard-analytics → analytics-charts. group-detail now uses the same resolver
+  (group key) for filter facet + rows + analytics from one load.
+- **Perf:** one resolver call per page (2 GETs active+deprecated), decrypted/cached once, reused across
+  filter/rows/analytics; no N+1; analytics re-labels from cache on name arrival.
+- **Files:** frontend — `core/services/custom-tag.service.ts (+spec)`,
+  `features/groups/components/analytics-charts/analytics-charts.component.{ts,html,spec.ts}`,
+  `features/groups/pages/group-detail/group-detail.component.{ts,html}`,
+  `features/dashboard/pages/dashboard/dashboard.component.{ts,html}`,
+  `features/dashboard/components/dashboard-analytics/dashboard-analytics.component.{ts,html}`.
+  Docs — §C6-DISPLAY note + this Progress Log.
+- **Tests:** +9 frontend (analytics custom-name resolution, "Custom tag" fallback never-UUID, canonical slug kept,
+  deprecated mark + activation no-op + disabled, active clickable/emits, re-label-on-change no-refetch;
+  getCustomTagNameMap group vs personal endpoint/key isolation, best-effort partial).
+- **Verification:** frontend 76 suites/694 (was 685); frontend build + lint clean (0 errors); backend UNTOUCHED —
+  78 suites/872 still green, FIN-002 finance-golden GREEN. No migration, no package change, no API/contract change.
+- **Confirmation:** CODE CHANGED: YES (frontend display only). BACKEND: UNTOUCHED. SCHEMA/MIGRATION/PACKAGES/API:
+  NONE. CRYPTO: reused (group key for group tags, master key for personal; no server decryption; no plaintext to
+  API/URL/storage/logs). TAXONOMY/CLASSIFICATION/C4-memory: UNCHANGED. FINANCE: UNCHANGED (golden gate GREEN).
+  FROZEN SRS/LEDGER/ADR/Matrix/OpenAPI: NO. STOP CONDITIONS: none hit. NOT STARTED: C5-d, any new feature.
+  Remaining limitation: an undecryptable custom tag shows the neutral "Custom tag" label (by design — never a
+  UUID, never a fabricated name). COMMIT: (this iteration). PUSH: NO.

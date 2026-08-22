@@ -42,7 +42,10 @@ import {
 import { Store } from '@ngxs/store';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import { GroupKeyService } from '../../../../core/services/group-key.service';
-import { CustomTagService } from '../../../../core/services/custom-tag.service';
+import {
+  CustomTagService,
+  CustomTagNameEntry,
+} from '../../../../core/services/custom-tag.service';
 import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../../../../core/constants/crypto.constants';
 import { MONTH_LOCK_DAY } from '../../../../core/constants/app.constants';
@@ -313,6 +316,12 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
    */
   readonly tagPillOptions = signal<DropdownOption[]>([]);
   private readonly tagLabelById = new Map<string, string>();
+  /**
+   * TAG-C6-DISPLAY — this group's custom-tag id → decrypted name/deprecated
+   * (active + deprecated), resolved once and passed to the analytics charts so
+   * they label custom tags instead of showing raw UUIDs.
+   */
+  readonly customTagNames = signal<Map<string, CustomTagNameEntry>>(new Map());
 
   /** Resolve a canonical tag id to its display name for summary chips. */
   tagNameById(id: string): string {
@@ -403,27 +412,33 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * TAG-BATCH-C3 — merge this group's custom tags into the SAME unified tag facet
-   * as the canonical taxonomy. Names are decrypted CLIENT-SIDE (group key, reusing
-   * the expense-title crypto) by `CustomTagService`; a tag whose name cannot be
-   * decrypted (key not ready / no access) is left out of the facet rather than
-   * shown as an opaque id or a fabricated label. Best-effort: any failure leaves
-   * the canonical-only facet intact. Runs once the crypto session is ready.
+   * TAG-BATCH-C3 / TAG-C6-DISPLAY — resolve this group's custom-tag names ONCE via
+   * the single `CustomTagService.getCustomTagNameMap` path (group key/version,
+   * active + deprecated, decrypted client-side + cached). ACTIVE named tags join
+   * the unified filter facet + row-chip label map (`tagLabelById`); the full map
+   * (incl. deprecated, for historical analytics labels) is published to
+   * `customTagNames` for the analytics charts — so filter, rows and analytics all
+   * share ONE loaded/decrypted source (no per-component refetch). Best-effort: any
+   * failure leaves the canonical-only surfaces intact. Runs once crypto is ready.
    */
   private loadGroupCustomTags(groupId: string): void {
     void this.customTagService
-      .getGroupCustomTags(groupId)
-      .then((tags) => {
-        const named = tags.filter((t) => !!t.name);
-        if (!named.length) return;
-        for (const t of named) this.tagLabelById.set(t.id, t.name as string);
-        // Append the named custom tags to the canonical pills (one namespace),
-        // de-duping by id, and keep the list alphabetically sorted.
-        const byValue = new Map(
-          this.tagPillOptions().map((o) => [o.value, o]),
+      .getCustomTagNameMap({ groupId })
+      .then((map) => {
+        this.customTagNames.set(map);
+        const activeNamed = [...map.entries()].filter(
+          ([, v]) => !v.deprecated && !!v.name,
         );
-        for (const t of named) {
-          byValue.set(t.id, { value: t.id, label: t.name as string });
+        if (!activeNamed.length) return;
+        for (const [id, v] of activeNamed) {
+          this.tagLabelById.set(id, v.name as string);
+        }
+        // Append the active named custom tags to the canonical pills (one
+        // namespace), de-duping by id, sorted. Deprecated tags are NOT offered as
+        // a filter option (they can't match a new filter), only labeled in history.
+        const byValue = new Map(this.tagPillOptions().map((o) => [o.value, o]));
+        for (const [id, v] of activeNamed) {
+          byValue.set(id, { value: id, label: v.name as string });
         }
         this.tagPillOptions.set(
           [...byValue.values()].sort((a, b) => a.label.localeCompare(b.label)),

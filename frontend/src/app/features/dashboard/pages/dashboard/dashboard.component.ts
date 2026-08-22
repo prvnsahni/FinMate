@@ -22,6 +22,10 @@ import { DashboardGoalsComponent } from '../../components/dashboard-goals/dashbo
 import { DashboardSettingsComponent } from '../../components/dashboard-settings/dashboard-settings.component';
 import { DashboardProfileComponent } from '../../components/dashboard-profile/dashboard-profile.component';
 import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
+import {
+  CustomTagService,
+  CustomTagNameEntry,
+} from '../../../../core/services/custom-tag.service';
 import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
 
 @Component({
@@ -69,6 +73,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private aiService = inject(AiService);
   private router = inject(Router);
+  private customTagService = inject(CustomTagService);
 
   get activeTab(): string {
     return this.expensesUiStore.activeTab();
@@ -99,6 +104,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
    * to dashboard-home so tag chips resolve names without any per-row lookup.
    */
   tagNameMap = new Map<string, string>();
+  // TAG-C6-DISPLAY — canonical names + the personal custom-tag map, merged into
+  // `tagNameMap` (active names for row chips) and exposed as `customTagNames`
+  // (full, incl. deprecated) for the analytics charts. One personal decrypt pass.
+  private canonicalTagNames = new Map<string, string>();
+  customTagNames = new Map<string, CustomTagNameEntry>();
   /** 1-based page of the unified /expenses/me list currently loaded. */
   expensesPage = 1;
   private readonly expensesPageSize = 50;
@@ -196,13 +206,42 @@ export class DashboardComponent implements OnInit, OnDestroy {
       next: (tags) => {
         const map = new Map<string, string>();
         for (const t of tags) map.set(t.id, t.canonicalName);
-        this.tagNameMap = map;
+        this.canonicalTagNames = map;
+        this.rebuildTagNameMap();
       },
       error: () => {
         // Leave the map empty on failure — never block the dashboard.
       },
     });
     this.destroy$.add(sub);
+
+    // TAG-C6-DISPLAY (F3) — resolve the caller's PERSONAL custom-tag names ONCE
+    // (master key, client-side, cached) via the single reusable path, so personal
+    // custom tags label on dashboard rows + analytics instead of showing UUIDs.
+    // Best-effort: a failure just leaves canonical-only labels.
+    void this.customTagService
+      .getCustomTagNameMap({})
+      .then((map) => {
+        this.customTagNames = map;
+        this.rebuildTagNameMap();
+      })
+      .catch(() => {
+        // Never block the dashboard on custom-tag resolution.
+      });
+  }
+
+  /**
+   * TAG-C6-DISPLAY — merge canonical + ACTIVE named personal custom tags into the
+   * row-chip name map (a NEW map ref so `dashboard-home` re-renders). Undecryptable
+   * / deprecated tags are omitted from row chips (safe drop, never a UUID); the
+   * full `customTagNames` still labels them in analytics.
+   */
+  private rebuildTagNameMap(): void {
+    const merged = new Map(this.canonicalTagNames);
+    for (const [id, entry] of this.customTagNames) {
+      if (!entry.deprecated && entry.name) merged.set(id, entry.name);
+    }
+    this.tagNameMap = merged;
   }
 
   refreshExpenseData() {
