@@ -1865,6 +1865,7 @@
               <app-custom-tag-management
                 scope="group"
                 [groupId]="group()?.id ?? null"
+                [canManage]="isOwnerOrAdmin()"
               ></app-custom-tag-management>
             </div>
 

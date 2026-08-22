@@ -31,10 +31,15 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   };
   let fixture: ComponentFixture<CustomTagManagementComponent>;
 
-  const make = (scope: 'personal' | 'group', groupId: string | null = null) => {
+  const make = (
+    scope: 'personal' | 'group',
+    groupId: string | null = null,
+    canManage = true,
+  ) => {
     fixture = TestBed.createComponent(CustomTagManagementComponent);
     fixture.componentRef.setInput('scope', scope);
     fixture.componentRef.setInput('groupId', groupId);
+    fixture.componentRef.setInput('canManage', canManage);
     fixture.detectChanges();
     return fixture.componentInstance;
   };
@@ -212,6 +217,49 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     await comp.restore(comp.tags()[0]);
     expect(comp.notice()).toMatch(/changed elsewhere/i);
     expect(service.getManagedPersonalTags.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  // ── TAG-BATCH-C5c — canManage gates management actions (usage unaffected) ────
+
+  it('a non-managing member sees the list read-only (create/rename/remove hidden)', async () => {
+    service.getManagedGroupTags.mockResolvedValue([tag({ id: 'g', scopeType: 'group', groupId: 'g-1' })]);
+    make('group', 'g-1', /* canManage */ false);
+    await flush();
+    fixture.detectChanges();
+    const html = (fixture.nativeElement as HTMLElement);
+    // The tag is still visible…
+    expect(html.querySelector('[data-testid="tag-list"]')).toBeTruthy();
+    // …but no management affordances are rendered.
+    expect(html.querySelector('[data-testid="create-tag"]')).toBeNull();
+    expect(html.querySelector('[data-testid="start-rename"]')).toBeNull();
+    expect(html.querySelector('[data-testid="start-deprecate"]')).toBeNull();
+    expect(html.querySelector('[data-testid="view-deprecated"]')).toBeNull();
+    expect(html.querySelector('[data-testid="readonly-note"]')).toBeTruthy();
+  });
+
+  it('guards mutating actions even if invoked directly when canManage is false', async () => {
+    const comp = make('group', 'g-1', false);
+    await flush();
+    comp.newName.set('X');
+    await comp.create();
+    expect(service.createGroupTag).not.toHaveBeenCalled();
+    comp.startEdit(tag({ id: 'g' }));
+    expect(comp.editingId()).toBeNull(); // startEdit is a no-op
+    await comp.restore(tag({ id: 'g', status: 'deprecated' }));
+    expect(service.restoreTag).not.toHaveBeenCalled();
+    comp.setView('deprecated');
+    expect(comp.isDeprecatedView()).toBe(false); // cannot enter the restore view
+  });
+
+  it('a manager (canManage true) keeps full management affordances', async () => {
+    service.getManagedGroupTags.mockResolvedValue([tag({ id: 'g', scopeType: 'group', groupId: 'g-1' })]);
+    make('group', 'g-1', true);
+    await flush();
+    fixture.detectChanges();
+    const html = fixture.nativeElement as HTMLElement;
+    expect(html.querySelector('[data-testid="create-tag"]')).toBeTruthy();
+    expect(html.querySelector('[data-testid="start-rename"]')).toBeTruthy();
+    expect(html.querySelector('[data-testid="view-deprecated"]')).toBeTruthy();
   });
 
   it('never persists tag names to browser storage', async () => {

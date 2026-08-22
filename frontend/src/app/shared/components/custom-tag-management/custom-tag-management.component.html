@@ -12,7 +12,15 @@
     </div>
   </div>
 
+  @if (!canManage()) {
+    <p class="text-xs text-gray-500 dark:text-gray-400" data-testid="readonly-note">
+      Only group owners and admins can manage these tags. You can still use and
+      filter by them on your expenses.
+    </p>
+  }
+
   <!-- TAG-BATCH-C5b — Active | Deprecated switch (restore lives under Deprecated). -->
+  @if (canManage()) {
   <div class="inline-flex rounded-full border border-border/10 p-0.5 text-xs" role="tablist">
     <button
       type="button"
@@ -39,9 +47,10 @@
       Deprecated
     </button>
   </div>
+  }
 
-  <!-- Create (active view only) -->
-  @if (!isDeprecatedView()) {
+  <!-- Create (active view, managers only) -->
+  @if (!isDeprecatedView() && canManage()) {
   <form
     class="flex flex-wrap items-center gap-2"
     (submit)="create(); $event.preventDefault()"
@@ -131,8 +140,10 @@
               <span [class.italic]="!tag.name" [class.text-gray-400]="!tag.name">{{ displayName(tag) }}</span>
               <span class="rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Active</span>
             </span>
-            <button type="button" class="text-xs text-indigo-600 dark:text-indigo-300 hover:underline" (click)="startEdit(tag)" data-testid="start-rename">Rename</button>
-            <button type="button" class="text-xs text-red-600 dark:text-red-300 hover:underline" (click)="requestDeprecate(tag)" data-testid="start-deprecate">Remove</button>
+            @if (canManage()) {
+              <button type="button" class="text-xs text-indigo-600 dark:text-indigo-300 hover:underline" (click)="startEdit(tag)" data-testid="start-rename">Rename</button>
+              <button type="button" class="text-xs text-red-600 dark:text-red-300 hover:underline" (click)="requestDeprecate(tag)" data-testid="start-deprecate">Remove</button>
+            }
           }
         </li>
       }

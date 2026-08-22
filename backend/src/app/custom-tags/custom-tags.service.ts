@@ -97,6 +97,27 @@ export class CustomTagsService {
   }
 
   /**
+   * TAG-BATCH-C5c — governance gate for GROUP custom tags. A group custom tag is
+   * shared group vocabulary, so its GOVERNANCE (create/rename/deprecate/restore)
+   * follows the same owner/admin convention as every other group-shared-state
+   * mutation (settings, invites, roles, keys, contributions). Plain members and
+   * viewers keep full USAGE (see/assign/filter/review — unchanged) but cannot
+   * manage the definition set. Personal tags are unaffected (owner-only).
+   *
+   * A non-member never reaches here — `loadAuthorizedTag`/`assertActiveMembership`
+   * already 404/deny them; a member who merely lacks the role gets a 403 (they
+   * are authorized to SEE the tag, just not govern it — no existence disclosure).
+   */
+  private assertGroupGovernance(membership: GroupMember): void {
+    if (membership.role !== 'owner' && membership.role !== 'admin') {
+      throw new ForbiddenException({
+        errorCode: 'RES_FORBIDDEN',
+        message: 'Only group owners and admins can manage group tags',
+      });
+    }
+  }
+
+  /**
    * Resolves the group-key version to stamp on a group tag. A declared id must
    * belong to the group and not be REVOKED; otherwise the group's current
    * ACTIVE version is used. Mirrors the expense/recurring key-version discipline
@@ -193,7 +214,10 @@ export class CustomTagsService {
     groupId: string,
     dto: CreateGroupCustomTagDto,
   ): Promise<CustomTagResponse> {
-    await this.assertActiveMembership(userId, groupId);
+    // C5c — creating shared group vocabulary is a governance op (owner/admin);
+    // a non-member is denied by assertActiveMembership first.
+    const membership = await this.assertActiveMembership(userId, groupId);
+    this.assertGroupGovernance(membership);
     const groupKeyVersion = await this.resolveGroupKeyVersion(
       groupId,
       dto.groupKeyVersionId,
@@ -248,7 +272,7 @@ export class CustomTagsService {
   private async loadAuthorizedTag(
     userId: string,
     id: string,
-  ): Promise<CustomTag> {
+  ): Promise<{ tag: CustomTag; membership: GroupMember | null }> {
     const tag = await this.customTagRepository.findOne({
       where: { id },
       relations: ['ownerUser', 'group', 'groupKeyVersion'],
@@ -261,23 +285,25 @@ export class CustomTagsService {
       if (tag.ownerUser?.id !== userId) {
         throw new NotFoundException('Custom tag not found');
       }
-    } else {
-      const groupId = tag.group?.id;
-      const membership = groupId
-        ? await this.groupMemberRepository.findOne({
-            where: {
-              group: { id: groupId },
-              user: { id: userId },
-              joinStatus: 'active',
-            },
-          })
-        : null;
-      if (!membership) {
-        throw new NotFoundException('Custom tag not found');
-      }
+      return { tag, membership: null };
     }
 
-    return tag;
+    const groupId = tag.group?.id;
+    const membership = groupId
+      ? await this.groupMemberRepository.findOne({
+          where: {
+            group: { id: groupId },
+            user: { id: userId },
+            joinStatus: 'active',
+          },
+        })
+      : null;
+    if (!membership) {
+      throw new NotFoundException('Custom tag not found');
+    }
+    // Membership returned so governance callers can enforce the owner/admin gate
+    // (C5c) with no second query; non-members were already 404'd above (IDOR).
+    return { tag, membership };
   }
 
   /**
@@ -293,7 +319,11 @@ export class CustomTagsService {
     id: string,
     dto: UpdateCustomTagDto,
   ): Promise<CustomTagResponse> {
-    const tag = await this.loadAuthorizedTag(userId, id);
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — renaming a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
 
     // TAG-BATCH-C5b — a deprecated tag cannot be renamed; the caller must restore
     // it first. This keeps a deprecated definition frozen while its historical
@@ -336,7 +366,11 @@ export class CustomTagsService {
    * @param id custom tag id
    */
   async deprecate(userId: string, id: string): Promise<CustomTagResponse> {
-    const tag = await this.loadAuthorizedTag(userId, id);
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — deprecating a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
     if (tag.status !== 'deprecated') {
       tag.status = 'deprecated';
       const saved = await this.customTagRepository.save(tag);
@@ -362,7 +396,11 @@ export class CustomTagsService {
     id: string,
     dto: RestoreCustomTagDto,
   ): Promise<CustomTagResponse> {
-    const tag = await this.loadAuthorizedTag(userId, id);
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — restoring a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
 
     if (tag.version !== dto.version) {
       throw new PreconditionFailedException({

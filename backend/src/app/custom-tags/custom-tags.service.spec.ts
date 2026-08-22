@@ -82,6 +82,13 @@ describe('CustomTagsService', () => {
       role: 'member',
       joinStatus: 'active',
     } as unknown as GroupMember);
+  // C5c — group tag GOVERNANCE (create/rename/deprecate/restore) is owner/admin.
+  const asAdmin = () =>
+    groupMemberRepository.findOne.mockResolvedValue({
+      id: 'm1',
+      role: 'admin',
+      joinStatus: 'active',
+    } as unknown as GroupMember);
   const asNonMember = () =>
     groupMemberRepository.findOne.mockResolvedValue(null);
   const activeKeyVersion = () =>
@@ -195,8 +202,8 @@ describe('CustomTagsService', () => {
 
   // ─── AUTHORIZATION: GROUP ──────────────────────────────────────────────────
 
-  it('7. Group member can create a group tag (with resolved key version)', async () => {
-    asMember();
+  it('7. Group owner/admin can create a group tag (with resolved key version)', async () => {
+    asAdmin();
     activeKeyVersion();
     const res = await service.createGroup(USER_A, GROUP_X, {
       encryptedName: CIPHERTEXT,
@@ -407,7 +414,7 @@ describe('CustomTagsService', () => {
   });
 
   it('23/24. group create binds to the route group + verifies that membership', async () => {
-    asMember();
+    asAdmin();
     activeKeyVersion();
     await service.createGroup(USER_A, GROUP_Y, { encryptedName: CIPHERTEXT });
     expect(groupMemberRepository.findOne).toHaveBeenCalledWith(
@@ -424,7 +431,7 @@ describe('CustomTagsService', () => {
   });
 
   it('25a. a declared REVOKED key version is rejected (BadRequest)', async () => {
-    asMember();
+    asAdmin();
     groupKeyVersionRepository.findOne.mockResolvedValue({
       id: 'revoked-1',
       status: 'REVOKED',
@@ -439,7 +446,7 @@ describe('CustomTagsService', () => {
   });
 
   it('25b. with no declared version the ACTIVE version is stamped', async () => {
-    asMember();
+    asAdmin();
     activeKeyVersion();
     await service.createGroup(USER_A, GROUP_X, { encryptedName: CIPHERTEXT });
     const saved = customTagRepository.save.mock.calls[0][0] as CustomTag;
@@ -447,7 +454,7 @@ describe('CustomTagsService', () => {
   });
 
   it('25c. group with no active key version → BadRequest (no auto-provision)', async () => {
-    asMember();
+    asAdmin();
     groupKeyVersionRepository.findOne.mockResolvedValue(null);
     await expect(
       service.createGroup(USER_A, GROUP_X, { encryptedName: CIPHERTEXT }),
@@ -513,11 +520,11 @@ describe('CustomTagsService', () => {
     expect(res.status).toBe('active');
   });
 
-  it('C5b-2. active group member restores a deprecated group tag', async () => {
+  it('C5b-2. a group owner/admin restores a deprecated group tag', async () => {
     customTagRepository.findOne.mockResolvedValue(
       deprecatedPersonal({ scopeType: 'group', ownerUser: null, group: { id: GROUP_X } }),
     );
-    asMember();
+    asAdmin();
     const res = await service.restore(USER_A, TAG_ID, { version: 2 });
     expect(res.status).toBe('active');
   });
@@ -648,5 +655,103 @@ describe('CustomTagsService', () => {
     expect(
       (customTagRepository as unknown as Record<string, unknown>)['delete'],
     ).toBeUndefined();
+  });
+
+  // ─── TAG-BATCH-C5c — group-tag governance is owner/admin (usage stays member) ─
+
+  const groupTag = (over: Record<string, unknown> = {}) =>
+    ({
+      id: TAG_ID,
+      scopeType: 'group',
+      status: 'active',
+      version: 1,
+      encryptedName: CIPHERTEXT,
+      ownerUser: null,
+      group: { id: GROUP_X },
+      groupKeyVersion: { id: GKV_ACTIVE },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...over,
+    }) as unknown as CustomTag;
+
+  it('C5c. a group ADMIN can create / rename / deprecate a group tag', async () => {
+    asAdmin();
+    activeKeyVersion();
+    await expect(
+      service.createGroup(USER_A, GROUP_X, { encryptedName: CIPHERTEXT }),
+    ).resolves.toBeDefined();
+
+    customTagRepository.findOne.mockResolvedValue(groupTag());
+    await expect(
+      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+    ).resolves.toBeDefined();
+    await expect(service.deprecate(USER_A, TAG_ID)).resolves.toBeDefined();
+  });
+
+  it('C5c. a plain MEMBER cannot CREATE a group tag (Forbidden, not 404)', async () => {
+    asMember();
+    await expect(
+      service.createGroup(USER_A, GROUP_X, { encryptedName: CIPHERTEXT }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5c. a plain MEMBER cannot RENAME a group tag (Forbidden)', async () => {
+    customTagRepository.findOne.mockResolvedValue(groupTag());
+    asMember();
+    await expect(
+      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5c. a plain MEMBER cannot DEPRECATE a group tag (Forbidden)', async () => {
+    customTagRepository.findOne.mockResolvedValue(groupTag());
+    asMember();
+    await expect(service.deprecate(USER_A, TAG_ID)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5c. a plain MEMBER cannot RESTORE a group tag (Forbidden)', async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      groupTag({ status: 'deprecated', version: 2 }),
+    );
+    asMember();
+    await expect(
+      service.restore(USER_A, TAG_ID, { version: 2 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5c. a NON-member still gets 404 on a group tag (IDOR unchanged, not 403)', async () => {
+    customTagRepository.findOne.mockResolvedValue(groupTag());
+    asNonMember();
+    await expect(service.deprecate(USER_B, TAG_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('C5c. group USAGE stays open — any active member can LIST group tags', async () => {
+    asMember();
+    customTagRepository.find.mockResolvedValue([]);
+    await expect(service.listGroup(USER_A, GROUP_X)).resolves.toEqual([]);
+  });
+
+  it('C5c. PERSONAL tags are unaffected — owner still manages their own', async () => {
+    customTagRepository.findOne.mockResolvedValue({
+      id: TAG_ID,
+      scopeType: 'personal',
+      status: 'active',
+      version: 1,
+      encryptedName: CIPHERTEXT,
+      ownerUser: { id: USER_A },
+      group: null,
+    } as unknown as CustomTag);
+    // No membership lookup happens for a personal tag; owner governs directly.
+    await expect(
+      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+    ).resolves.toBeDefined();
   });
 });

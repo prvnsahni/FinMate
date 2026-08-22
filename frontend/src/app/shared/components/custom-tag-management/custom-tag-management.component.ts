@@ -40,6 +40,14 @@ export class CustomTagManagementComponent {
   /** 'personal' → the user's own tags; 'group' → the group's tags (needs `groupId`). */
   readonly scope = input<'personal' | 'group'>('personal');
   readonly groupId = input<string | null>(null);
+  /**
+   * TAG-BATCH-C5c — whether the current user may GOVERN these tags
+   * (create/rename/deprecate/restore). Personal tags: always true (owner). Group
+   * tags: pass the caller's owner/admin status — a plain member sees the list
+   * read-only (usage stays open elsewhere) while management actions are hidden.
+   * This is UX only; the server independently enforces owner/admin governance.
+   */
+  readonly canManage = input<boolean>(true);
 
   readonly tags = signal<ManagedCustomTag[]>([]);
   readonly loading = signal(false);
@@ -80,6 +88,8 @@ export class CustomTagManagementComponent {
 
   /** Switch between the active (manage) and deprecated (restore) lists. */
   setView(view: 'active' | 'deprecated'): void {
+    // The deprecated/restore view is governance-only.
+    if (view === 'deprecated' && !this.canManage()) return;
     if (this.view() === view) return;
     this.cancelEdit();
     this.cancelDeprecate();
@@ -125,6 +135,7 @@ export class CustomTagManagementComponent {
   }
 
   async create(): Promise<void> {
+    if (!this.canManage()) return;
     const name = this.newName().trim();
     if (!name || name.length > MAX_NAME_LENGTH || this.creating()) return;
     this.creating.set(true);
@@ -145,6 +156,7 @@ export class CustomTagManagementComponent {
   }
 
   startEdit(tag: ManagedCustomTag): void {
+    if (!this.canManage()) return;
     this.editingId.set(tag.id);
     this.editName.set(tag.name ?? '');
     this.error.set(null);
@@ -185,6 +197,7 @@ export class CustomTagManagementComponent {
 
   /** Ask for confirmation before deprecating (two-step, no accidental data change). */
   requestDeprecate(tag: ManagedCustomTag): void {
+    if (!this.canManage()) return;
     this.deprecatingId.set(tag.id);
     this.error.set(null);
     this.notice.set(null);
@@ -215,7 +228,7 @@ export class CustomTagManagementComponent {
    * stays encrypted server-side and historical assignments are untouched.
    */
   async restore(tag: ManagedCustomTag): Promise<void> {
-    if (this.restoringId()) return;
+    if (!this.canManage() || this.restoringId()) return;
     this.restoringId.set(tag.id);
     this.error.set(null);
     try {
