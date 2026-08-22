@@ -63,6 +63,32 @@ const SENSITIVE_META_KEYS = new Set<string>([
   'ip',
 ]);
 
+/**
+ * PUBLIC-1C-PRE — path prefixes whose NEXT path segment is a CAPABILITY TOKEN
+ * (a password-equivalent secret) that must never reach logs. Unlike query
+ * tokens (redacted by name below), these live in the URL PATH of a shareable
+ * link, so they are redacted by position: the one segment following the prefix.
+ */
+const CAPABILITY_PATH_PREFIXES = ['/public/shares/'];
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Redact the single token segment after each capability prefix, matching with or
+ * without a leading API prefix (e.g. `/api/v1/public/shares/<token>`), leaving
+ * every other segment intact. Pure/string-only; preserves the URL contract.
+ */
+function redactCapabilityPath(path: string): string {
+  let out = path;
+  for (const prefix of CAPABILITY_PATH_PREFIXES) {
+    const re = new RegExp(`(${escapeRegExp(prefix)})[^/?#]+`, 'gi');
+    out = out.replace(re, `$1${REDACTED}`);
+  }
+  return out;
+}
+
 function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[_-]/g, '');
 }
@@ -76,19 +102,24 @@ function decodeSafe(value: string): string {
 }
 
 /**
- * Redacts the VALUES of sensitive query parameters in a URL or relative path,
- * preserving the path and every non-sensitive parameter. Accepts absolute URLs
- * or Express `originalUrl`/`url` forms (e.g. `/api/v1/auth/reset-password?token=x`).
- * Never throws; returns `''` for empty input.
+ * Redacts secrets from a URL/path for logging: the VALUES of sensitive query
+ * parameters (by name), AND — PUBLIC-1C-PRE — any CAPABILITY-TOKEN path segment
+ * for a shareable route (`/public/shares/<token>` → `/public/shares/[REDACTED]`),
+ * so a token in the PATH is never logged even without a query string. Every other
+ * path segment and non-sensitive parameter is preserved. Accepts absolute URLs or
+ * Express `originalUrl`/`url` forms. Never throws; returns `''` for empty input.
  */
 export function redactUrl(rawUrl: string | undefined | null): string {
   if (!rawUrl) return '';
   const queryIndex = rawUrl.indexOf('?');
-  if (queryIndex === -1) return rawUrl;
 
-  const path = rawUrl.slice(0, queryIndex);
+  // Redact a capability token in the PATH first (present with or without a query).
+  const rawPath = queryIndex === -1 ? rawUrl : rawUrl.slice(0, queryIndex);
+  const path = redactCapabilityPath(rawPath);
+  if (queryIndex === -1) return path;
+
   const query = rawUrl.slice(queryIndex + 1);
-  if (!query) return rawUrl;
+  if (!query) return `${path}?`;
 
   // Preserve any URL fragment untouched (it never carries query params).
   const hashIndex = query.indexOf('#');

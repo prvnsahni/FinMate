@@ -84,6 +84,62 @@ describe('log-redaction.util', () => {
       expect(out).not.toContain('123456');
       expect(out).toContain('[REDACTED]');
     });
+
+    // ── PUBLIC-1C-PRE — capability token in the PATH (shareable link) ──────────
+    describe('public-share capability token in the path', () => {
+      const RAW = 'kQ8mN3pR7sT1vW5xY9zA2bC4dE6fG0hJ_lMoPqRsTuV'; // base64url-ish
+
+      it('redacts a valid-looking token segment (no query string)', () => {
+        expect(redactUrl(`/api/v1/public/shares/${RAW}`)).toBe(
+          '/api/v1/public/shares/[REDACTED]',
+        );
+      });
+
+      it('redacts an invalid/short token the same way (positional, not value-based)', () => {
+        expect(redactUrl('/api/v1/public/shares/not-a-real-token')).toBe(
+          '/api/v1/public/shares/[REDACTED]',
+        );
+        expect(redactUrl('/public/shares/x')).toBe('/public/shares/[REDACTED]');
+      });
+
+      it('redacts the token even when a query string follows', () => {
+        expect(redactUrl(`/api/v1/public/shares/${RAW}?foo=bar`)).toBe(
+          '/api/v1/public/shares/[REDACTED]?foo=bar',
+        );
+      });
+
+      it('still redacts a sensitive query param after the capability route', () => {
+        expect(redactUrl(`/api/v1/public/shares/${RAW}?token=leak&page=2`)).toBe(
+          '/api/v1/public/shares/[REDACTED]?token=[REDACTED]&page=2',
+        );
+      });
+
+      it('never leaves the raw capability token anywhere in the output', () => {
+        const out = redactUrl(`/api/v1/public/shares/${RAW}?ref=${RAW}`);
+        // The path token is gone; a non-sensitive query value is not our concern
+        // here, but the PATH token specifically must never survive.
+        expect(out.startsWith('/api/v1/public/shares/[REDACTED]')).toBe(true);
+        expect(out).not.toContain(`shares/${RAW}`);
+      });
+
+      it('leaves unrelated path segments untouched (only the capability segment is redacted)', () => {
+        expect(redactUrl('/api/v1/groups/123/members')).toBe(
+          '/api/v1/groups/123/members',
+        );
+        expect(redactUrl('/api/v1/public/health')).toBe('/api/v1/public/health');
+        // A deeper segment after the token is not the capability secret.
+        expect(redactUrl('/public/shares/tok/extra')).toBe(
+          '/public/shares/[REDACTED]/extra',
+        );
+      });
+
+      it('does not change existing query-only redaction behavior', () => {
+        expect(
+          redactUrl('/api/v1/auth/reset-password?token=supersecret123'),
+        ).toBe('/api/v1/auth/reset-password?token=[REDACTED]');
+        expect(redactUrl('/api/v1/expenses')).toBe('/api/v1/expenses');
+      });
+    });
   });
 
   describe('redactSensitiveKeys (SEC-W7)', () => {

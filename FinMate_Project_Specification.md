@@ -4400,3 +4400,30 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   prevented via group-row lock (no 1A change needed). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS:
   none hit. NOT IMPLEMENTED: anonymous projection endpoint, public projection, viewer, frontend, feature flag,
   balance calc, pseudonyms (PUBLIC-1C+). PUBLIC-1C: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-23 — PUBLIC-1C-PRE: redact public-share capability tokens from logs
+
+- **Summary:** Minimal, additive hardening of the shared SEC-W2 log-redaction util so the anonymous PUBLIC-1C
+  endpoint (`GET /public/shares/:token`) can carry the token in the PATH without it ever reaching logs. Unblocks
+  PUBLIC-1C. NO endpoint, controller, throttle, PublicShare/migration/finance/E2EE, or frontend change; PUBLIC-1C
+  itself NOT started.
+- **Root cause fixed:** the global `LoggingInterceptor` (and exception logging) log `redactUrl(originalUrl)`, but
+  `redactUrl` previously redacted ONLY query-param values (`if (indexOf('?') === -1) return rawUrl`) — a token in
+  the PATH (`/public/shares/<token>`, no query) was logged verbatim.
+- **Change (`backend/src/app/common/log-redaction.util.ts` only):** `redactUrl` is now PATH-aware. Added
+  `CAPABILITY_PATH_PREFIXES = ['/public/shares/']` + `redactCapabilityPath()` which positionally redacts the single
+  token segment after the prefix (matches with/without the `/api/v1` prefix) → `/public/shares/[REDACTED]`. Applied
+  before query handling, so a token is redacted with OR without a query string. All existing query-param redaction,
+  fragment handling, and unrelated paths are unchanged. Both the LoggingInterceptor and the global exception filter
+  benefit automatically (they already consume `redactUrl`). No new logging framework or route interceptor; the URL
+  `:token` contract is preserved; the token is not logged/hashed/stored here.
+- **Files:** backend — `common/log-redaction.util.ts` (+ `.spec.ts`). Docs — this Progress Log.
+- **Tests:** +7 — valid-looking token → `[REDACTED]`; invalid/short token same (positional); token + query
+  redacted together; sensitive query param after the route still redacted; raw token never survives; unrelated
+  segments untouched; existing query-only redaction unchanged.
+- **Verification:** backend 81 suites/903 (was 81/896; +7); backend build clean; lint 0 errors; FIN-002 finance-
+  golden GREEN. Existing LoggingInterceptor/redaction tests still pass (no behavior change for non-capability URLs).
+- **Confirmation:** CODE CHANGED: YES (one shared util). SCHEMA/MIGRATION/PACKAGES: NONE. FINANCE/E2EE/SEC-KI1:
+  UNCHANGED. PublicShare/API/token-transport: UNCHANGED. New privacy classification: NO. Logging framework
+  redesign: NO (additive redaction only). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit.
+  PUBLIC-1C: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
