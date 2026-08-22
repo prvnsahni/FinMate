@@ -23,7 +23,8 @@ export type FeatureFlag =
   | 'mobile.secureStorage'
   | 'mobile.push'
   | 'domain.intelligence'
-  | 'document.intelligence';
+  | 'document.intelligence'
+  | 'public.groupShare';
 
 export interface FeatureFlagDef {
   /** Env var whose value overrides the default (e.g. FEATURE_AI_FIREWALL). */
@@ -99,6 +100,11 @@ export const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagDef> = {
     envKey: 'FEATURE_DOCUMENT_INTELLIGENCE',
     default: false,
     description: 'DOC-1 document intake (total-only/itemized boundary); itemized extraction not implemented',
+  },
+  'public.groupShare': {
+    envKey: 'FEATURE_PUBLIC_GROUP_SHARE',
+    default: false,
+    description: 'PUBLIC-1 anonymous read-only group ledger projection (default OFF)',
   },
 };
 

@@ -138,6 +138,14 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
             limit: getLimit('THROTTLE_LIMIT_EXPORT', 20),
             skipIf: skipUnlessPolicy(THROTTLE_PROFILES.EXPORT),
           },
+          {
+            // PUBLIC-1C — first ANONYMOUS data endpoint; keep the per-IP limit
+            // strict (enumeration resistance for the capability token).
+            name: THROTTLE_PROFILES.PUBLIC_SHARE,
+            ttl: 60000,
+            limit: getLimit('THROTTLE_LIMIT_PUBLIC_SHARE', 30),
+            skipIf: skipUnlessPolicy(THROTTLE_PROFILES.PUBLIC_SHARE),
+          },
         ];
 
         return {

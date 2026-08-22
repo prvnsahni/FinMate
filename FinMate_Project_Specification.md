@@ -4427,3 +4427,53 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   UNCHANGED. PublicShare/API/token-transport: UNCHANGED. New privacy classification: NO. Logging framework
   redesign: NO (additive redaction only). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit.
   PUBLIC-1C: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-23 — PUBLIC-1C: anonymous read-only public group-ledger projection
+
+- **Summary:** The anonymous `GET /public/shares/:token` endpoint that returns a minimized, allowlist-only,
+  read-only ledger + balance summary for a shared group. Backend only. No frontend/viewer, share-management UI,
+  migration, new table, or PUBLIC-1D+. No E2EE decryption, no real member PII, no second finance calculator, no
+  finance mutation, no frozen-doc change. Default OFF.
+- **Feature flag:** added `public.groupShare` (env `FEATURE_PUBLIC_GROUP_SHARE`, **default false**) to the existing
+  registry. When OFF the endpoint returns the same generic 404 with NO data access (checked before any DB read).
+- **Throttle:** added `THROTTLE_PROFILES.PUBLIC_SHARE` ('publicShare', 30/min default via
+  `THROTTLE_LIMIT_PUBLIC_SHARE`) + a throttler entry in `app.module`; the anonymous controller carries
+  `@ThrottleAs(PUBLIC_SHARE)` — strict per-IP limit (first anonymous data endpoint; enumeration resistance).
+- **Endpoint/controller (`public-projection.controller.ts`):** `@Controller('public/shares')` with **NO
+  JwtAuthGuard** (capability, not identity). Token is a path param only; nothing (groupId/userId/memberId/scope) is
+  accepted from the client. Raw token/hash never returned; never logged (PUBLIC-1C-PRE `redactUrl` redacts the
+  path token).
+- **Projection service (`public-projection.service.ts`):** flag gate → `sha256(token)` lookup on
+  `PublicShare.tokenHash` (relations group + createdByUser) → usable check (active + not expired + group +
+  creator). Balances come VERBATIM from the ONLY authoritative `SettlementsService.calculateGroupBalances(
+  creatorId, groupId)`; if the creator is no longer an active member (or the group vanished) the service throws →
+  caught → **same generic 404** (no impersonation, no bypass). Pseudonyms: all group members ordered by a hidden
+  (joinedAt, id) key → "Member 1/2/…"; the map translates balance `groupMemberId`s and each expense payer to a
+  label — real names/emails/ids never exposed. Entries are a descriptive (no-math) list of posted (non-deleted)
+  expenses (date/amount/currency/category/transactionType/payerLabel), capped at 500, ordered deterministically;
+  it never reads title/description/notes/tags/attachments and never decrypts. Tags omitted (custom-tag names are
+  E2EE). Every failure mode → identical `NotFoundException()` (no disclosure of which condition or whether the
+  token ever existed).
+- **DTOs (`dto/public-ledger.dto.ts`):** `PublicGroupLedgerDto` {groupName, currency, entries, balanceSummary,
+  generatedAt}, `PublicExpenseEntryDto` {date, amount, currency, category, transactionType, payerLabel},
+  `PublicBalanceSummaryDto` {fromLabel, toLabel, amount, currency}. Allowlist-by-construction — no id/PII/E2EE
+  field can be serialized; authenticated Expense/Group/Settlement/User DTOs are never reused.
+- **Files:** backend — `public-shares/{public-projection.controller.ts (+spec), public-projection.service.ts
+  (+spec), public-shares.module.ts}`, `public-shares/dto/{public-ledger.dto.ts, index.ts}`,
+  `platform/feature-flags.constants.ts`, `throttler/throttle.constants.ts`, `app.module.ts`. Docs — this Progress
+  Log. (No PublicShare entity/migration change.)
+- **Tests:** +2 suites / +18 — valid→projection; sha256 lookup; unknown/revoked/expired/deleted-group/inactive-
+  creator → generic 404; flag-OFF → 404 with no DB access; allowlist (no ids/PII/E2EE/token/hash; exact key sets);
+  deterministic distinct "Member N"; same member same label across entries+balances; balances verbatim from
+  calculateGroupBalances + no mutation; cross-group scoping; anonymous (no guards) + PUBLIC_SHARE throttle
+  metadata; delegation + generic-404 propagation.
+- **Verification:** backend 83 suites/921 (was 81/903; +18); backend build clean; lint 0 errors; FIN-002 finance-
+  golden GREEN. No migration/package change. Static/unit verification only — no served anonymous HTTP env; behavior
+  verified via unit tests (reported honestly).
+- **Confirmation:** CODE CHANGED: YES (anonymous read API). SCHEMA/MIGRATION/TABLE: NONE (reuses 1A). PACKAGES: NO.
+  CRYPTO: Node sha256 only (no new primitive). E2EE/DECRYPTION: NONE. REAL MEMBER PII: NONE (pseudonyms only).
+  FINANCE: read-only, verbatim from the single authoritative calculator; no second calculator; golden gate GREEN.
+  GUARDS: none weakened; endpoint intentionally anonymous + throttled. LOGGING: token redacted (PUBLIC-1C-PRE),
+  service logs nothing. FEATURE FLAG: default OFF (not enabled in prod). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO.
+  STOP CONDITIONS: none hit. NOT IMPLEMENTED: public viewer/owner UI, PUBLIC-1D/E, real-name consent, tags/titles,
+  caching. PUBLIC-1D: NOT STARTED. COMMIT: (this iteration). PUSH: NO.

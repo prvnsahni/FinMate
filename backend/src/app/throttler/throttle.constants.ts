@@ -21,6 +21,7 @@ export const THROTTLE_PROFILES = {
   IMPORT: 'import',
   EXPORT: 'export',
   INVITE: 'invite',
+  PUBLIC_SHARE: 'publicShare',
 } as const;
 
 export type ThrottleProfile =
