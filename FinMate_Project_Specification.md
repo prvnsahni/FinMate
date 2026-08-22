@@ -4329,3 +4329,35 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   FROZEN SRS/LEDGER/ADR/Matrix/OpenAPI: NO. STOP CONDITIONS: none hit. NOT STARTED: C5-d, any new feature.
   Remaining limitation: an undecryptable custom tag shows the neutral "Custom tag" label (by design — never a
   UUID, never a fabricated name). COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-23 — PUBLIC-1A: public-share data model + migration (capability boundary only)
+
+- **Summary:** First slice of the approved Public Read-Only Group Sharing track — the `PublicShare` data model +
+  migration ONLY. No token service, management API, anonymous endpoint, frontend, feature flag, or projection
+  logic (those are PUBLIC-1B+). Additive + reversible; no existing table/column changed, no backfill, no finance
+  column, no E2EE field, no crypto, no frozen-doc change.
+- **Entity (`shared/data-models/src/lib/public-share.entity.ts`):** a group owner/admin's opt-in public share of
+  ONE group — a capability boundary that holds ONLY a token HASH + lifecycle. Fields: `id`, `group` (FK, ON DELETE
+  CASCADE — a share never outlives its group), `createdByUser?` (owner/admin provenance + the member context for
+  the authoritative balance calc; ON DELETE SET NULL), `tokenHash` (VARCHAR(64) UNIQUE — `sha256(token)`; the raw
+  token is NEVER stored), `status` (active|revoked default active), `expiresAt?`, `@VersionColumn`, `createdAt/
+  updatedAt`, `revokedAt?`. No name/email/phone/user-id/member-id/group-id-string, no amount/balance/currency, no
+  ciphertext/key/E2EE, no title/description/note — nothing sensitive persisted. Public sharing is OFF by default
+  (no row until explicitly created). `label_policy` intentionally NOT added (MVP pseudonym policy is fixed in code).
+- **Migration (`backend/src/migrations/1720300000000-AddPublicShares.ts`):** additive + reversible — `up()` creates
+  `public_shares` (+ `uq_public_shares_token_hash` UNIQUE, `idx_public_shares_group`); `down()` drops the table.
+  No INSERT/UPDATE/backfill, no financial column, no existing-table ALTER/DROP. Registered in `migrations/index.ts`
+  (auto-runs via `migrationsRun`) + `ormconfig.ts` (entity + CLI datasource). Not executed against a live DB.
+- **Files:** shared — `public-share.entity.ts` (+ spec), `index.ts` (export). backend — migration (+ spec),
+  `migrations/index.ts`, `ormconfig.ts`. Docs — this Progress Log.
+- **Verification:** data-models 5 suites/31 (+1 suite/+5: token-hash-only, lifecycle-only, no PII/finance/E2EE
+  columns, group CASCADE, creator SET NULL); backend 79 suites/877 (+1 suite/+5 migration guards; finance golden
+  gate GREEN); backend build clean; lint 0 errors (data-models, backend). No entity forFeature yet (comes with the
+  1B repository) — the migration still runs from the registered array.
+- **Confirmation:** CODE CHANGED: YES (data model). SCHEMA CHANGED: YES (additive `public_shares` table only).
+  MIGRATION: YES (additive/reversible; not run vs live DB). MIGRATION EXECUTED: NO (runs on boot via migrationsRun).
+  PACKAGES: NO. EXISTING TABLE/COLUMN: UNCHANGED. BACKFILL: NONE. FINANCE: UNCHANGED (golden gate GREEN; no finance
+  column). E2EE/keys/crypto: NONE (token hash only; no ciphertext, no new primitive). PII: NONE persisted. FROZEN
+  SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. NOT IMPLEMENTED: token service, management API,
+  anonymous projection endpoint, frontend, public viewer, feature-flag wiring (PUBLIC-1B+). PUBLIC-1B: NOT STARTED.
+  COMMIT: (this iteration). PUSH: NO.

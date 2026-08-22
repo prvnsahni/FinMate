@@ -22,3 +22,4 @@ export { AddExpensePaymentsAndDirectLedger1719900000000 } from './1719900000000-
 export { AddGoalsV2Fields1720000000000 } from './1720000000000-AddGoalsV2Fields';
 export { AddExpenseTags1720100000000 } from './1720100000000-AddExpenseTags';
 export { AddCustomTags1720200000000 } from './1720200000000-AddCustomTags';
+export { AddPublicShares1720300000000 } from './1720300000000-AddPublicShares';

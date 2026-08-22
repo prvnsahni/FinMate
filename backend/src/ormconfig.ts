@@ -30,6 +30,7 @@ import {
   GroupKeyVersion,
   MemberWrappedGroupKey,
   ReceiptVersion,
+  PublicShare,
 } from '@finmate/data-models';
 import * as Migrations from './migrations';
 import { SnakeNamingStrategy } from './app/common/snake-naming-strategy';
@@ -80,6 +81,7 @@ export default new DataSource({
     EncryptedExpenseKey,
     GroupKeyVersion,
     MemberWrappedGroupKey,
+    PublicShare,
   ],
   migrations: [...Object.values(Migrations)],
   namingStrategy: new SnakeNamingStrategy(),

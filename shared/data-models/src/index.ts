@@ -16,6 +16,7 @@ export * from './lib/group.entity';
 export * from './lib/group-member.entity';
 export * from './lib/group-member-contribution.entity';
 export * from './lib/group-invite.entity';
+export * from './lib/public-share.entity';
 export * from './lib/group-key-version.entity';
 export * from './lib/member-wrapped-group-key.entity';
 export * from './lib/settlement.entity';
