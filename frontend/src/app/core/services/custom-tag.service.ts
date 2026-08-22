@@ -208,10 +208,22 @@ export class CustomTagService {
     return { key: res.key, versionId: res.versionId };
   }
 
-  /** List the caller's own ACTIVE personal custom tags for management (with version). */
-  async getManagedPersonalTags(): Promise<ManagedCustomTag[]> {
+  /** Build the optional `?status=deprecated` query (active is the server default). */
+  private statusQuery(status: 'active' | 'deprecated'): string {
+    return status === 'deprecated' ? '?status=deprecated' : '';
+  }
+
+  /**
+   * List the caller's own personal custom tags for management (with version).
+   * @param status lifecycle filter — `active` (default) or `deprecated` (C5b restore view).
+   */
+  async getManagedPersonalTags(
+    status: 'active' | 'deprecated' = 'active',
+  ): Promise<ManagedCustomTag[]> {
     const rows = await firstValueFrom(
-      this.http.get<CustomTagApiRow[]>(`${this.baseUrl}/custom-tags`),
+      this.http.get<CustomTagApiRow[]>(
+        `${this.baseUrl}/custom-tags${this.statusQuery(status)}`,
+      ),
     );
     if (!rows.length) return [];
     let key: CryptoKey | null = null;
@@ -225,11 +237,17 @@ export class CustomTagService {
     return out;
   }
 
-  /** List a group's ACTIVE custom tags for management (member-only, with version). */
-  async getManagedGroupTags(groupId: string): Promise<ManagedCustomTag[]> {
+  /**
+   * List a group's custom tags for management (member-only, with version).
+   * @param status lifecycle filter — `active` (default) or `deprecated` (C5b restore view).
+   */
+  async getManagedGroupTags(
+    groupId: string,
+    status: 'active' | 'deprecated' = 'active',
+  ): Promise<ManagedCustomTag[]> {
     const rows = await firstValueFrom(
       this.http.get<CustomTagApiRow[]>(
-        `${this.baseUrl}/groups/${groupId}/custom-tags`,
+        `${this.baseUrl}/groups/${groupId}/custom-tags${this.statusQuery(status)}`,
       ),
     );
     if (!rows.length) return [];
@@ -332,5 +350,30 @@ export class CustomTagService {
       this.http.delete<CustomTagApiRow>(`${this.baseUrl}/custom-tags/${id}`),
     );
     this.nameCache.delete(id);
+  }
+
+  /**
+   * TAG-BATCH-C5b — restore a deprecated custom tag (`deprecated → active`). Sends
+   * ONLY the optimistic `version`; the encrypted name/key version are untouched
+   * server-side, so the name (already decrypted for the deprecated view) is
+   * carried over — no re-decryption or key access is needed here. A `412` conflict
+   * propagates for the caller to handle.
+   */
+  async restoreTag(tag: ManagedCustomTag): Promise<ManagedCustomTag> {
+    const row = await firstValueFrom(
+      this.http.post<CustomTagApiRow>(
+        `${this.baseUrl}/custom-tags/${tag.id}/restore`,
+        { version: tag.version },
+      ),
+    );
+    return {
+      id: row.id,
+      name: this.nameCache.get(row.id) ?? tag.name,
+      scopeType: row.scopeType,
+      status: row.status,
+      version: row.version,
+      groupId: row.groupId,
+      groupKeyVersionId: row.groupKeyVersionId,
+    };
   }
 }

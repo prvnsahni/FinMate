@@ -12,7 +12,36 @@
     </div>
   </div>
 
-  <!-- Create -->
+  <!-- TAG-BATCH-C5b — Active | Deprecated switch (restore lives under Deprecated). -->
+  <div class="inline-flex rounded-full border border-border/10 p-0.5 text-xs" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="!isDeprecatedView()"
+      class="px-3 py-1 rounded-full"
+      [class.bg-indigo-600]="!isDeprecatedView()"
+      [class.text-white]="!isDeprecatedView()"
+      (click)="setView('active')"
+      data-testid="view-active"
+    >
+      Active
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="isDeprecatedView()"
+      class="px-3 py-1 rounded-full"
+      [class.bg-indigo-600]="isDeprecatedView()"
+      [class.text-white]="isDeprecatedView()"
+      (click)="setView('deprecated')"
+      data-testid="view-deprecated"
+    >
+      Deprecated
+    </button>
+  </div>
+
+  <!-- Create (active view only) -->
+  @if (!isDeprecatedView()) {
   <form
     class="flex flex-wrap items-center gap-2"
     (submit)="create(); $event.preventDefault()"
@@ -38,6 +67,7 @@
       {{ creating() ? 'Adding…' : 'Add tag' }}
     </button>
   </form>
+  }
 
   @if (notice()) {
     <p class="text-xs text-amber-600 dark:text-amber-400" role="status">{{ notice() }}</p>
@@ -51,13 +81,28 @@
     <p class="text-sm text-gray-500" data-testid="tag-loading">Loading tags…</p>
   } @else if (tags().length === 0) {
     <p class="text-sm text-gray-500" data-testid="tag-empty">
-      No custom tags yet. Add one above.
+      {{ isDeprecatedView() ? 'No deprecated tags.' : 'No custom tags yet. Add one above.' }}
     </p>
   } @else {
     <ul class="divide-y divide-border/10 rounded-2xl border border-border/10" data-testid="tag-list">
       @for (tag of tags(); track tag.id) {
         <li class="flex flex-wrap items-center gap-2 px-3 py-2">
-          @if (editingId() === tag.id) {
+          @if (isDeprecatedView()) {
+            <!-- Deprecated row — restore only (no rename until restored, no delete). -->
+            <span class="flex-1 flex items-center gap-2 text-sm">
+              <span [class.italic]="!tag.name" [class.text-gray-400]="!tag.name">{{ displayName(tag) }}</span>
+              <span class="rounded-full bg-gray-100 dark:bg-gray-700/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Deprecated</span>
+            </span>
+            <button
+              type="button"
+              class="text-xs text-emerald-600 dark:text-emerald-300 hover:underline"
+              (click)="restore(tag)"
+              [disabled]="restoringId() === tag.id"
+              data-testid="restore-tag"
+            >
+              {{ restoringId() === tag.id ? 'Restoring…' : 'Restore' }}
+            </button>
+          } @else if (editingId() === tag.id) {
             <!-- Inline rename -->
             <input
               class="finmate-input flex-1 min-w-[10rem]"

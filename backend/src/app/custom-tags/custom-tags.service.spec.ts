@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   PreconditionFailedException,
@@ -485,5 +486,167 @@ describe('CustomTagsService', () => {
     });
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'version')).toBe(true);
+  });
+
+  // ─── TAG-BATCH-C5b — lifecycle completion (restore + rename guard + status) ──
+
+  const deprecatedPersonal = (over: Record<string, unknown> = {}) =>
+    ({
+      id: TAG_ID,
+      scopeType: 'personal',
+      status: 'deprecated',
+      version: 2,
+      encryptedName: CIPHERTEXT,
+      ownerUser: { id: USER_A },
+      group: null,
+      groupKeyVersion: { id: GKV_ACTIVE },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...over,
+    }) as unknown as CustomTag;
+
+  it('C5b-1. owner restores their deprecated personal tag (deprecated → active)', async () => {
+    customTagRepository.findOne.mockResolvedValue(deprecatedPersonal());
+    const res = await service.restore(USER_A, TAG_ID, { version: 2 });
+    const saved = customTagRepository.save.mock.calls[0][0] as CustomTag;
+    expect(saved.status).toBe('active');
+    expect(res.status).toBe('active');
+  });
+
+  it('C5b-2. active group member restores a deprecated group tag', async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ scopeType: 'group', ownerUser: null, group: { id: GROUP_X } }),
+    );
+    asMember();
+    const res = await service.restore(USER_A, TAG_ID, { version: 2 });
+    expect(res.status).toBe('active');
+  });
+
+  it("C5b-3. User B cannot restore A's personal tag (IDOR → NotFound)", async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ ownerUser: { id: USER_A } }),
+    );
+    await expect(
+      service.restore(USER_B, TAG_ID, { version: 2 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5b-4. a non-member cannot restore a group tag (IDOR → NotFound)', async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ scopeType: 'group', ownerUser: null, group: { id: GROUP_X } }),
+    );
+    asNonMember();
+    await expect(
+      service.restore(USER_B, TAG_ID, { version: 2 }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5b-5. a stale version on restore → CON_VERSION_CONFLICT', async () => {
+    customTagRepository.findOne.mockResolvedValue(deprecatedPersonal({ version: 5 }));
+    try {
+      await service.restore(USER_A, TAG_ID, { version: 2 });
+      fail('expected conflict');
+    } catch (e) {
+      expect(e).toBeInstanceOf(PreconditionFailedException);
+      expect((e as PreconditionFailedException).getResponse()).toMatchObject({
+        errorCode: 'CON_VERSION_CONFLICT',
+      });
+    }
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5b-6/7/8/9. restore touches ONLY status — preserves id/encryptedName/groupKeyVersion', async () => {
+    customTagRepository.findOne.mockResolvedValue(deprecatedPersonal());
+    await service.restore(USER_A, TAG_ID, { version: 2 });
+    const saved = customTagRepository.save.mock.calls[0][0] as CustomTag;
+    expect(saved.id).toBe(TAG_ID);
+    expect(saved.encryptedName).toBe(CIPHERTEXT); // name never touched/decrypted
+    expect((saved.groupKeyVersion as { id: string }).id).toBe(GKV_ACTIVE);
+    expect(saved.status).toBe('active');
+  });
+
+  it('C5b. restore is idempotent on an already-active tag (no-op, no save)', async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ status: 'active', version: 2 }),
+    );
+    const res = await service.restore(USER_A, TAG_ID, { version: 2 });
+    expect(res.status).toBe('active');
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5b-13. a deprecated tag CANNOT be renamed (must restore first) → Conflict', async () => {
+    customTagRepository.findOne.mockResolvedValue(deprecatedPersonal());
+    try {
+      await service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 2 });
+      fail('expected conflict');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ConflictException);
+      expect((e as ConflictException).getResponse()).toMatchObject({
+        errorCode: 'CUSTOM_TAG_DEPRECATED',
+      });
+    }
+    expect(customTagRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('C5b-14. an ACTIVE tag can still be renamed (guard only blocks deprecated)', async () => {
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ status: 'active', version: 1 }),
+    );
+    const res = await service.rename(USER_A, TAG_ID, {
+      encryptedName: CIPHERTEXT_2,
+      version: 1,
+    });
+    const saved = customTagRepository.save.mock.calls[0][0] as CustomTag;
+    expect(saved.encryptedName).toBe(CIPHERTEXT_2);
+    expect(res.encryptedName).toBe(CIPHERTEXT_2);
+  });
+
+  it('C5b-11. listPersonal(deprecated) queries the deprecated set for the owner', async () => {
+    customTagRepository.find.mockResolvedValue([]);
+    await service.listPersonal(USER_A, 'deprecated');
+    expect(customTagRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          scopeType: 'personal',
+          status: 'deprecated',
+          ownerUser: { id: USER_A },
+        }),
+      }),
+    );
+  });
+
+  it('C5b. listPersonal defaults to ACTIVE (backward compatible)', async () => {
+    customTagRepository.find.mockResolvedValue([]);
+    await service.listPersonal(USER_A);
+    expect(customTagRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'active' }),
+      }),
+    );
+  });
+
+  it('C5b. listGroup(deprecated) requires membership and queries the deprecated set', async () => {
+    asMember();
+    customTagRepository.find.mockResolvedValue([]);
+    await service.listGroup(USER_A, GROUP_X, 'deprecated');
+    expect(customTagRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          scopeType: 'group',
+          status: 'deprecated',
+          group: { id: GROUP_X },
+        }),
+      }),
+    );
+  });
+
+  it('C5b-17. restore exposes no hard-delete path (service has no delete/remove)', () => {
+    expect((service as unknown as Record<string, unknown>)['delete']).toBeUndefined();
+    expect((service as unknown as Record<string, unknown>)['hardDelete']).toBeUndefined();
+    expect(
+      (customTagRepository as unknown as Record<string, unknown>)['delete'],
+    ).toBeUndefined();
   });
 });

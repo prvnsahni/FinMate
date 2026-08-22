@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -17,6 +18,7 @@ import {
 import {
   CreateGroupCustomTagDto,
   CreatePersonalCustomTagDto,
+  RestoreCustomTagDto,
   UpdateCustomTagDto,
 } from './dto';
 
@@ -155,15 +157,20 @@ export class CustomTagsService {
   }
 
   /**
-   * Lists the authenticated user's own ACTIVE personal custom tags. Never
-   * returns another user's tags or the canonical taxonomy.
+   * Lists the authenticated user's own personal custom tags for the given
+   * lifecycle `status` (default `active`; `deprecated` powers the C5b restore
+   * view). Never returns another user's tags or the canonical taxonomy.
    * @param userId authenticated user id
+   * @param status lifecycle filter — `active` (default) or `deprecated`
    */
-  async listPersonal(userId: string): Promise<CustomTagResponse[]> {
+  async listPersonal(
+    userId: string,
+    status: 'active' | 'deprecated' = 'active',
+  ): Promise<CustomTagResponse[]> {
     const tags = await this.customTagRepository.find({
       where: {
         scopeType: 'personal',
-        status: 'active',
+        status,
         ownerUser: { id: userId },
       },
       order: { createdAt: 'DESC' },
@@ -205,19 +212,23 @@ export class CustomTagsService {
   }
 
   /**
-   * Lists a group's ACTIVE custom tags. Requires ACTIVE membership.
+   * Lists a group's custom tags for the given lifecycle `status` (default
+   * `active`; `deprecated` powers the C5b restore view). Requires ACTIVE
+   * membership.
    * @param userId authenticated user id
    * @param groupId target group id
+   * @param status lifecycle filter — `active` (default) or `deprecated`
    */
   async listGroup(
     userId: string,
     groupId: string,
+    status: 'active' | 'deprecated' = 'active',
   ): Promise<CustomTagResponse[]> {
     await this.assertActiveMembership(userId, groupId);
     const tags = await this.customTagRepository.find({
       where: {
         scopeType: 'group',
-        status: 'active',
+        status,
         group: { id: groupId },
       },
       order: { createdAt: 'DESC' },
@@ -284,6 +295,16 @@ export class CustomTagsService {
   ): Promise<CustomTagResponse> {
     const tag = await this.loadAuthorizedTag(userId, id);
 
+    // TAG-BATCH-C5b — a deprecated tag cannot be renamed; the caller must restore
+    // it first. This keeps a deprecated definition frozen while its historical
+    // assignments stay resolvable under the name they were confirmed with.
+    if (tag.status === 'deprecated') {
+      throw new ConflictException({
+        errorCode: 'CUSTOM_TAG_DEPRECATED',
+        message: 'Restore this tag before renaming it.',
+      });
+    }
+
     if (tag.version !== dto.version) {
       throw new PreconditionFailedException({
         errorCode: 'CON_VERSION_CONFLICT',
@@ -321,6 +342,42 @@ export class CustomTagsService {
       const saved = await this.customTagRepository.save(tag);
       return this.toResponse(saved);
     }
+    return this.toResponse(tag);
+  }
+
+  /**
+   * TAG-BATCH-C5b — restores a deprecated custom tag (`deprecated → active`) so it
+   * is offered again. Same authorization as rename/deprecate (personal → owner;
+   * group → active member; IDOR → 404). Optimistic-lock protected via `version`
+   * (`CON_VERSION_CONFLICT`) exactly like rename. It touches ONLY `status`: the
+   * opaque `encryptedName`, `groupKeyVersion`, and every historical `expense_tags`
+   * assignment are left exactly as they were (no name decryption, no finance).
+   * Idempotent: restoring an already-active tag is a no-op that returns it.
+   * @param userId authenticated user id
+   * @param id custom tag id
+   * @param dto last-seen optimistic version
+   */
+  async restore(
+    userId: string,
+    id: string,
+    dto: RestoreCustomTagDto,
+  ): Promise<CustomTagResponse> {
+    const tag = await this.loadAuthorizedTag(userId, id);
+
+    if (tag.version !== dto.version) {
+      throw new PreconditionFailedException({
+        errorCode: 'CON_VERSION_CONFLICT',
+        message:
+          'Version conflict: the resource has been modified by another request',
+      });
+    }
+
+    if (tag.status === 'deprecated') {
+      tag.status = 'active';
+      const saved = await this.customTagRepository.save(tag);
+      return this.toResponse(saved);
+    }
+    // Already active — idempotent no-op (no save, no version bump).
     return this.toResponse(tag);
   }
 }

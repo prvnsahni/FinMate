@@ -53,6 +53,11 @@ export class CustomTagManagementComponent {
   readonly editName = signal('');
   readonly savingId = signal<string | null>(null);
   readonly deprecatingId = signal<string | null>(null);
+  readonly restoringId = signal<string | null>(null);
+
+  /** TAG-BATCH-C5b — which lifecycle set is shown: active (manage) or deprecated (restore). */
+  readonly view = signal<'active' | 'deprecated'>('active');
+  readonly isDeprecatedView = computed(() => this.view() === 'deprecated');
 
   readonly maxNameLength = MAX_NAME_LENGTH;
   readonly isGroup = computed(() => this.scope() === 'group');
@@ -63,12 +68,24 @@ export class CustomTagManagementComponent {
   private token = 0;
 
   constructor() {
-    // Reload whenever the scope/group changes (guards against a stale group id).
+    // Reload whenever the scope/group or the active/deprecated view changes
+    // (guards against a stale group id).
     effect(() => {
       this.scope();
       this.groupId();
+      this.view();
       void this.load();
     });
+  }
+
+  /** Switch between the active (manage) and deprecated (restore) lists. */
+  setView(view: 'active' | 'deprecated'): void {
+    if (this.view() === view) return;
+    this.cancelEdit();
+    this.cancelDeprecate();
+    this.error.set(null);
+    this.notice.set(null);
+    this.view.set(view);
   }
 
   /** Display name for a tag, with a safe non-sensitive fallback (never fabricated). */
@@ -83,16 +100,17 @@ export class CustomTagManagementComponent {
       this.tags.set([]);
       return;
     }
+    const status = this.view();
     const mine = ++this.token;
     this.loading.set(true);
     this.error.set(null);
     try {
       const list =
         scope === 'group'
-          ? await this.service.getManagedGroupTags(groupId as string)
-          : await this.service.getManagedPersonalTags();
+          ? await this.service.getManagedGroupTags(groupId as string, status)
+          : await this.service.getManagedPersonalTags(status);
       if (mine !== this.token) return; // a newer load superseded this one
-      this.tags.set(list.filter((t) => t.status === 'active'));
+      this.tags.set(list.filter((t) => t.status === status));
     } catch (e) {
       if (mine !== this.token) return;
       this.error.set(this.messageFor(e, 'load'));
@@ -190,8 +208,34 @@ export class CustomTagManagementComponent {
     }
   }
 
+  /**
+   * TAG-BATCH-C5b — restore a deprecated tag (deprecated → active). On success it
+   * leaves the deprecated view (drops out of this list); a 412 conflict refreshes
+   * and asks the user to retry. Only the optimistic version is sent — the name
+   * stays encrypted server-side and historical assignments are untouched.
+   */
+  async restore(tag: ManagedCustomTag): Promise<void> {
+    if (this.restoringId()) return;
+    this.restoringId.set(tag.id);
+    this.error.set(null);
+    try {
+      await this.service.restoreTag(tag);
+      this.tags.update((list) => list.filter((t) => t.id !== tag.id));
+      this.notice.set('Tag restored. Find it under Active.');
+    } catch (e) {
+      if (e instanceof HttpErrorResponse && e.status === 412) {
+        this.notice.set('This tag was changed elsewhere. We refreshed the list — please try again.');
+        this.reload();
+      } else {
+        this.error.set(this.messageFor(e, 'restore'));
+      }
+    } finally {
+      this.restoringId.set(null);
+    }
+  }
+
   /** Map an error to a safe, name-free user message. Never surfaces the name/ciphertext. */
-  private messageFor(e: unknown, action: 'load' | 'create' | 'rename' | 'deprecate'): string {
+  private messageFor(e: unknown, action: 'load' | 'create' | 'rename' | 'deprecate' | 'restore'): string {
     if (e instanceof HttpErrorResponse) {
       if (e.status === 403) return "You don't have access to manage these tags.";
       if (e.status === 404) return 'That tag no longer exists.';
@@ -201,7 +245,7 @@ export class CustomTagManagementComponent {
     if (e instanceof Error && (e.message === 'CUSTOM_TAG_NO_KEY' || e.message === 'CUSTOM_TAG_ENCRYPT_FAILED')) {
       return 'Could not secure the tag name on this device. Please try again.';
     }
-    const verb = { load: 'load', create: 'create', rename: 'rename', deprecate: 'deprecate' }[action];
+    const verb = { load: 'load', create: 'create', rename: 'rename', deprecate: 'deprecate', restore: 'restore' }[action];
     return `Couldn't ${verb} the tag. Please try again.`;
   }
 }

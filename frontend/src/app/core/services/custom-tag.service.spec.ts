@@ -225,4 +225,41 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
     }
     setSpy.mockRestore();
   });
+
+  // ── TAG-BATCH-C5b — restore + status-filtered lists ─────────────────────────
+
+  it('lists DEPRECATED personal tags via ?status=deprecated (active is the default)', async () => {
+    const dep = service.getManagedPersonalTags('deprecated');
+    httpMock.expectOne(`${base}/custom-tags?status=deprecated`).flush([]);
+    await dep;
+    const act = service.getManagedPersonalTags();
+    httpMock.expectOne(`${base}/custom-tags`).flush([]); // no query for active
+    await act;
+  });
+
+  it('lists DEPRECATED group tags via ?status=deprecated', async () => {
+    const dep = service.getManagedGroupTags('g-1', 'deprecated');
+    httpMock.expectOne(`${base}/groups/g-1/custom-tags?status=deprecated`).flush([]);
+    await dep;
+  });
+
+  it('restore posts to /:id/restore with ONLY the optimistic version (no name material)', async () => {
+    const tag = { id: 't-1', name: 'Keep Me', scopeType: 'personal' as const, status: 'deprecated' as const, version: 2, groupId: null, groupKeyVersionId: null };
+    const promise = service.restoreTag(tag);
+    const req = httpMock.expectOne(`${base}/custom-tags/t-1/restore`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ version: 2 });
+    expect(encryption.encrypt).not.toHaveBeenCalled(); // no re-encryption on restore
+    req.flush({ id: 't-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 3, groupId: null, groupKeyVersionId: null });
+    await expect(promise).resolves.toMatchObject({ status: 'active', version: 3, name: 'Keep Me' });
+  });
+
+  it('surfaces a version conflict (412) from restore to the caller', async () => {
+    const tag = { id: 't-1', name: 'X', scopeType: 'personal' as const, status: 'deprecated' as const, version: 1, groupId: null, groupKeyVersionId: null };
+    const promise = service.restoreTag(tag);
+    httpMock
+      .expectOne(`${base}/custom-tags/t-1/restore`)
+      .flush({ errorCode: 'CON_VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
+    await expect(promise).rejects.toMatchObject({ status: 412 });
+  });
 });

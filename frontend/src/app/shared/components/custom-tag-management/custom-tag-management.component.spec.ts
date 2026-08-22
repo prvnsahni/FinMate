@@ -27,6 +27,7 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     createGroupTag: jest.Mock;
     renameTag: jest.Mock;
     deprecateTag: jest.Mock;
+    restoreTag: jest.Mock;
   };
   let fixture: ComponentFixture<CustomTagManagementComponent>;
 
@@ -46,6 +47,7 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
       createGroupTag: jest.fn(),
       renameTag: jest.fn(),
       deprecateTag: jest.fn().mockResolvedValue(undefined),
+      restoreTag: jest.fn(),
     };
     TestBed.configureTestingModule({
       imports: [CustomTagManagementComponent],
@@ -66,7 +68,7 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     service.getManagedGroupTags.mockResolvedValue([tag({ scopeType: 'group', groupId: 'g-1' })]);
     make('group', 'g-1');
     await flush();
-    expect(service.getManagedGroupTags).toHaveBeenCalledWith('g-1');
+    expect(service.getManagedGroupTags).toHaveBeenCalledWith('g-1', 'active');
     expect(service.getManagedPersonalTags).not.toHaveBeenCalled();
   });
 
@@ -158,6 +160,58 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     await flush();
     expect(comp.error()).toMatch(/access/i);
     expect(comp.tags()).toEqual([]);
+  });
+
+  // ── TAG-BATCH-C5b — deprecated view + restore ───────────────────────────────
+
+  it('switching to the Deprecated view loads deprecated tags (status filter)', async () => {
+    const comp = make('personal');
+    await flush();
+    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated' })]);
+    comp.setView('deprecated');
+    fixture.detectChanges();
+    await flush();
+    expect(service.getManagedPersonalTags).toHaveBeenLastCalledWith('deprecated');
+    expect(comp.isDeprecatedView()).toBe(true);
+    expect(comp.tags().map((t) => t.id)).toEqual(['d']);
+  });
+
+  it('the Deprecated view loads group tags with groupId + deprecated status', async () => {
+    const comp = make('group', 'g-1');
+    await flush();
+    service.getManagedGroupTags.mockResolvedValue([]);
+    comp.setView('deprecated');
+    fixture.detectChanges();
+    await flush();
+    expect(service.getManagedGroupTags).toHaveBeenLastCalledWith('g-1', 'deprecated');
+  });
+
+  it('restore delegates to the service and drops the tag from the deprecated list', async () => {
+    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated', version: 2 })]);
+    const comp = make('personal');
+    comp.setView('deprecated');
+    fixture.detectChanges();
+    await flush();
+    service.restoreTag.mockResolvedValue(tag({ id: 'd', status: 'active', version: 3 }));
+    await comp.restore(comp.tags()[0]);
+    expect(service.restoreTag).toHaveBeenCalledWith(expect.objectContaining({ id: 'd', version: 2 }));
+    expect(comp.tags().length).toBe(0);
+    expect(comp.notice()).toMatch(/restored/i);
+  });
+
+  it('a restore version conflict (412) shows a notice and refreshes', async () => {
+    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated', version: 2 })]);
+    const comp = make('personal');
+    comp.setView('deprecated');
+    fixture.detectChanges();
+    await flush();
+    const callsBefore = service.getManagedPersonalTags.mock.calls.length;
+    service.restoreTag.mockRejectedValue(
+      new HttpErrorResponse({ status: 412, error: { errorCode: 'CON_VERSION_CONFLICT' } }),
+    );
+    await comp.restore(comp.tags()[0]);
+    expect(comp.notice()).toMatch(/changed elsewhere/i);
+    expect(service.getManagedPersonalTags.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   it('never persists tag names to browser storage', async () => {
