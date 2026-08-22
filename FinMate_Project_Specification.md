@@ -4361,3 +4361,42 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. NOT IMPLEMENTED: token service, management API,
   anonymous projection endpoint, frontend, public viewer, feature-flag wiring (PUBLIC-1B+). PUBLIC-1B: NOT STARTED.
   COMMIT: (this iteration). PUSH: NO.
+
+## 2026-08-23 — PUBLIC-1B: owner/admin public-share management API
+
+- **Summary:** Authenticated owner/admin API to create / view / regenerate / revoke a group `PublicShare` (from
+  PUBLIC-1A). Backend only. NO anonymous endpoint, public projection, viewer, frontend, feature flag, balance
+  calc, pseudonyms, or E2EE — those are PUBLIC-1C+. No schema/migration change (reuses the 1A table), no new
+  crypto package, no finance change, no frozen-doc change.
+- **New module `backend/src/app/public-shares/`** (registered in `app.module`; `forFeature([PublicShare,
+  GroupMember, Group])`). Routes under `@Controller('groups/:groupId/public-share')` + `@UseGuards(JwtAuthGuard)`:
+  `POST` (create), `GET` (status), `POST /regenerate`, `DELETE` (revoke).
+- **Authorization:** reuses the established group governance convention — active membership required (non-member →
+  403, no group disclosure) and owner/admin only (member/viewer → 403). `groupId` from the route only; role/scope
+  never read from the body. IDOR/guards unchanged.
+- **Token secrecy:** `crypto.randomBytes(32)` → base64url (256-bit) raw token, `sha256` hex stored as `tokenHash`
+  ONLY. Raw token returned exactly once from create/regenerate, never by GET, never logged, never stored, never in
+  an error. Response DTOs exclude `tokenHash`/group/user ids; GET returns `{active,status,expiresAt,createdAt,
+  revokedAt}` only.
+- **One active share + atomic regenerate:** create/regenerate/revoke run in a transaction that first takes a
+  `pessimistic_write` lock on the GROUP row (serializes concurrent mutations) — guaranteeing at most one active
+  share WITHOUT any 1A schema/constraint change. Create rejects when an active share exists (409). Regenerate
+  atomically revokes the previous capability then issues a new one (old token unusable on commit). Revoke is
+  immediate + idempotent (`{revoked:false}` when nothing active).
+- **Expiry:** optional `expiresAt` validated (invalid/past → 400); nullable preserved; `active` accounts for expiry.
+- **Files:** backend — `public-shares/{public-shares.module.ts, public-shares.controller.ts (+spec),
+  public-shares.service.ts (+spec)}`, `public-shares/dto/{public-share.dto.ts, index.ts}`, `app.module.ts`. Docs —
+  this Progress Log.
+- **Tests:** +2 suites / +19 — owner/admin create, member/viewer/non-member denied; token-once + persisted value is
+  `sha256(rawToken)` + no hash/ids in response; GET hides token/hash; one-active (2nd create → 409); regenerate
+  new-token + atomic revoke-old + single-active + group-lock; regenerate with no prior; revoke invalidate;
+  revoke idempotent; expiry invalid/past rejected + valid accepted + expired→active:false; no token logging; no
+  crypto/E2EE or finance repo injected (cannot decrypt/mutate ledger).
+- **Verification:** backend 81 suites/896 (was 79/877; +19); backend build clean; lint 0 errors; FIN-002 finance-
+  golden GREEN. No migration, no package change, no existing-table change, no OpenAPI/frozen-doc change.
+- **Confirmation:** CODE CHANGED: YES (auth API). SCHEMA/MIGRATION: NO (reuses 1A). PACKAGES: NO. CRYPTO: Node
+  randomBytes + sha256 only (no new primitive/package). RAW TOKEN PERSISTED: NO (hash only). E2EE/DECRYPTION: NONE.
+  FINANCE: UNCHANGED (golden gate GREEN; no finance repo). AUTH GUARDS: unchanged/reused. MULTIPLE ACTIVE SHARES:
+  prevented via group-row lock (no 1A change needed). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS:
+  none hit. NOT IMPLEMENTED: anonymous projection endpoint, public projection, viewer, frontend, feature flag,
+  balance calc, pseudonyms (PUBLIC-1C+). PUBLIC-1C: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
