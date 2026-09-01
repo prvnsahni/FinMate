@@ -7,5 +7,3 @@ scope: project
 # FinMate — Cursor Rules
 
 Follow [AGENT_RULES.md](../../AGENT_RULES.md) — the repository's single source of truth for AI agent behavior: workflow, priorities, the project documentation map, and the TypeScript / Angular / NestJS conventions. Read it before planning or editing code.
-
-# test
