@@ -43,14 +43,32 @@ describe('PublicProjectionController (PUBLIC-1C)', () => {
     expect(policy).toBe(THROTTLE_PROFILES.PUBLIC_SHARE);
   });
 
+  const mockRes = () => ({ setHeader: jest.fn() });
+
   it('delegates the raw path token to the projection service and wraps the result', async () => {
-    const res = await controller.getLedger('raw-token');
+    const res = mockRes();
+    const out = await controller.getLedger('raw-token', res);
     expect(projection.getPublicLedger).toHaveBeenCalledWith('raw-token');
-    expect(res.data).toMatchObject({ groupName: 'G' });
+    expect(out.data).toMatchObject({ groupName: 'G' });
   });
 
   it('propagates the generic 404 from the service unchanged', async () => {
     projection.getPublicLedger.mockRejectedValue(new NotFoundException());
-    await expect(controller.getLedger('bad')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getLedger('bad', mockRes())).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // ── PUBLIC-1G — revocable ledger must never be cached ────────────────────────
+  it('26. sets Cache-Control: no-store on the SUCCESS response', async () => {
+    const res = mockRes();
+    await controller.getLedger('raw-token', res);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it('26. sets Cache-Control: no-store BEFORE the lookup, so the 404 path carries it too', async () => {
+    projection.getPublicLedger.mockRejectedValue(new NotFoundException());
+    const res = mockRes();
+    await expect(controller.getLedger('bad', res)).rejects.toBeInstanceOf(NotFoundException);
+    // Header was set before the throw → present on the generic-404 response too.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 });

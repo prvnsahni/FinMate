@@ -4578,3 +4578,64 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   FEATURE FLAG: default OFF (dev+prod). REAL MEMBER NAMES/PII/E2EE fields: never rendered (pseudonyms + allowlist
   DTO). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. NOT IMPLEMENTED: PUBLIC-1F, expiry
   picker UI, real-name consent, caching. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-09-02 — PUBLIC-1G: anonymous endpoint cache protection + production enablement gate
+
+- **Summary:** Two things only — (1) `Cache-Control: no-store` on the anonymous `GET /public/shares/:token`
+  (both success and generic-404), so a REVOCABLE ledger is never cached beyond a revoke/regenerate/expiry; and
+  (2) the PUBLIC-1 production enablement gate below. No schema/migration/table/token-format/DTO/E2EE/finance/
+  feature-flag-default change; no caching layer, no CDN/Cloudflare change, no frontend change. All PUBLIC-1A–1F
+  invariants preserved.
+- **Cache header (`public-projection.controller.ts`):** the handler sets `res.setHeader('Cache-Control',
+  'no-store')` via `@Res({ passthrough: true })` BEFORE the lookup, so it is present on the 200 projection AND on
+  the thrown generic 404 (the exception filter writes the error with `response.send()`, preserving the pre-set
+  header). No ETag/Last-Modified, no interceptor/caching layer. Success serialization + generic-404 semantics
+  unchanged.
+- **Files:** backend — `public-shares/public-projection.controller.ts` (+ spec). Docs — this Progress Log +
+  enablement gate. No frontend change (backend-only header).
+- **Tests:** +2 — `Cache-Control: no-store` asserted on the SUCCESS path and (set-before-throw) on the 404 path.
+- **Verification:** backend 83 suites/928 (was 926; +2); backend build clean; lint 0 errors; FIN-002 finance-
+  golden GREEN. Frontend untouched (79 suites/713 from PUBLIC-1E stands). No migration, no package change.
+- **Cache header verified:** YES (unit — controller sets `no-store` before the lookup on both paths). End-to-end
+  HTTP header delivery is an operator smoke-check item (no served env here).
+- **Confirmation:** CODE CHANGED: YES (one controller header + tests). SCHEMA/MIGRATION/TABLE/TOKEN-FORMAT/DTO:
+  UNCHANGED. E2EE/FINANCE (single authoritative calculator)/SEC-KI1: UNCHANGED; golden gate GREEN. FLAG DEFAULT:
+  still OFF. CLOUDFLARE/CDN/SW/CACHING LAYER: none added. FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP
+  CONDITIONS: none hit. PUBLIC-2: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+### 🔒 PUBLIC-1 PRODUCTION ENABLEMENT GATE (must ALL pass before enabling `public.groupShare` in production)
+
+Public group sharing is **OFF by default** and must remain OFF until every item below is verified. Items are
+tagged **[CODE-VERIFIED]** (proven by the repository's tests/build) or **[OPERATOR-VERIFY]** (deployment/infra
+checks a human must perform against the live environment — NOT testable from this repository).
+
+1. **[CODE-VERIFIED]** `public.groupShare` / `FEATURE_PUBLIC_GROUP_SHARE` default is **OFF** (backend
+   feature-flags spec asserts every flag defaults false); frontend `environment.publicGroupShare` / `.prod` = false.
+2. **[OPERATOR-VERIFY]** Production **`TRUST_PROXY`** matches the actual Cloudflare/proxy hop topology so anonymous
+   per-IP throttling keys on the real client IP (PUBLIC-1D / SEC-W9; default `1` = one hop). Too low with a direct-
+   exposed app → `X-Forwarded-For` spoofing bypasses the limit; too low with multiple proxies → all anonymous users
+   share one bucket.
+3. **[OPERATOR-VERIFY]** Direct navigation and browser refresh of **`/share/:token`** resolve via Cloudflare Pages
+   SPA fallback (serve `index.html` for unmatched routes) — the same mechanism existing client routes already use.
+4. **[OPERATOR-VERIFY]** The frontend API request reaches the API origin through the existing
+   **`/api/v1/public/shares/:token`** path (prod `apiBaseUrl` is the absolute API host; dev proxy rewrites
+   `/api`→`/api/v1`). Confirm no route/rewrite collision between the Pages SPA `/share/*` and the API host.
+5. **[OPERATOR-VERIFY]** Cloudflare/CDN **request-log retention/redaction** policy for token-bearing `/share/:token`
+   SPA (static `index.html`) requests is acceptable per privacy policy. (Backend API-side logging already redacts
+   the token — PUBLIC-1C-PRE; this item is about the CDN's own access logs for the SPA asset request.)
+6. **[OPERATOR-VERIFY]** The production environment has **not** already set `FEATURE_PUBLIC_GROUP_SHARE`/
+   `publicGroupShare` ON before items 2–5 are satisfied.
+7. **[OPERATOR-VERIFY]** Post-deploy smoke: **revoke** and **regenerate** immediately invalidate the old link
+   (old `/share/:token` returns the generic unavailable), and `Cache-Control: no-store` is present on the live
+   `GET /public/shares/:token` response (200 and 404).
+8. **[CODE-VERIFIED + OPERATOR-VERIFY]** No raw capability token appears in backend application logs
+   (**[CODE-VERIFIED]** path redaction, PUBLIC-1C-PRE); confirm on live logs after the first real requests
+   (**[OPERATOR-VERIFY]**).
+
+**Standing invariants (all [CODE-VERIFIED], must remain true):** 256-bit random token; SHA-256 hash-only storage;
+raw token returned only on create/regenerate; generic 404 for all unavailable states; anonymous route
+unauthenticated but throttled (`PUBLIC_SHARE`); owner/admin-only management; one active share per group; atomic
+regeneration; immediate revocation; expiry enforced; group deletion CASCADEs the share; inactive/deleted creator →
+unavailable; pseudonymous labels only; allowlist-only DTO (no ids/PII/E2EE/keys); authoritative
+`SettlementsService.calculateGroupBalances` is the sole balance source; FIN-002 GREEN; `Cache-Control: no-store` on
+the anonymous endpoint (PUBLIC-1G).
