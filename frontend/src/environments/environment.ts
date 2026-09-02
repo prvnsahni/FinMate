@@ -7,4 +7,12 @@ export const environment = {
    * no active extraction workflow is exposed. Not enabled in production configuration.
    */
   documentIntelligence: false,
+  /**
+   * Mirrors the backend `public.groupShare` flag. Gates the owner/admin public-
+   * sharing controls in Group Settings. Default OFF — when false, the feature is
+   * not exposed. Not enabled in production configuration. (The anonymous
+   * `/share/:token` viewer route always exists but resolves data only when the
+   * BACKEND flag is ON — an OFF backend returns a generic unavailable.)
+   */
+  publicGroupShare: false,
 };

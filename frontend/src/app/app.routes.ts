@@ -50,5 +50,15 @@ export const appRoutes: Route[] = [
     loadChildren: () =>
       import('./features/auth/auth.routes').then((m) => m.authRoutes),
   },
+  // PUBLIC-1E — anonymous, read-only public group-ledger viewer. Deliberately a
+  // top-level route with NO layout/chrome and NO auth guard (capability access
+  // via the path token). It never inherits authGuard and never weakens it.
+  {
+    path: 'share/:token',
+    loadComponent: () =>
+      import(
+        './features/public-share/public-share-viewer.component'
+      ).then((m) => m.PublicShareViewerComponent),
+  },
   { path: '**', redirectTo: '' },
 ];

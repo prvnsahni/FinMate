@@ -47,6 +47,8 @@ import {
   CustomTagNameEntry,
 } from '../../../../core/services/custom-tag.service';
 import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
+import { PublicSharePanelComponent } from '../../components/public-share-panel/public-share-panel.component';
+import { environment } from '../../../../../environments/environment';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../../../../core/constants/crypto.constants';
 import { MONTH_LOCK_DAY } from '../../../../core/constants/app.constants';
 import { ExpenseDecryptCoordinator } from '../../../../core/services/expense-decrypt-coordinator.service';
@@ -167,6 +169,7 @@ export interface LedgerTotals {
     DecimalPipe,
     NgTemplateOutlet,
     CustomTagManagementComponent,
+    PublicSharePanelComponent,
   ],
   templateUrl: './group-detail.component.html',
   styleUrls: ['./group-detail.component.scss'],
@@ -964,6 +967,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     const member = this.members().find((m) => m.user?.id === userId);
     return member?.role === 'owner' || member?.role === 'admin';
   });
+
+  /** PUBLIC-1E — frontend mirror of the backend `public.groupShare` flag (default OFF). */
+  readonly publicShareEnabled = environment.publicGroupShare;
 
   isOwner = computed(() => {
     const userId = this.currentUserId();

@@ -1,0 +1,94 @@
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 py-8 px-4">
+  <div class="mx-auto w-full max-w-2xl">
+    <!-- Public / read-only banner -->
+    <div class="mb-4 flex items-center justify-between gap-2">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+          FinMate · Shared ledger
+        </p>
+        <span class="inline-flex items-center gap-1 rounded-full bg-gray-200 dark:bg-gray-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-600 dark:text-gray-300">
+          Public · read-only
+        </span>
+      </div>
+    </div>
+
+    @if (state() === 'loading') {
+      <div class="rounded-3xl border border-border/10 bg-white dark:bg-gray-800 p-8 text-center" data-testid="viewer-loading">
+        <p class="text-sm text-gray-500">Loading shared ledger…</p>
+      </div>
+    } @else if (state() === 'unavailable') {
+      <div class="rounded-3xl border border-border/10 bg-white dark:bg-gray-800 p-8 text-center" data-testid="viewer-unavailable">
+        <h1 class="text-lg font-semibold">This link isn't available</h1>
+        <p class="mt-2 text-sm text-gray-500">
+          The shared ledger may have been turned off, replaced, or expired. Ask
+          the group owner for an up-to-date link.
+        </p>
+      </div>
+    } @else if (ledger(); as l) {
+      <div class="rounded-3xl border border-border/10 bg-white dark:bg-gray-800 p-5 sm:p-6 shadow-sm" data-testid="viewer-ledger">
+        <header class="mb-4">
+          <h1 class="text-xl sm:text-2xl font-bold" data-testid="viewer-group-name">{{ l.groupName }}</h1>
+          <p class="text-xs text-gray-500">
+            Amounts in {{ l.currency }} · generated {{ l.generatedAt | date: 'medium' }}
+          </p>
+        </header>
+
+        <!-- Who owes whom -->
+        <section class="mb-6" data-testid="viewer-balances">
+          <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Who owes whom</h2>
+          @if (l.balanceSummary.length === 0) {
+            <p class="text-sm text-gray-500">Everyone's settled up.</p>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (b of l.balanceSummary; track $index) {
+                <li class="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-gray-50 dark:bg-gray-700/40 px-3 py-2 text-sm">
+                  <span>
+                    <strong>{{ b.fromLabel }}</strong> owes <strong>{{ b.toLabel }}</strong>
+                  </span>
+                  <span class="font-bold tabular-nums">{{ b.amount | currency: b.currency }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <!-- Expense entries -->
+        <section data-testid="viewer-entries">
+          <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Entries</h2>
+          @if (l.entries.length === 0) {
+            <p class="text-sm text-gray-500">No entries to show.</p>
+          } @else {
+            <ul class="divide-y divide-border/10 rounded-2xl border border-border/10">
+              @for (e of l.entries; track $index) {
+                <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <div class="min-w-0">
+                    <p class="font-medium capitalize truncate">
+                      {{ e.category }}
+                      @if (e.transactionType === 'refund') {
+                        <span class="ml-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Refund</span>
+                      }
+                    </p>
+                    <p class="text-xs text-gray-500">
+                      {{ e.date | date: 'mediumDate' }} · paid by {{ e.payerLabel }}
+                    </p>
+                  </div>
+                  <span
+                    class="shrink-0 font-bold tabular-nums"
+                    [class.text-emerald-600]="e.transactionType === 'refund'"
+                  >
+                    {{ e.transactionType === 'refund' ? '-' : '' }}{{ e.amount | currency: e.currency }}
+                  </span>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <p class="mt-6 text-center text-[11px] text-gray-400">
+          This is a read-only summary shared by the group. Sign in to FinMate to
+          manage your own expenses.
+        </p>
+      </div>
+    }
+  </div>
+</div>

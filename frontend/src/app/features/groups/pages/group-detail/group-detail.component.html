@@ -1870,6 +1870,14 @@
               ></app-custom-tag-management>
             </div>
 
+            <!-- PUBLIC-1E — public share controls: owner/admin only AND only when
+                 the publicGroupShare flag is ON (default OFF → not exposed). -->
+            @if (publicShareEnabled && isOwnerOrAdmin() && group()?.id) {
+              <div class="border-t border-border/5 pt-8">
+                <app-public-share-panel [groupId]="group()!.id"></app-public-share-panel>
+              </div>
+            }
+
             <!-- Monthly Household Contribution Settings -->
             @if (group()!.groupType === 'household') {
               <div class="border-t border-border/5 pt-8">

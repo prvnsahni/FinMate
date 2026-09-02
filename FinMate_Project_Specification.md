@@ -4522,3 +4522,59 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   AUTH/LOGGING/PRIVACY: not weakened. FEATURE FLAG: default OFF. INFRA: TRUST_PROXY/SEC-W9 documented, no repo
   change. FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. PUBLIC-1E: NOT STARTED.
   COMMIT: (this iteration). PUSH: NO.
+
+## 2026-09-02 — PUBLIC-1E: public-share viewer + owner sharing UI (frontend)
+
+- **Summary:** Frontend for public group sharing: (1) an anonymous read-only viewer at `/share/:token`, and (2)
+  owner/admin sharing controls in the existing Group Settings tab. Frontend only — reuses the existing PUBLIC-1B/1C
+  APIs (NO new backend endpoint), the existing routing/auth/API/proxy/styling conventions, and the env-mirrored
+  feature-flag pattern. No backend/migration/package change, no E2EE/finance/security-architecture change; feature
+  default-OFF; PUBLIC-1F not started.
+- **Feature flag (frontend):** added `publicGroupShare: false` to `environment.ts` + `environment.prod.ts`
+  (mirrors backend `public.groupShare`, exactly like `documentIntelligence`). The owner panel is exposed only when
+  this is ON AND the caller is owner/admin. The `/share/:token` route always exists; data resolves only when the
+  BACKEND flag is ON (else a generic unavailable).
+- **API service (`core/services/public-share.service.ts`):** owner methods (getStatus/create/regenerate/revoke →
+  PUBLIC-1B) + viewer `getPublicLedger(token)` (PUBLIC-1C) via the existing `environment.apiBaseUrl`/proxy.
+  `buildShareUrl(token)` composes `${origin}/share/:token` IN MEMORY. The raw token appears only in the create/
+  regenerate response and the built URL; it is never persisted (no localStorage/sessionStorage/IndexedDB/query
+  param), never re-fetched via status, never logged. Typed to the allowlist public DTO — authenticated DTOs are
+  not reused.
+- **Public viewer (`features/public-share/public-share-viewer.component.*`):** standalone full-page component, a
+  top-level route `share/:token` with **NO auth guard** (added outside the MainLayout/authGuard tree in
+  `app.routes.ts`; global auth untouched). Reads the token from the route PATH only, requests the projection, and
+  renders only `groupName/currency/entries{date,amount,currency,category,transactionType,payerLabel}/balanceSummary
+  {fromLabel,toLabel,amount,currency}/generatedAt` with the existing Currency/Date pipes, mobile-first. "Public ·
+  read-only" banner; no edit/add/delete/settle controls. Every failure → one identical generic "unavailable" block
+  (no cause disclosed, token never shown). Uses Angular signals; token not held in state beyond the request.
+- **Owner panel (`features/groups/components/public-share-panel/*`):** embedded in the group Settings tab, gated by
+  `publicShareEnabled && isOwnerOrAdmin()` (reuses the existing role signal; server also enforces owner/admin +
+  the 403/409 conventions). Shows On/Off status; Create → shows the one-time link + Copy (amber "shown only once"
+  note); Regenerate → replaces the link + "previous link no longer works"; Turn off (revoke, two-step confirm) →
+  clears the link + "the link no longer works". The link URL lives only in an in-memory signal — after a reload it
+  is gone (regenerate to get a new one); status never returns a token; 403/409/network handled with name-free,
+  token-free messages; nothing logged/persisted.
+- **Files:** frontend — `core/services/public-share.service.ts (+spec)`,
+  `features/public-share/public-share-viewer.component.{ts,html,spec.ts}`,
+  `features/groups/components/public-share-panel/public-share-panel.component.{ts,html,spec.ts}`,
+  `features/groups/pages/group-detail/group-detail.component.{ts,html}`, `app.routes.ts`,
+  `environments/environment.ts`, `environments/environment.prod.ts`. Docs — this Progress Log.
+- **Tests:** +3 suites / +19 — service (endpoint URLs, token-in-path only, buildShareUrl origin + no-storage);
+  viewer (token-from-path, correct endpoint, ledger/pseudonym/refund render, no buttons/read-only, identical
+  generic-unavailable across 404/500/network, no-token path → no API call, no token persisted); panel (status
+  load with no token, create→one-time URL+copy, regenerate→replace+old-invalid notice, revoke→off+cleared,
+  403→name-free error, no token/URL persisted, URL is in-memory-only across reloads).
+- **Verification:** frontend 79 suites/713 (was 76/694; +19); frontend build clean; frontend lint 0 errors;
+  backend untouched — 83 suites/926 still green, FIN-002 finance-golden GREEN. No migration, no package change.
+  Static/unit verification only (no served anonymous HTTP env) — reported honestly.
+- **API/proxy behavior:** reuses `environment.apiBaseUrl` (dev `/api` via proxy.conf pathRewrite → `/api/v1`; prod
+  absolute `.../api/v1`) exactly as every other Angular service; no direct-origin call, no Cloudflare change. The
+  `/share/:token` SPA path is served as a static asset (index.html) — the token in that SPA URL is an inherent
+  property of any shareable-link capability (CDN access logs for the static request may see it); backend API-side
+  logging already redacts the token (PUBLIC-1C-PRE). No Cloudflare/proxy change made this batch.
+- **Confirmation:** CODE CHANGED: YES (frontend UI). BACKEND: UNTOUCHED. NEW BACKEND ENDPOINT: NONE (reused
+  1B/1C). SCHEMA/MIGRATION/PACKAGES: NONE. AUTH: not weakened (public route is unguarded by design; authGuard
+  intact). E2EE/FINANCE/SECURITY-ARCH: UNCHANGED. TOKEN: never persisted/logged/query-param; one-time in memory.
+  FEATURE FLAG: default OFF (dev+prod). REAL MEMBER NAMES/PII/E2EE fields: never rendered (pseudonyms + allowlist
+  DTO). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. NOT IMPLEMENTED: PUBLIC-1F, expiry
+  picker UI, real-name consent, caching. COMMIT: (this iteration). PUSH: NO.
