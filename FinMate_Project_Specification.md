@@ -4605,32 +4605,51 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 
 ### 🔒 PUBLIC-1 PRODUCTION ENABLEMENT GATE (must ALL pass before enabling `public.groupShare` in production)
 
-Public group sharing is **OFF by default** and must remain OFF until every item below is verified. Items are
-tagged **[CODE-VERIFIED]** (proven by the repository's tests/build) or **[OPERATOR-VERIFY]** (deployment/infra
-checks a human must perform against the live environment — NOT testable from this repository).
+Public group sharing is **OFF by default** and must remain OFF until every applicable item below is verified.
+
+**Confirmed production topology (repo/deployment evidence, 2026-09-02):** the frontend is **nginx-served**
+(`frontend/nginx.conf` — SPA fallback `try_files $uri $uri/ /index.html`; static assets `Cache-Control: public,
+immutable` by extension). Angular production calls the API at the **separate absolute origin**
+`https://finmate-api.prvnsahni.com/api/v1` (`environment.prod.ts` — a cross-origin request, **not** routed through
+the nginx `/api/` proxy, which is a same-origin/container-only path). **There is no Cloudflare Pages / CDN config in
+this repository.** Cloudflare/CDN items therefore apply **only if** operations confirms that a CDN actually fronts
+the production hostname(s) in DNS; otherwise they are **N/A**.
+
+Each item is tagged with exactly one verification category:
+- **[CODE-VERIFIED]** — proven by this repository's source/tests/build.
+- **[NGINX/DEPLOYMENT-VERIFY]** — the operator confirms against the live nginx frontend and the API origin
+  (no Cloudflare assumption).
+- **[CLOUDFLARE/CDN-VERIFY — CONDITIONAL]** — applicable **only if** a CDN actually proxies the production
+  hostname; **N/A** for a direct/DNS-only (grey-cloud) host.
 
 1. **[CODE-VERIFIED]** `public.groupShare` / `FEATURE_PUBLIC_GROUP_SHARE` default is **OFF** (backend
    feature-flags spec asserts every flag defaults false); frontend `environment.publicGroupShare` / `.prod` = false.
-2. **[OPERATOR-VERIFY]** Production **`TRUST_PROXY`** matches the actual Cloudflare/proxy hop topology so anonymous
-   per-IP throttling keys on the real client IP (PUBLIC-1D / SEC-W9; default `1` = one hop). Too low with a direct-
-   exposed app → `X-Forwarded-For` spoofing bypasses the limit; too low with multiple proxies → all anonymous users
-   share one bucket.
-3. **[OPERATOR-VERIFY]** Direct navigation and browser refresh of **`/share/:token`** resolve via Cloudflare Pages
-   SPA fallback (serve `index.html` for unmatched routes) — the same mechanism existing client routes already use.
-4. **[OPERATOR-VERIFY]** The frontend API request reaches the API origin through the existing
-   **`/api/v1/public/shares/:token`** path (prod `apiBaseUrl` is the absolute API host; dev proxy rewrites
-   `/api`→`/api/v1`). Confirm no route/rewrite collision between the Pages SPA `/share/*` and the API host.
-5. **[OPERATOR-VERIFY]** Cloudflare/CDN **request-log retention/redaction** policy for token-bearing `/share/:token`
-   SPA (static `index.html`) requests is acceptable per privacy policy. (Backend API-side logging already redacts
-   the token — PUBLIC-1C-PRE; this item is about the CDN's own access logs for the SPA asset request.)
-6. **[OPERATOR-VERIFY]** The production environment has **not** already set `FEATURE_PUBLIC_GROUP_SHARE`/
+2. **[NGINX/DEPLOYMENT-VERIFY]** Production **`TRUST_PROXY`** matches the actual hop topology in front of the **API
+   origin** so anonymous per-IP throttling keys on the real client IP (PUBLIC-1D / SEC-W9; default `1` = one hop).
+   The correct value depends on how `finmate-api.prvnsahni.com` is fronted: **exactly one proxy** (e.g. a single
+   reverse proxy or an orange-clouded CDN) → `TRUST_PROXY=1`; **directly exposed with no proxy** → `TRUST_PROXY=false`
+   (**`1` here would be spoofable** — a client could forge `X-Forwarded-For` to evade the `PUBLIC_SHARE` rate limit);
+   **N proxies** → set the exact hop count / proxy CIDR, else all anonymous callers may share one bucket.
+3. **[NGINX/DEPLOYMENT-VERIFY]** Direct navigation and browser refresh of **`/share/:token`** serve the SPA via the
+   nginx fallback (`try_files … /index.html`) — the same mechanism every existing client route already uses. (No
+   Cloudflare Pages fallback is involved.)
+4. **[NGINX/DEPLOYMENT-VERIFY]** The frontend API request reaches the API origin at
+   `https://finmate-api.prvnsahni.com/api/v1/public/shares/:token` (prod `apiBaseUrl` is that absolute host; this is
+   a **cross-origin** call, so confirm CORS already allows the frontend origin — it does for every existing API call).
+   No SPA↔API route collision exists because prod does not use the nginx `/api/` proxy.
+5. **[CLOUDFLARE/CDN-VERIFY — CONDITIONAL]** *Only if a CDN proxies the frontend/API hostname:* its request-log
+   retention/redaction policy for token-bearing `/share/:token` requests is acceptable per privacy policy. (Backend
+   API-side logging already redacts the token — PUBLIC-1C-PRE, [CODE-VERIFIED]; this item covers the CDN's **own**
+   access logs.) **N/A** if the hostname is not CDN-proxied.
+6. **[NGINX/DEPLOYMENT-VERIFY]** The production environment has **not** already set `FEATURE_PUBLIC_GROUP_SHARE`/
    `publicGroupShare` ON before items 2–5 are satisfied.
-7. **[OPERATOR-VERIFY]** Post-deploy smoke: **revoke** and **regenerate** immediately invalidate the old link
-   (old `/share/:token` returns the generic unavailable), and `Cache-Control: no-store` is present on the live
-   `GET /public/shares/:token` response (200 and 404).
-8. **[CODE-VERIFIED + OPERATOR-VERIFY]** No raw capability token appears in backend application logs
-   (**[CODE-VERIFIED]** path redaction, PUBLIC-1C-PRE); confirm on live logs after the first real requests
-   (**[OPERATOR-VERIFY]**).
+7. **[NGINX/DEPLOYMENT-VERIFY]** Post-deploy smoke: **revoke** and **regenerate** immediately invalidate the old link
+   (old token → generic unavailable), and `Cache-Control: no-store` is present on the live
+   `GET /api/v1/public/shares/:token` response (both 200 and 404). *(Invalidation logic and the `no-store` header are
+   [CODE-VERIFIED]; this item confirms them over the wire.)*
+8. **[CODE-VERIFIED + NGINX/DEPLOYMENT-VERIFY]** No raw capability token appears in backend application logs
+   (**[CODE-VERIFIED]** path redaction of `/public/shares/<token>`, PUBLIC-1C-PRE); confirm on live logs after the
+   first real requests (**[NGINX/DEPLOYMENT-VERIFY]**).
 
 **Standing invariants (all [CODE-VERIFIED], must remain true):** 256-bit random token; SHA-256 hash-only storage;
 raw token returned only on create/regenerate; generic 404 for all unavailable states; anonymous route
@@ -4639,3 +4658,21 @@ regeneration; immediate revocation; expiry enforced; group deletion CASCADEs the
 unavailable; pseudonymous labels only; allowlist-only DTO (no ids/PII/E2EE/keys); authoritative
 `SettlementsService.calculateGroupBalances` is the sole balance source; FIN-002 GREEN; `Cache-Control: no-store` on
 the anonymous endpoint (PUBLIC-1G).
+
+## 2026-09-02 — PUBLIC-1-PROD: enablement-gate topology reconciliation (docs only)
+
+- **Summary:** Documentation-only reconciliation of the PUBLIC-1 production enablement gate with the **confirmed**
+  production architecture. The gate previously assumed **Cloudflare Pages** SPA hosting; operations confirmed prod
+  is **nginx-served** (`frontend/nginx.conf`, `try_files … /index.html`) with Angular calling the **separate absolute
+  API origin** `https://finmate-api.prvnsahni.com/api/v1` (cross-origin, not via the nginx `/api/` proxy). No
+  Cloudflare/CDN config exists in the repo.
+- **Change:** Re-tagged every gate item into three categories — **[CODE-VERIFIED]**, **[NGINX/DEPLOYMENT-VERIFY]**,
+  and **[CLOUDFLARE/CDN-VERIFY — CONDITIONAL]** (applicable only if a CDN actually fronts the prod hostname, else
+  N/A). Corrected item 2 (`TRUST_PROXY` value now framed against how the API origin is fronted: 1 hop → `1`; direct
+  → `false`, since `1` would be `X-Forwarded-For`-spoofable), item 3 (nginx `try_files` fallback, not Pages), item 4
+  (absolute cross-origin API URL + CORS note), and item 5 (CDN log policy made explicitly conditional).
+- **Files:** `FinMate_Project_Specification.md` only (gate block + this log entry).
+- **NOT changed:** no application/source code; no token transport, E2EE, finance, schema, migration, API behavior,
+  DTO/projection, feature-flag defaults (still OFF), or any PUBLIC-1 functionality. No push. PUBLIC-2 not started.
+- **Verification:** documentation edit only — no build/test impact; last verified state stands (backend 83
+  suites/928, FIN-002 GREEN). Frozen SRS/Ledger/ADR/OpenAPI/Matrix untouched.
