@@ -244,9 +244,11 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         this.currentPage.set(1);
         this.fetchExpenses(g.id);
         this.fetchBalances(g.id);
-        // History and Trash honor the date period too (reset to page 1).
-        this.fetchHistoryLogs(g.id);
-        this.fetchDeletedExpenses(g.id);
+        // History and Trash honor the date period too — but only if their tab has
+        // already been opened; an unopened tab fetches fresh (with the current
+        // filter) on first visit, so a filter change never eagerly loads it.
+        if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+        if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
         // Household contribution graph / period card follow the same TimeScope.
         if (g.groupType === 'household') {
           this.fetchCarryForward(g.id);
@@ -881,6 +883,21 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   isLoadingRecurring = signal<boolean>(false);
   recurringError = signal<boolean>(false);
 
+  /**
+   * Lazy-tab guards. History, Trash and Recurring hold data no other tab needs,
+   * so their APIs are NOT fired on the default (ledger) page load — only on the
+   * first activation of their tab, after which the data is retained across tab
+   * switches (no refetch on revisit). Reset when the route groupId changes.
+   * Filter/month/mutation refetch sites consult these so a change never forces a
+   * load of a tab the user has not opened yet — it will fetch fresh, with the
+   * current filter, when first visited.
+   */
+  private historyLoaded = false;
+  private trashLoaded = false;
+  private recurringLoaded = false;
+  /** The groupId currently owning the component's loaded state (for guard resets). */
+  private currentGroupId: string | null = null;
+
   // Decryption lifecycle state (owned by the coordinator).
   decryptionPhase = this.decryptCoordinator.phase;
   decryptionSummary = this.decryptCoordinator.summary;
@@ -1166,7 +1183,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         ) {
           this.activeTab.set(tab as any);
 
-          // Load settings or recurring data if target tab is active
+          // Load settings fields when the settings tab is active.
           if (tab === 'settings') {
             const g = this.group();
             if (g) {
@@ -1177,11 +1194,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
               this.editGroupCarryForward = g.carryForwardEnabled || false;
               this.loadContributionsForMonth();
             }
-          } else if (tab === 'recurring') {
-            const g = this.group();
-            if (g?.id) {
-              this.fetchRecurringExpenses(g.id);
-            }
+          } else {
+            // History / Trash / Recurring fetch their data lazily on first visit
+            // and retain it thereafter; a no-op for ledger/analytics.
+            this.activateLazyTabData(tab as any);
           }
         }
 
@@ -1197,6 +1213,13 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.startLoading();
           this.currentPage.set(1);
 
+          // A (new) group owns its own lazy-tab state — reset the guards so the
+          // History/Trash/Recurring tabs refetch for this group on first visit.
+          this.currentGroupId = groupId;
+          this.historyLoaded = false;
+          this.trashLoaded = false;
+          this.recurringLoaded = false;
+
           // Seed the unified filter from the URL before any initial fetch, so
           // deep-links / refresh restore the previously applied filter.
           this.filterStore.initialize(
@@ -1206,11 +1229,16 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           // Fired independently of getGroup() — none of these need the Group
           // response, only the groupId already available from the route.
           // (docs/audits/group-detail-progressive-loading-audit.md §6.1)
+          // Members + balances back the default (ledger) tab, so they load now.
+          // History/Trash/Recurring are tab-only data — NOT fetched here, only on
+          // first activation of their tab (see activateLazyTabData below).
           this.fetchMembers(groupId);
           this.fetchBalances(groupId);
-          this.fetchHistoryLogs(groupId);
-          this.fetchDeletedExpenses(groupId);
-          this.fetchRecurringExpenses(groupId);
+
+          // Deep-link / group switch: if the active tab is a lazy tab, load its
+          // data now that the groupId is known (the queryParams subscriber can
+          // run first, before currentGroupId is set).
+          this.activateLazyTabData(this.activeTab());
 
           this.groupsService.getGroup(groupId).subscribe({
             next: (res) => {
@@ -1515,9 +1543,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       // in month mode). Without this refetch the card/breakdown stay on the old
       // month even though the ledger and carry-forward bars move.
       this.fetchBalances(g.id);
-      // History and Trash follow the navigated household month too.
-      this.fetchHistoryLogs(g.id);
-      this.fetchDeletedExpenses(g.id);
+      // History and Trash follow the navigated household month too — only if
+      // already opened (otherwise they load fresh, month-scoped, on first visit).
+      if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+      if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
     }
   }
 
@@ -1762,6 +1791,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     } else {
       this.historyPage.set(1);
       this.isLoadingHistory.set(true);
+      // First fetch of this tab's data — mark loaded so filter/month/mutation
+      // refetch sites keep it fresh, and revisiting the tab doesn't refetch.
+      this.historyLoaded = true;
     }
     this.historyError.set(false);
     this.groupsService
@@ -1818,6 +1850,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
 
   fetchDeletedExpenses(groupId: string) {
     this.isLoadingTrash.set(true);
+    this.trashLoaded = true;
     this.trashError.set(false);
     this.groupsService
       .getDeletedExpenses(groupId, this.appliedFilterOptions())
@@ -1832,6 +1865,28 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.trashError.set(true);
         },
       });
+  }
+
+  /**
+   * Fetch a lazy tab's data the first time it is activated for the current group,
+   * then retain it (subsequent activations are a no-op; the per-tab fetch methods
+   * flip their `*Loaded` guard). Ledger/analytics/settings are handled elsewhere,
+   * so they no-op here. Uses `currentGroupId` (set by the route paramMap handler)
+   * — safe to call before it is set, in which case it simply does nothing and the
+   * paramMap handler re-invokes it once the id is known.
+   */
+  private activateLazyTabData(
+    tab: 'ledger' | 'analytics' | 'history' | 'trash' | 'settings' | 'recurring',
+  ): void {
+    const id = this.currentGroupId;
+    if (!id) return;
+    if (tab === 'history') {
+      if (!this.historyLoaded) this.fetchHistoryLogs(id);
+    } else if (tab === 'trash') {
+      if (!this.trashLoaded) this.fetchDeletedExpenses(id);
+    } else if (tab === 'recurring') {
+      if (!this.recurringLoaded) this.fetchRecurringExpenses(id);
+    }
   }
 
   fetchCarryForward(groupId: string) {
@@ -2052,8 +2107,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       // page down if a delete emptied the final one. Month/filter/sort are kept.
       this.fetchExpenses(g.id, 'reload');
       this.fetchBalances(g.id);
-      this.fetchHistoryLogs(g.id);
-      this.fetchDeletedExpenses(g.id);
+      // Only refresh tab data the user has actually opened; an unopened tab will
+      // fetch fresh (including this mutation's effects) on its first visit.
+      if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+      if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
       if (g.groupType === 'household') {
         this.fetchCarryForward(g.id);
       }
@@ -2386,6 +2443,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
 
   fetchRecurringExpenses(groupId: string) {
     this.isLoadingRecurring.set(true);
+    this.recurringLoaded = true;
     this.recurringError.set(false);
     this.recurringExpensesService.getRecurringExpenses(groupId).subscribe({
       next: (res) => {
@@ -2798,7 +2856,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         );
         this.fetchExpenses(g.id);
         this.fetchBalances(g.id);
-        this.fetchHistoryLogs(g.id);
+        // Refresh history only if its tab is open; otherwise it loads fresh
+        // (with the new rollover entries) on first visit.
+        if (this.historyLoaded) this.fetchHistoryLogs(g.id);
         this.fetchCarryForward(g.id);
         setTimeout(() => this.closeMonthSuccess.set(null), 5000);
       },

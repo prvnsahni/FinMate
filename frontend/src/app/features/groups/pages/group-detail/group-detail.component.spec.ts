@@ -346,7 +346,7 @@ describe('GroupDetailComponent', () => {
   });
 
   describe('progressive loading — parallel fetch (Phase 1)', () => {
-    it('fetches members, balances, history, trash, and recurring immediately, without waiting for getGroup() to resolve', () => {
+    it('fetches members and balances immediately (ledger-tab data), without waiting for getGroup() to resolve', () => {
       const getGroupSubject = new Subject<typeof mockGroup>();
       mockGroupsService.getGroup = jest
         .fn()
@@ -360,23 +360,20 @@ describe('GroupDetailComponent', () => {
         'group-1',
         expect.anything(),
       );
-      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledWith(
-        'group-1',
-        1,
-        20,
-        expect.anything(),
-      );
-      expect(mockGroupsService.getDeletedExpenses).toHaveBeenCalledWith(
-        'group-1',
-        expect.anything(),
-      );
-      expect(
-        mockRecurringExpensesService.getRecurringExpenses,
-      ).toHaveBeenCalledWith('group-1');
 
       getGroupSubject.next(mockGroup);
       getGroupSubject.complete();
       expect(component.group()).toEqual(mockGroup);
+    });
+
+    it('does NOT fetch inactive-tab data (history / trash / recurring) on the initial ledger load', () => {
+      fixture.detectChanges(); // default tab is ledger
+
+      expect(mockGroupsService.getHistoryLogs).not.toHaveBeenCalled();
+      expect(mockGroupsService.getDeletedExpenses).not.toHaveBeenCalled();
+      expect(
+        mockRecurringExpensesService.getRecurringExpenses,
+      ).not.toHaveBeenCalled();
     });
 
     it('does not fetch expenses or carry-forward until getGroup() resolves (household month-scoping dependency)', () => {
@@ -475,6 +472,9 @@ describe('GroupDetailComponent', () => {
       mockGroupsService.getHistoryLogs = jest
         .fn()
         .mockReturnValue(throwError(() => new Error('network error'))) as any;
+      // History loads lazily — open its tab so the (failing) fetch runs.
+      mockActivatedRoute.queryParams = of({ tab: 'history' });
+      mockActivatedRoute.snapshot.queryParams = { tab: 'history' };
 
       fixture.detectChanges();
 
@@ -485,14 +485,18 @@ describe('GroupDetailComponent', () => {
       expect(component.balancesError()).toBe(false);
     });
 
-    it('sets trashError and recurringError independently on failure, without affecting each other', () => {
+    it('sets trashError independently on failure, without loading or affecting recurring', () => {
       mockGroupsService.getDeletedExpenses = jest
         .fn()
         .mockReturnValue(throwError(() => new Error('boom'))) as any;
+      // Trash loads lazily — open its tab so the (failing) fetch runs.
+      mockActivatedRoute.queryParams = of({ tab: 'trash' });
+      mockActivatedRoute.snapshot.queryParams = { tab: 'trash' };
 
       fixture.detectChanges();
 
       expect(component.trashError()).toBe(true);
+      // Recurring was never opened, so it neither loaded nor errored.
       expect(component.recurringError()).toBe(false);
     });
   });
@@ -640,6 +644,169 @@ describe('GroupDetailComponent', () => {
     });
   });
 
+  describe('lazy tab loading (Part 1)', () => {
+    it('loads History only on first activation and retains it across revisits', () => {
+      const qp = new Subject<any>();
+      mockActivatedRoute.queryParams = qp.asObservable();
+      fixture.detectChanges(); // ledger tab — History untouched
+      expect(mockGroupsService.getHistoryLogs).not.toHaveBeenCalled();
+
+      qp.next({ tab: 'history' });
+      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledTimes(1);
+
+      // Switch away and back — retained, no refetch.
+      qp.next({ tab: 'ledger' });
+      qp.next({ tab: 'history' });
+      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads Trash only on first activation of its tab, then retains it', () => {
+      const qp = new Subject<any>();
+      mockActivatedRoute.queryParams = qp.asObservable();
+      fixture.detectChanges();
+      expect(mockGroupsService.getDeletedExpenses).not.toHaveBeenCalled();
+
+      qp.next({ tab: 'trash' });
+      expect(mockGroupsService.getDeletedExpenses).toHaveBeenCalledTimes(1);
+      qp.next({ tab: 'ledger' });
+      qp.next({ tab: 'trash' });
+      expect(mockGroupsService.getDeletedExpenses).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads Recurring only on first activation of its tab, then retains it', () => {
+      const qp = new Subject<any>();
+      mockActivatedRoute.queryParams = qp.asObservable();
+      fixture.detectChanges();
+      expect(
+        mockRecurringExpensesService.getRecurringExpenses,
+      ).not.toHaveBeenCalled();
+
+      qp.next({ tab: 'recurring' });
+      expect(
+        mockRecurringExpensesService.getRecurringExpenses,
+      ).toHaveBeenCalledTimes(1);
+      qp.next({ tab: 'ledger' });
+      qp.next({ tab: 'recurring' });
+      expect(
+        mockRecurringExpensesService.getRecurringExpenses,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('a deep-link to ?tab=history loads history once the groupId is known', () => {
+      mockActivatedRoute.queryParams = of({ tab: 'history' });
+      mockActivatedRoute.snapshot.queryParams = { tab: 'history' };
+
+      fixture.detectChanges();
+
+      expect(component.activeTab()).toBe('history');
+      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledWith(
+        'group-1',
+        1,
+        20,
+        expect.anything(),
+      );
+    });
+
+    it('onExpenseCreated refreshes an opened tab but never loads an unopened one', () => {
+      const qp = new Subject<any>();
+      mockActivatedRoute.queryParams = qp.asObservable();
+      fixture.detectChanges();
+
+      // History not opened → a create must not fetch it.
+      (mockGroupsService.getHistoryLogs as jest.Mock).mockClear();
+      component.onExpenseCreated();
+      expect(mockGroupsService.getHistoryLogs).not.toHaveBeenCalled();
+
+      // Open History (1 fetch), then create → refreshes it (2nd fetch).
+      qp.next({ tab: 'history' });
+      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledTimes(1);
+      component.onExpenseCreated();
+      expect(mockGroupsService.getHistoryLogs).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('pagination consistency after creating an entry (Part 2 — reload window)', () => {
+    // A deterministic newest-first dataset the mock slices by (page, limit), so
+    // the test observes real page arithmetic rather than hand-fed pages.
+    let dataset: { id: string; title: string; amountTotal: number }[];
+    const row = (n: number) => ({ id: `i${n}`, title: `E${n}`, amountTotal: n });
+
+    const wireSlicingBackend = () => {
+      mockExpensesService.getExpenses = jest
+        .fn()
+        .mockImplementation((_g: string, opts: { page: number; limit: number }) => {
+          const start = (opts.page - 1) * opts.limit;
+          return of({
+            data: dataset.slice(start, start + opts.limit),
+            meta: { totalItems: dataset.length },
+          });
+        }) as any;
+    };
+
+    it('after paging to page 3 and creating a newest entry: no duplicates, no missing rows, order preserved, count consistent, load-more still correct', () => {
+      // 6 rows, newest (i6) first; pageSize 2 → 3 pages.
+      dataset = [row(6), row(5), row(4), row(3), row(2), row(1)];
+      wireSlicingBackend();
+      component.pageSize.set(2);
+
+      fixture.detectChanges(); // page 1 → [i6, i5]
+      expect(component.expenses().map((e) => e.id)).toEqual(['i6', 'i5']);
+
+      component.loadMoreExpenses(); // page 2 → append [i4, i3]
+      component.loadMoreExpenses(); // page 3 → append [i2, i1]
+      expect(component.currentPage()).toBe(3);
+      expect(component.expenses().map((e) => e.id)).toEqual([
+        'i6', 'i5', 'i4', 'i3', 'i2', 'i1',
+      ]);
+      expect(component.hasMoreExpenses()).toBe(false);
+
+      // A new, newest-dated entry is created — it belongs at the FRONT of the
+      // ordering, shifting every existing row down one position across pages.
+      dataset = [row(7), row(6), row(5), row(4), row(3), row(2), row(1)];
+      component.onExpenseCreated(); // → fetchExpenses('reload'): page 1, limit 3×2=6
+
+      const idsAfter = component.expenses().map((e) => e.id);
+      // New row is at the top; the loaded window is the newest 6 of 7.
+      expect(idsAfter).toEqual(['i7', 'i6', 'i5', 'i4', 'i3', 'i2']);
+      // No duplicates.
+      expect(new Set(idsAfter).size).toBe(idsAfter.length);
+      // Strictly descending → order preserved (no out-of-order rows).
+      const nums = idsAfter.map((id) => Number(id.slice(1)));
+      expect(nums).toEqual([...nums].sort((a, b) => b - a));
+      // Count is refreshed and consistent; the row pushed off the window (i1) is
+      // NOT lost — it is reachable because more remains.
+      expect(component.totalExpenses()).toBe(7);
+      expect(component.currentPage()).toBe(3);
+      expect(component.hasMoreExpenses()).toBe(true);
+
+      // Subsequent load-more brings the shifted row back with no duplication.
+      component.loadMoreExpenses(); // page 4 → [i1]
+      const finalIds = component.expenses().map((e) => e.id);
+      expect(finalIds).toEqual(['i7', 'i6', 'i5', 'i4', 'i3', 'i2', 'i1']);
+      expect(new Set(finalIds).size).toBe(finalIds.length);
+      expect(component.hasMoreExpenses()).toBe(false);
+    });
+
+    it('reload clamps currentPage to the last page still holding data when a delete empties the final page', () => {
+      dataset = [row(4), row(3), row(2), row(1)]; // 4 rows
+      wireSlicingBackend();
+      component.pageSize.set(2);
+
+      fixture.detectChanges();
+      // Pretend the user had scrolled to page 3 (only 2 pages of data exist).
+      component.currentPage.set(3);
+
+      component.fetchExpenses('group-1', 'reload'); // page 1, limit 3×2=6 → all 4
+
+      expect(component.expenses().map((e) => e.id)).toEqual([
+        'i4', 'i3', 'i2', 'i1',
+      ]);
+      // ceil(4 / 2) = 2 → clamped from 3 so the user is never stranded past the end.
+      expect(component.currentPage()).toBe(2);
+      expect(component.totalExpenses()).toBe(4);
+    });
+  });
+
   describe('household month date filter', () => {
     it('requests a valid last-day-of-month endDate (never YYYY-MM-31 for short months)', () => {
       fixture.detectChanges(); // loads the household group
@@ -706,6 +873,13 @@ describe('GroupDetailComponent', () => {
   describe('infinite scroll history', () => {
     const log1 = { id: 'log-1', action: 'expense.created' };
     const log2 = { id: 'log-2', action: 'expense.updated' };
+
+    beforeEach(() => {
+      // History data is lazy — these tests exercise it, so open the History tab
+      // (deep-link) before the initial detectChanges triggers the first load.
+      mockActivatedRoute.queryParams = of({ tab: 'history' });
+      mockActivatedRoute.snapshot.queryParams = { tab: 'history' };
+    });
 
     it('appends the next page and increments historyPage', () => {
       mockGroupsService.getHistoryLogs = jest

@@ -4676,3 +4676,36 @@ the anonymous endpoint (PUBLIC-1G).
   DTO/projection, feature-flag defaults (still OFF), or any PUBLIC-1 functionality. No push. PUBLIC-2 not started.
 - **Verification:** documentation edit only — no build/test impact; last verified state stands (backend 83
   suites/928, FIN-002 GREEN). Frozen SRS/Ledger/ADR/OpenAPI/Matrix untouched.
+
+## 2026-09-02 — Group tab lazy-loading + pagination-after-mutation regression coverage
+
+- **Summary:** Two related frontend correctness/perf items on the Group Detail page. (1) **Lazy-load** the
+  History / Trash / Recurring tabs so opening `/groups/:id` (default ledger tab) no longer fires their APIs;
+  they load on first tab activation and are retained across switches. (2) **Pagination-after-create** was
+  audited end-to-end and found **already correct** (deterministic backend sort + frontend reload-window +
+  stale-seq guard + count refresh + page clamp) — added the missing regression tests rather than changing
+  working code. Frontend-only; no backend/API/schema/migration/E2EE/finance/public-share change.
+- **Part 1 root cause:** the route `paramMap` handler eagerly called `fetchHistoryLogs` / `fetchDeletedExpenses`
+  / `fetchRecurringExpenses` regardless of the active tab (3 wasted calls on the common ledger visit). Members
+  and Balances stay eager (the ledger tab genuinely needs them: split names, key provisioning, balance cards);
+  Analytics and Settings-contributions were already lazy.
+- **Part 1 fix (`group-detail.component.ts`):** added per-group `historyLoaded/trashLoaded/recurringLoaded`
+  guards (reset when the route groupId changes) + `activateLazyTabData(tab)`; removed the eager calls; the
+  queryParams (tab) subscriber and the paramMap handler (for deep-links / group switches) drive first-visit
+  loads; the filter effect, `changeMonth`, `onExpenseCreated`, and `onCloseMonthConfirmed` now refetch
+  History/Trash only when their tab is already open (an unopened tab loads fresh, with the current filter, on
+  first visit). Recurring now loads once and is retained (was refetched on every visit); its mutation handlers
+  still refresh it directly.
+- **Part 3 (backend inspection, read-only):** `listExpenses` ordering is fully deterministic —
+  `expenseDate,createdAt,id` (or `amountTotal,expenseDate,id`) with an `id` tie-breaker, `getCount()` per
+  request, totals snapshotted pre-pagination, plus keyset/cursor support on the same columns. No backend issue;
+  **no backend change made.**
+- **Part 2 (pagination):** no production-code change — the group ledger `fetchExpenses('reload')` collapses
+  pages `1..currentPage` into one authoritative page-1 request, replaces the list, refreshes `totalItems`, and
+  clamps `currentPage`; the dashboard mirrors it (`refreshExpenseData`). Added group-detail regression tests
+  (create-on-page-3: newest-at-top, no duplicates, order preserved, count consistent, displaced row reachable,
+  load-more still correct; and delete-empties-last-page → currentPage clamp). Dashboard reload path was already
+  covered by its existing spec.
+- **Files:** `group-detail.component.ts`, `group-detail.component.spec.ts` (2 files, frontend only).
+- **Verification:** frontend 79 suites / **721 tests** (was 713; +8); production build clean; lint 0 errors
+  (pre-existing `any` warnings only). No backend change → backend suite/FIN-002 not required. No push.
