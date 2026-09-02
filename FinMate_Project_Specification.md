@@ -4477,3 +4477,48 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   service logs nothing. FEATURE FLAG: default OFF (not enabled in prod). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO.
   STOP CONDITIONS: none hit. NOT IMPLEMENTED: public viewer/owner UI, PUBLIC-1D/E, real-name consent, tags/titles,
   caching. PUBLIC-1D: NOT STARTED. COMMIT: (this iteration). PUSH: NO.
+
+## 2026-09-02 — PUBLIC-1D: anonymous public-share security-hardening audit (PASS) + adversarial regression locks
+
+- **Verdict: PASS (no exploitable application-layer defect).** Audited the full anonymous path (proxy → NestJS →
+  throttling → anonymous controller → PublicProjectionService → PublicShare → authoritative SettlementsService).
+  No code security fix required; added adversarial/regression tests to LOCK the security-critical invariants and
+  documented one INFRASTRUCTURE dependency (below). No production behavior change. No E2EE/finance/auth/logging/
+  privacy weakening; no Matrix/frozen-doc change; PUBLIC-1E NOT started; feature remains default-OFF.
+- **Token security (verified):** 256-bit `randomBytes` token (1B), only `sha256` hash persisted, raw token never
+  in responses/DB/logs. PUBLIC-1C-PRE `redactUrl` redacts the path token; the request `LoggingInterceptor` logs
+  the redacted `originalUrl` on success AND error (404) paths. The exception filter logs redacted URLs (500 →
+  line 224, 429 → line 277); a plain 404 sets `errorPayload.path = request.url` ONLY in the HTTP response body
+  returned to the caller who already holds the token (not a third-party log leak, not state-distinguishing) — the
+  interceptor still logs that request with the redacted URL. The public endpoint writes NO audit records.
+- **Anonymous endpoint / generic 404 (verified):** controller has NO `JwtAuthGuard` (capability, not identity);
+  no authenticated DTO/entity is serialized (allowlist DTOs). Unknown/malformed/whitespace/oversized/suspicious/
+  revoked/expired/deleted-group/null-creator/flag-OFF all return the SAME `NotFoundException` (no state disclosure).
+  Bad tokens are a CHEAP fail — the authoritative balance calculator is invoked ONLY for a valid+usable token, so
+  there is no finance-load or timing oracle usable for enumeration (an attacker would already need a valid token).
+- **Allowlist / pseudonyms / IDOR / revocation / finance / E2EE (verified — unchanged from 1C):** projection is
+  allowlist-by-construction (no id/PII/E2EE/token); "Member N" is deterministic by a hidden (joinedAt,id) key and
+  stable across entries+balances; token resolves to exactly one share→group with no client-supplied scope;
+  revoked/regenerated/expired tokens and deleted groups all fail; balances come verbatim from the single
+  `SettlementsService.calculateGroupBalances` (no second calculator, read-only); no server-side decryption.
+- **INFRASTRUCTURE DEPENDENCY (documented, not code-fixed) — anonymous per-IP throttling & `TRUST_PROXY`
+  (SEC-W9):** this is the first anonymous data endpoint, so its `PUBLIC_SHARE` throttle keys on the client IP
+  (`req.ip`/`req.ips[0]`, since there is no userId). That IP is only correct when Express `trust proxy` matches the
+  real proxy topology. `parseTrustProxy` defaults to `1` (trust exactly one hop) — correct for a single Cloudflare
+  hop in front of the app. **Production MUST confirm `TRUST_PROXY` equals the true trusted-proxy hop count/CIDR:**
+  too low with a direct-exposed app lets a client spoof `X-Forwarded-For` to bypass the per-IP limit; too low with
+  multiple real proxies buckets all anonymous users under one upstream IP (self-DoS). No repository/Cloudflare
+  change made (this is deployment config, pre-existing SEC-W9); flagged here as the one operational item to verify
+  before enabling `public.groupShare` in production.
+- **Files:** backend — `public-shares/public-projection.service.spec.ts` (adversarial tests only; NO production
+  code changed). Docs — this Progress Log.
+- **Tests:** +5 adversarial — empty token → 404 before any DB/finance access; unknown/whitespace/oversized(100k)/
+  path-traversal/null-byte/NoSQL-ish tokens fail safely → 404 with the calculator never invoked; revoked and
+  expired tokens are cheap fails (no balance calc); null creator → 404 (never impersonates).
+- **Verification:** backend 83 suites/926 (was 921; +5); backend build clean (test-only change); lint 0 errors;
+  FIN-002 finance-golden GREEN. Frontend unaffected (no frontend change).
+- **Confirmation:** AUDIT: PASS. PRODUCTION CODE CHANGED: NO (tests + doc only). SCHEMA/MIGRATION/PACKAGES: NONE.
+  CRYPTO/E2EE/DECRYPTION: unchanged (none). FINANCE: read-only, single authoritative calculator; golden gate GREEN.
+  AUTH/LOGGING/PRIVACY: not weakened. FEATURE FLAG: default OFF. INFRA: TRUST_PROXY/SEC-W9 documented, no repo
+  change. FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit. PUBLIC-1E: NOT STARTED.
+  COMMIT: (this iteration). PUSH: NO.

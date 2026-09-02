@@ -231,4 +231,49 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
     const injected = Object.values(service as unknown as Record<string, unknown>);
     expect(injected).toContain(settlements);
   });
+
+  // ── PUBLIC-1D — adversarial token handling / fail-safe ───────────────────────
+
+  it('empty token → generic 404 before ANY DB or finance access', async () => {
+    await expect(service.getPublicLedger('')).rejects.toBeInstanceOf(NotFoundException);
+    expect(shareRepo.findOne).not.toHaveBeenCalled();
+    expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
+  });
+
+  it('unknown / whitespace / oversized / suspicious tokens all fail safely → generic 404, no finance work', async () => {
+    shareRepo.findOne.mockResolvedValue(null);
+    for (const bad of [
+      '   ',
+      'a'.repeat(100_000), // oversized: sha256 is bounded; service must not choke
+      '../../etc/passwd',
+      '%00%00',
+      '{"$ne":null}',
+      'AAAA-not-a-real-hash',
+    ]) {
+      await expect(service.getPublicLedger(bad)).rejects.toBeInstanceOf(NotFoundException);
+    }
+    // A non-matching hash never reaches the authoritative calculator.
+    expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
+  });
+
+  it('a REVOKED token is a cheap fail — the balance calculation is never invoked', async () => {
+    shareRepo.findOne.mockResolvedValue({ ...activeShare(), status: 'revoked' });
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
+  });
+
+  it('an EXPIRED token is a cheap fail — the balance calculation is never invoked', async () => {
+    shareRepo.findOne.mockResolvedValue({
+      ...activeShare(),
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
+  });
+
+  it('a null creator (SET NULL after user deletion) → generic 404, never impersonates', async () => {
+    shareRepo.findOne.mockResolvedValue({ ...activeShare(), createdByUser: null });
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
+  });
 });
