@@ -18,7 +18,10 @@ import { expandActiveWithAncestors } from './classify';
  *    later `INFERRED` one, regardless of input order.
  */
 
-export type ExpenseTagAuthority = 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+export type ExpenseTagAuthority =
+  | 'INFERRED'
+  | 'USER_CORRECTED'
+  | 'USER_CONFIRMED';
 export type ExpenseTagSource = 'rule_based' | 'user' | 'model' | 'population';
 
 /** A single confirmed tag as supplied by the review flow / user selection. */
@@ -56,7 +59,10 @@ export function materializeConfirmedExpenseTags(
     confidence: number | null,
   ): void => {
     const existing = byTagId.get(tag.id);
-    if (existing && AUTHORITY_RANK[existing.authority] >= AUTHORITY_RANK[authority]) {
+    if (
+      existing &&
+      AUTHORITY_RANK[existing.authority] >= AUTHORITY_RANK[authority]
+    ) {
       return; // keep the higher/equal existing authority (never silently downgrade)
     }
     byTagId.set(tag.id, {
@@ -73,7 +79,12 @@ export function materializeConfirmedExpenseTags(
     if (chain.length === 0) continue; // unknown / deprecated → dropped
 
     const [self, ...ancestors] = chain;
-    upsert(self, input.authority, input.source ?? 'rule_based', input.confidence ?? null);
+    upsert(
+      self,
+      input.authority,
+      input.source ?? 'rule_based',
+      input.confidence ?? null,
+    );
     for (const ancestor of ancestors) {
       upsert(ancestor, 'INFERRED', 'rule_based', null);
     }

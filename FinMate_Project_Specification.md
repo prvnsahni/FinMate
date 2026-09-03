@@ -2646,12 +2646,12 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 ## 2026-08-13 — Backward Compatibility & Migration Plan (Document #17, docs only, no code)
 
 - **Summary:** Authored `docs/architecture/FINMATE_BACKWARD_COMPATIBILITY_MIGRATION_PLAN.md`
-  + `docs/architecture/MIGRATION_PLAN_INDEX.md`. Defines **how** migration should eventually
-  happen (not performing it) under the rule "secure and improve the existing product without
-  unnecessarily breaking it." CURRENT state read from the repository; TARGET from frozen
-  SRS/architecture. **Read-only — no code, entity, controller, service, DB, migration file,
-  migration execution, auth, encryption, frontend, mobile, config, package, deployment,
-  production change, or implementation ticket.**
+  - `docs/architecture/MIGRATION_PLAN_INDEX.md`. Defines **how** migration should eventually
+    happen (not performing it) under the rule "secure and improve the existing product without
+    unnecessarily breaking it." CURRENT state read from the repository; TARGET from frozen
+    SRS/architecture. **Read-only — no code, entity, controller, service, DB, migration file,
+    migration execution, auth, encryption, frontend, mobile, config, package, deployment,
+    production change, or implementation ticket.**
 - **Changes Made:** 2 new documents (28-section plan + index). Covered: current→target master
   map; production-data inventory (KNOWN/UNKNOWN/REQUIRES-PROD-VERIFICATION); 10-question safety
   rule; 8-phase model; **E2EE mixed-state** migrations (P2P/settlement notes, group.description —
@@ -2738,7 +2738,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Reconciliation:** all 14 target docs carry a 2026-08-13 correction marker; remaining "ignored/
   undecryptable" strings are either explicitly labelled historical (with a same-doc correction) or in
   the out-of-scope pre-ADR roadmap (`implementation-roadmap-pre-adr.md`, historical) / already-correct
-  `ARCHITECTURE.md:88`. No stale statement asserts that normal rotation *currently* makes canonical
+  `ARCHITECTURE.md:88`. No stale statement asserts that normal rotation _currently_ makes canonical
   historical expenses undecryptable. `gap-tracker.md` already recorded the 2026-07-17 fix (Done).
 - **Confirmation:** NO CODE changed; NO migration created or executed.
 
@@ -2748,8 +2748,8 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   `docs/architecture/IMPLEMENTATION_ROADMAP_INDEX.md` — the bridge from the frozen SRS/architecture to
   future implementation. Dependency- and risk-ordered (security/legal > existing critical functionality
   > backward compat > new architecture > convenience); explicitly **not** a clean-slate rewrite.
-  **Read-only — no source, entity, controller, service, DB, migration, API, encryption, package,
-  production, or deployment change, and no implementation tickets.**
+  > **Read-only — no source, entity, controller, service, DB, migration, API, encryption, package,
+  > production, or deployment change, and no implementation tickets.**
 - **Changes Made:** 2 new documents (27-section roadmap + index). 9 phases (0 security → 8 future
   domains); 11 workstreams (WS-SEC/PLAT/AUTH/ENC/ISO/FIN/GOAL/NOT/AI/INT/MOB/DOM); ~45 concrete,
   independently reviewable units (W-SEC-01…W-DOM-04, no tickets); Phase-0 security table (SEC-W1/W2/W3/
@@ -2959,7 +2959,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   **backend choice is a deferred infra decision** (not built here).
 - **Files:** NEW `backend/src/app/platform/` — `feature-flags.constants.ts`, `feature-flags.service.ts`
   (+spec), `observability.service.ts` (+spec), `platform.module.ts` (`@Global`); EDIT `app.module.ts`
-  (2 additive lines: import + register); EDIT `.env.example` (FEATURE_* convention).
+  (2 additive lines: import + register); EDIT `.env.example` (FEATURE\_\* convention).
 - **Verification:** `nx test backend` → **44 suites / 605 tests pass** (+2 suites, +11 tests);
   `nx build backend` typecheck passes; platform files lint clean (the one remaining warning is a
   pre-existing `any` in `app.module.ts:70` throttler config, untouched).
@@ -3095,9 +3095,9 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   no versionId/rotation semantic change**), `POST /groups/join/:inviteToken` (joiner's wrapped key) — via
   `@UseGuards(RecoveryRequiredGuard)`; and `POST /expenses` **conditionally** when `wrappedContentKeys`
   present (direct_shared per-entry keys). **Not gated (conservative, documented):** `createGroup` (metadata
-  + key-version placeholder only), `inviteMember` (transport; the invitee's persistent key is gated at join),
-  `POST /users/me/keys` (the RSA root must precede recovery — gating it would deadlock), and all reads /
-  finance calculations / personal+group expense creation (no new recoverable key material).
+  - key-version placeholder only), `inviteMember` (transport; the invitee's persistent key is gated at join),
+    `POST /users/me/keys` (the RSA root must precede recovery — gating it would deadlock), and all reads /
+    finance calculations / personal+group expense creation (no new recoverable key material).
 - **Existing users:** recovery present → unchanged; recovery NULL → next **new** Class-A action rejected
   (one-time prompt), **existing E2EE data stays readable**, no migration/rewrite/rekey/session-revoke, no
   forced setup merely on login. Reuses existing `GET/POST /users/me/recovery-key[/status]` (no second
@@ -3132,7 +3132,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   `attachment.encryptedFileKey` / `EncryptedExpenseKey.wrappedKey`). Server stores ciphertext + wrapped
   key only, **never decrypts**. No HKDF, no master-direct.
 - **Migration `1720000000000-AddGoalsV2Fields`** (registered in `migrations/index.ts`): `title
-  varchar(160)→TEXT`, add `encrypted_content_key TEXT NULL`, add `priority INTEGER NOT NULL DEFAULT 0`.
+varchar(160)→TEXT`, add `encrypted_content_key TEXT NULL`, add `priority INTEGER NOT NULL DEFAULT 0`.
   Additive, transaction-safe, reversible while empty; **no plaintext backfill, no server-side decryption,
   no fabricated ciphertext.** Verified vs the `Goal` entity + ordering (after 1719900000000). **Not
   executed** (requires a local/test Postgres; never run against production) → REQUIRES a local migration
@@ -3174,7 +3174,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   service, DTO, DB, migration, API contract, model, training, package, or production change; no SRS or
   frozen document modified.**
 - **CURRENT reality captured (repo-verified, §1):** expenses carry a **single flat** `category
-  varchar(64)`; **attachments + receipt versioning** exist (`receipt_versions`); **no OCR / document
+varchar(64)`; **attachments + receipt versioning** exist (`receipt_versions`); **no OCR / document
   intelligence / taxonomy / tags / line-items** anywhere in `backend/src`, `frontend/src`, `shared`;
   AI is the opt-in `POST /ai/proxy` (projection firewall still TARGET); deterministic Goal Engine
   behind the frozen `GoalEngine` interface. The document explicitly forbids citing itself as evidence
@@ -3184,8 +3184,8 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   extraction/classification is a **descriptive metadata layer**, never a mutation path. E2EE free-text
   (title/description/notes) stays private per the frozen Matrix — **no server-side decryption backdoor**;
   structured metadata is a parallel, classified, queryable layer only where the Matrix already permits.
-  Cross-user improvement is bounded: *"better classification across users does not mean silently
-  training on private user data"*; runtime inference ≠ evaluation ≠ training. Engine boundaries mirror
+  Cross-user improvement is bounded: _"better classification across users does not mean silently
+  training on private user data"_; runtime inference ≠ evaluation ≠ training. Engine boundaries mirror
   the Goal Engine: replaceable `DocumentExtractionEngine` / `ClassificationEngine` behind stable
   contracts; Expense module depends on the contract, not on any OCR vendor/ML framework/model. Taxonomy
   feeds the Goal Engine only via minimized numeric/enum projections (ADR-008 signals-not-raw).
@@ -3195,7 +3195,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   contracts untouched; no code/schema/migration/package change; no implementation started; CURRENT vs
   TARGET distinguished. **No contradiction found** — two consistency notes recorded: SRS already scopes
   statement import as **V1 OPTIONAL** (not promoted here); the flat `category` field is unchanged
-  (future hierarchy/tags sit beside it). Status: *"Future design / parked pending SRS v1.0 closure."*
+  (future hierarchy/tags sit beside it). Status: _"Future design / parked pending SRS v1.0 closure."_
 - **Decisions:** none new — all 22 open items remain `[OPEN QUESTION]`/`[PRODUCT DECISION REQUIRED]`/
   `[ENGINEERING PARAMETER]`/`[COUNSEL]`. No SRS revision begun; a formal impact review is required
   after the current implementation/version closes before any of this may enter an SRS R2+.
@@ -3231,7 +3231,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   round-trip — plaintext never emitted, distinct per-goal keys, ciphertext changes, missing/malformed key
   fails safe; API endpoints + ciphertext-only body + numeric projection param; component encrypts-before-
   send + REC-1/404/412 handling); `nx build frontend` **passes**; goals FE lint **0 errors**. `nx test
-  backend` **57/686 unchanged**; **finance golden gate green**.
+backend` **57/686 unchanged**; **finance golden gate green**.
 - **Security/compat:** owner-scoped (server-enforced); no server decryption; Goal Engine still numeric-only
   (projection input carries no title); no finance writes; SEC-KI1 untouched. Additive; `feature.goals` OFF
   → UI shows unavailable. **Rollback:** remove the `goals` route + `features/goals/` dir.
@@ -3245,7 +3245,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 
 - **Summary:** Produced a **read-only** repository-grounded readiness/architecture assessment for the next
   major capability (receipt/PDF/invoice/credit-card extraction, itemization, dynamic taxonomy, shared/global
-  taxonomy, population learning). Complements the earlier *parking* doc with an **evidence-backed CURRENT
+  taxonomy, population learning). Complements the earlier _parking_ doc with an **evidence-backed CURRENT
   baseline**, feasibility analysis, stable-contract sketches, and the decisions/gates that must precede any
   implementation. **No implementation; nothing authorised.**
 - **Key findings (CURRENT/VERIFIED, evidence-cited):** substrate exists — `attachments` (per-file
@@ -3270,8 +3270,8 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   reconciliation thresholds, dedup fuzz, promotion counts; `[COUNSEL]` population-learning legal basis +
   consent + retention + DP/federated + classification of every new derived field.
 - **Files:** created `docs/architecture/FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (35-section assessment)
-  + this Progress Log entry. **No blueprint/SRS/Ledger/ADR/API/OpenAPI/entity/service/controller/frontend/
-  migration/config change.**
+  - this Progress Log entry. **No blueprint/SRS/Ledger/ADR/API/OpenAPI/entity/service/controller/frontend/
+    migration/config change.**
 - **Checks:** read-only inspection only (entities, controllers, import/AI/analytics services, Matrix). No
   build/test run required (no code changed); prior QA green baseline unchanged.
 - **Confirmation:** CODE CHANGED: NO. SCHEMA/DATABASE: NO. MIGRATION CREATED/EXECUTED: NO. PACKAGES: NO.
@@ -3292,13 +3292,13 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   spike); online + general invoices **NEXT** (text-PDF lead); **credit-card + bank statements NEXT-but-
   BLOCKED**; utility/subscription/rent/EMI/travel **FUTURE**; investment/tax/legal **OUT OF SCOPE**.
 - **New frozen-doc constraints SURFACED (not modified):** SRS **FUT-004** (V2/FUTURE MUST — statements/card:
-  *never store CVV/PIN/PAN*, *delete-original-default*, OCR-vendor review, **no-accusation** "possible
-  discrepancy" language) and **OQ-03** (Counsel — *AI/statement features BLOCKED* pending OCR/vendor
+  _never store CVV/PIN/PAN_, _delete-original-default_, OCR-vendor review, **no-accusation** "possible
+  discrepancy" language) and **OQ-03** (Counsel — _AI/statement features BLOCKED_ pending OCR/vendor
   cross-border transfer decision). SRS's "statement import V1-OPTIONAL if dependencies safe" → dependencies
   **not** safe ⇒ statements stay gated. SRS v1.0 remains FROZEN/untouched.
 - **Reconciliation model (FIN-002 core, §A6):** `allocatedTotal=sum(items)`, `unallocatedDifference=
-  documentTotal−allocatedTotal` (signed, **surfaced never hidden**), `reconciliationStatus ∈ {BALANCED|
-  UNDER_ALLOCATED|OVER_ALLOCATED|UNRECONCILED}`. `documentTotal` authoritative; items subordinate; never
+documentTotal−allocatedTotal` (signed, **surfaced never hidden**), `reconciliationStatus ∈ {BALANCED|
+UNDER_ALLOCATED|OVER_ALLOCATED|UNRECONCILED}`. `documentTotal` authoritative; items subordinate; never
   auto-alter the transaction. Contract separates **EXTRACTED / INFERRED / USER_CORRECTED / USER_CONFIRMED**;
   **confidence ≠ financial correctness.**
 - **Statements (§A3/§A4):** CC + bank share the **same `DocumentExtractionEngine`** but use **different**
@@ -3336,9 +3336,9 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
     PII); result envelope with header · **line items** · **reconciliation** · **statement transactions**;
     `ExtractedField<T>` carrying `confidence`/`provenance`/`authority`; `DocumentFamily` (15 families +
     unknown, extensible — none claimed supported); `ExtractionStatus` failure states; `DOCUMENT_EXTRACTION_
-    ENGINE` DI token. **`confidence` documented as extraction certainty, NOT financial correctness.**
+ENGINE` DI token. **`confidence` documented as extraction certainty, NOT financial correctness.**
   - `engine/reconciliation.ts` — pure `computeReconciliation()`: `unallocatedDifference = documentTotal −
-    sum(items)`; states BALANCED / UNDER_ALLOCATED / OVER_ALLOCATED / UNRECONCILED. **Surfaces the
+sum(items)`; states BALANCED / UNDER_ALLOCATED / OVER_ALLOCATED / UNRECONCILED. **Surfaces the
     difference; never invents/removes/adjusts an item** (FIN-002).
   - `engine/stub-document-extraction-engine.ts` — validates image/PDF → explicit `invalid_input` /
     `unsupported_document`; fabricates nothing; no OCR/AI/network; `usesExternalProvider=false`.
@@ -3357,7 +3357,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   extraction↔classification independence, no finance-write/decrypt/external surface, and **DI replaceability**
   (a fake `local_ocr` engine swapped in via the token with no consumer change).
 - **Docs:** additive DOC-0 status ADDENDUM in `FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md` (contract location
-  + what remains intentionally unimplemented) + this Progress Log entry. **No frozen doc modified.**
+  - what remains intentionally unimplemented) + this Progress Log entry. **No frozen doc modified.**
 - **Verification:** `nx test backend` → **60 suites / 707 tests pass** (57/686 baseline + 3/21 new; **finance
   golden gate green**); `nx build backend` **passes** (typecheck clean; bundle unchanged — module not yet
   app-wired); doc-intelligence lint **0 errors**. Frontend untouched.
@@ -3371,7 +3371,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 ## 2026-08-14 — DOC-1: Document intake boundary (TOTAL_ONLY vs ITEMIZED) — CODE CHANGE (no migration, no packages)
 
 - **Summary:** Implemented **DOC-1 only** — the safe user-workflow boundary around the **existing** attachment
-  infrastructure, distinguishing **TOTAL_ONLY** from **ITEMIZED** *before* any real extraction. **No OCR, no
+  infrastructure, distinguishing **TOTAL_ONLY** from **ITEMIZED** _before_ any real extraction. **No OCR, no
   provider, no AI/vision, no dynamic taxonomy, no auto-tags, no CC/bank statement import, no ML/training, no
   finance-calc change, no server-side decryption, no migration, no package.**
 - **Backend (new `backend/src/app/document-intelligence/intake/`):**
@@ -3392,8 +3392,8 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
     `document.intelligence` (`FEATURE_DOCUMENT_INTELLIGENCE`, default false). `openapi.yaml` + the one
     implemented path.
 - **Frontend (minimal, self-contained — `frontend/src/app/features/documents/`):** `DocumentIntelligenceApi
-  Service` (POSTs mode only — no bytes/keys) + `DocumentModeSelectorComponent` (Total-only / Extract-items
-  chooser showing an explicit *"item extraction isn't available yet"* notice for ITEMIZED — never fake
+Service` (POSTs mode only — no bytes/keys) + `DocumentModeSelectorComponent` (Total-only / Extract-items
+  chooser showing an explicit _"item extraction isn't available yet"_ notice for ITEMIZED — never fake
   success). **Deliberately NOT wired into the finance-critical create-expense modal** — DOC-2 will integrate
   it once extraction is real, avoiding any finance-UX change now.
 - **Security/adversarial coverage (tests):** IDOR (User B's attachment → 404, engine not called); minimized
@@ -3484,7 +3484,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   correct; ~15–280 ms; no-text-layer correctly detected → OCR route. pdfjs v6 is **ESM-only and won't load in
   Jest's VM**, so Jest tests the adapter logic with an injected fake loader + the pure parser; the harness
   provides the live numbers.
-- **Answers:** (1) local OCR accuracy — *unproven here* (no offline lang-data; CDN suppressed); (2) pdfjs
+- **Answers:** (1) local OCR accuracy — _unproven here_ (no offline lang-data; CDN suppressed); (2) pdfjs
   sufficient for text PDFs — **yes**; (3) scanned-PDF usable — **no** (needs rasterizer); (4) failure modes —
   offline lang-data dependency, photo preprocessing, dense tables/handwriting/GST, run→line heuristics; (5)
   on-device viable — **yes for text-PDF**; (6) DOC-4 — extraction **review UI** on the text-PDF path (outside
@@ -3621,7 +3621,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   a synthetic pure-Node BMP (no rasterizer) OCR'd to `"TOTAL 128"` in ~1.2 s with **0 network attempts** — real
   glyph OCR, fully offline. (`0→8` is the crude synthetic font, not the pipeline.)
 - **Files:** `.gitattributes` (+`*.traineddata binary`); `backend/src/assets/tessdata/{eng.traineddata,
-  PROVENANCE.md}`; `backend/.../engine/adapters/local-tesseract-recognizer.ts` (+spec); `image-extraction.adapter.ts`
+PROVENANCE.md}`; `backend/.../engine/adapters/local-tesseract-recognizer.ts` (+spec); `image-extraction.adapter.ts`
   (real langData default + local recognizer, no throwing stub); `image-extraction.adapter.spec.ts` (adversarial
   no-keys + real-fs-gate tests); `local-document-extraction-engine.spec.ts` (OCR finance-safety test);
   `backend/tools/doc6-ocr-offline-smoke.mjs`; readiness ADDENDUM + this Progress Log entry.
@@ -3776,11 +3776,11 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Files:** `group-detail.component.ts` (+`fetchSeq` guard, on top of the working-tree month-aware-export/reload
   work), `group-detail.component.html`, `group-detail.component.spec.ts` (+GOAL 4 race test);
   `dashboard.component.ts` (window-reload + `myExpensesSeq` guard), `dashboard.component.spec.ts` (+window-reload
-  + race tests); this Progress Log.
+  - race tests); this Progress Log.
 - **Provenance note:** the group-ledger month-aware-export + reload/clamp implementation (GOALS 1/3/5, ~130 LOC
-  + 300 LOC spec) was already present **uncommitted** in the working tree at the start of this task and was
-  preserved and built upon; this batch adds the GOAL 4 race/stale-response guards (group + dashboard) and the
-  dashboard mutation-window reload, then commits the whole batch.
+  - 300 LOC spec) was already present **uncommitted** in the working tree at the start of this task and was
+    preserved and built upon; this batch adds the GOAL 4 race/stale-response guards (group + dashboard) and the
+    dashboard mutation-window reload, then commits the whole batch.
 - **Reset rules (verified):** RESET→page 1 on month/date/filter/sort change; PRESERVE current window on ordinary
   refresh/edit/add; DELETE preserves the page, else clamps to the previous valid page.
 - **Verification:** frontend 70 suites/589 tests (incl. 12 group pagination/export + 3 new race/window tests);
@@ -3981,7 +3981,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   **custom-tag names are E2EE**, server stores only opaque id + scope + lifecycle + encrypted material, never
   decrypts names, filters/analytics by id only; (3) global taxonomy keeps excluding sensitive categories (COUNSEL
   gate), no auto sensitive promotion; (4) canonical classification unchanged, custom-tag suggestion is future +
-  client-side only; (5) global taxonomy stays code-curated, users may only *request*, promotion needs
+  client-side only; (5) global taxonomy stays code-curated, users may only _request_, promotion needs
   evidence→admin→optional-COUNSEL; (6) preserve candidate→reviewed→active→deprecated, deprecated tags never
   vanish from historical assignments; (7) ONE unified `tagIds` namespace (canonical slugs + custom UUIDs), no
   second filter state, OR-within-tags / AND-across-dimensions preserved; (8) `expense_tags` remains the single
@@ -4035,7 +4035,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Verification:** data-models 4 suites/26; backend 77 suites/803 (finance golden gate GREEN); backend +
   frontend builds clean; lint 0 errors (data-models, backend).
 - **Confirmation:** CODE CHANGED: YES (data model). SCHEMA CHANGED: YES (additive `custom_tags` + `expense_tags.
-  tag_scope`). MIGRATION CREATED: YES. MIGRATION EXECUTED: NO (runs on boot via `migrationsRun`). PACKAGES: NO.
+tag_scope`). MIGRATION CREATED: YES. MIGRATION EXECUTED: NO (runs on boot via `migrationsRun`). PACKAGES: NO.
   PRODUCTION: NO. FINANCE: UNCHANGED (golden gate GREEN). E2EE/SEC-KI1/group-key/recovery: UNCHANGED (reused, no
   new primitive, no server decryption). FROZEN SRS/LEDGER/ADR/OpenAPI/Matrix: NO. STOP CONDITIONS: none hit.
   NOT IMPLEMENTED: custom-tag CRUD/API/UI/filter/analytics/classifier/governance (C2–C5). TAG-BATCH-C2: NOT
@@ -4048,7 +4048,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   UI. No new migration (reuses the C1 `custom_tags` table), no new crypto primitive, no server-side decryption,
   no finance change, no group-key/SEC-KI1 change, no frozen-doc change.
 - **New module — `backend/src/app/custom-tags/`** (`CustomTagsModule` in `app.module`; `forFeature([CustomTag,
-  GroupMember, GroupKeyVersion])`, one `CustomTagsService`, two controllers). Canonical taxonomy stays in the
+GroupMember, GroupKeyVersion])`, one `CustomTagsService`, two controllers). Canonical taxonomy stays in the
   read-only `TaxonomyModule`, untouched.
 - **API surface** (all `JwtAuthGuard`, `SuccessResponse`): `POST /custom-tags` + `GET /custom-tags` (personal);
   `POST /groups/:groupId/custom-tags` + `GET /groups/:groupId/custom-tags` (group, member-only);
@@ -4074,7 +4074,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Global-taxonomy protection:** no create/rename/delete/promote path for canonical tags — service exposes no
   such method; endpoints only touch `custom_tags`.
 - **Files:** backend — `custom-tags/{custom-tags.module.ts, custom-tags.controller.ts, custom-tags.service.ts,
-  custom-tags.service.spec.ts}`, `custom-tags/dto/{create-custom-tag.dto.ts, update-custom-tag.dto.ts, index.ts}`,
+custom-tags.service.spec.ts}`, `custom-tags/dto/{create-custom-tag.dto.ts, update-custom-tag.dto.ts, index.ts}`,
   `app.module.ts`. Docs — §C2 note in the FUTURE doc + this Progress Log.
 - **Tests:** `custom-tags.service.spec.ts` — authz (personal own/deny + group member/non-member), E2EE (plaintext
   rejected, ciphertext stored unchanged, no account leak, no decrypt/logging), lifecycle (active-only list,
@@ -4138,9 +4138,9 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   frozen-doc change. No ML/embeddings/LLM/cloud AI, no external network call, no population/cross-user learning,
   no global-taxonomy mutation. Canonical DOC-5 `classifyLabel` unchanged (still the authoritative first layer).
 - **Pure engine** (`documents/services/custom-tag-suggestion.ts`): `suggestCustomTags(label, authorizedTags,
-  rememberedTagIds)` — pure, no I/O, deterministic, explainable. Signals (highest wins): correction memory (0.95)
+rememberedTagIds)` — pure, no I/O, deterministic, explainable. Signals (highest wins): correction memory (0.95)
   > exact normalized name (0.8) > all-keywords-present (0.6). Only ranks tags the caller already authorized +
-  decrypted; output is advisory INFERRED. No semantic/vector/LLM.
+  > decrypted; output is advisory INFERRED. No semantic/vector/LLM.
 - **Correction memory** (`core/services/custom-tag-correction-memory.service.ts`): in-memory Map only, SESSION-
   scoped; nothing to localStorage/sessionStorage/IndexedDB/URL (only opaque ids + normalized labels). Scope-keyed
   `userId :: (personal|g:<groupId>) :: label` → isolated across users AND groups (and personal vs group). Never
@@ -4158,7 +4158,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Sensitive-tag safety:** engine never invents canonical/sensitive tags (only ranks the user's own customs);
   canonical exclusion untouched; no new sensitive rule; no auto-promotion.
 - **Files:** frontend — `documents/services/{custom-tag-suggestion.ts (+spec), custom-tag-suggestion.service.ts
-  (+spec), document-review.service.ts (+spec)}`, `core/services/custom-tag-correction-memory.service.ts (+spec)`,
+(+spec), document-review.service.ts (+spec)}`, `core/services/custom-tag-correction-memory.service.ts (+spec)`,
   `documents/document-review.{model.ts, component.ts (+spec), component.html}`. Docs — §C4 note + this Progress Log.
 - **Tests:** +3 suites / +32 tests — pure engine (determinism, no-network tripwire, signals, scope, sensitive),
   correction memory (user/group/personal isolation, no persistent storage, clear), orchestrator (scope, no-auto-
@@ -4298,7 +4298,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   crypto/taxonomy/finance change; server still returns only opaque custom-tag ids.
 - **One resolver:** new `CustomTagService.getCustomTagNameMap(scope)` → `id → {name, deprecated}` (active +
   deprecated), decrypted client-side with the correct scope key (personal→master via ensureCryptoContext;
-  group→per-group key/version via ensureGroupKey('read')) through the existing getManaged* path + shared decrypt
+  group→per-group key/version via ensureGroupKey('read')) through the existing getManaged\* path + shared decrypt
   cache; best-effort. No duplicated decryption logic; no plaintext sent/stored/logged.
 - **F1 (analytics UUIDs):** `analytics-charts` gained a `customTagNames` input; canonical from /taxonomy, custom
   from the map, unresolved → neutral "Custom tag" (never a UUID; non-UUID slugs kept). Distribution + trend share
@@ -4341,7 +4341,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   CASCADE — a share never outlives its group), `createdByUser?` (owner/admin provenance + the member context for
   the authoritative balance calc; ON DELETE SET NULL), `tokenHash` (VARCHAR(64) UNIQUE — `sha256(token)`; the raw
   token is NEVER stored), `status` (active|revoked default active), `expiresAt?`, `@VersionColumn`, `createdAt/
-  updatedAt`, `revokedAt?`. No name/email/phone/user-id/member-id/group-id-string, no amount/balance/currency, no
+updatedAt`, `revokedAt?`. No name/email/phone/user-id/member-id/group-id-string, no amount/balance/currency, no
   ciphertext/key/E2EE, no title/description/note — nothing sensitive persisted. Public sharing is OFF by default
   (no row until explicitly created). `label_policy` intentionally NOT added (MVP pseudonym policy is fixed in code).
 - **Migration (`backend/src/migrations/1720300000000-AddPublicShares.ts`):** additive + reversible — `up()` creates
@@ -4369,7 +4369,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   calc, pseudonyms, or E2EE — those are PUBLIC-1C+. No schema/migration change (reuses the 1A table), no new
   crypto package, no finance change, no frozen-doc change.
 - **New module `backend/src/app/public-shares/`** (registered in `app.module`; `forFeature([PublicShare,
-  GroupMember, Group])`). Routes under `@Controller('groups/:groupId/public-share')` + `@UseGuards(JwtAuthGuard)`:
+GroupMember, Group])`). Routes under `@Controller('groups/:groupId/public-share')` + `@UseGuards(JwtAuthGuard)`:
   `POST` (create), `GET` (status), `POST /regenerate`, `DELETE` (revoke).
 - **Authorization:** reuses the established group governance convention — active membership required (non-member →
   403, no group disclosure) and owner/admin only (member/viewer → 403). `groupId` from the route only; role/scope
@@ -4377,7 +4377,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Token secrecy:** `crypto.randomBytes(32)` → base64url (256-bit) raw token, `sha256` hex stored as `tokenHash`
   ONLY. Raw token returned exactly once from create/regenerate, never by GET, never logged, never stored, never in
   an error. Response DTOs exclude `tokenHash`/group/user ids; GET returns `{active,status,expiresAt,createdAt,
-  revokedAt}` only.
+revokedAt}` only.
 - **One active share + atomic regenerate:** create/regenerate/revoke run in a transaction that first takes a
   `pessimistic_write` lock on the GROUP row (serializes concurrent mutations) — guaranteeing at most one active
   share WITHOUT any 1A schema/constraint change. Create rejects when an active share exists (409). Regenerate
@@ -4385,7 +4385,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   immediate + idempotent (`{revoked:false}` when nothing active).
 - **Expiry:** optional `expiresAt` validated (invalid/past → 400); nullable preserved; `active` accounts for expiry.
 - **Files:** backend — `public-shares/{public-shares.module.ts, public-shares.controller.ts (+spec),
-  public-shares.service.ts (+spec)}`, `public-shares/dto/{public-share.dto.ts, index.ts}`, `app.module.ts`. Docs —
+public-shares.service.ts (+spec)}`, `public-shares/dto/{public-share.dto.ts, index.ts}`, `app.module.ts`. Docs —
   this Progress Log.
 - **Tests:** +2 suites / +19 — owner/admin create, member/viewer/non-member denied; token-once + persisted value is
   `sha256(rawToken)` + no hash/ids in response; GET hides token/hash; one-active (2nd create → 409); regenerate
@@ -4446,7 +4446,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
 - **Projection service (`public-projection.service.ts`):** flag gate → `sha256(token)` lookup on
   `PublicShare.tokenHash` (relations group + createdByUser) → usable check (active + not expired + group +
   creator). Balances come VERBATIM from the ONLY authoritative `SettlementsService.calculateGroupBalances(
-  creatorId, groupId)`; if the creator is no longer an active member (or the group vanished) the service throws →
+creatorId, groupId)`; if the creator is no longer an active member (or the group vanished) the service throws →
   caught → **same generic 404** (no impersonation, no bypass). Pseudonyms: all group members ordered by a hidden
   (joinedAt, id) key → "Member 1/2/…"; the map translates balance `groupMemberId`s and each expense payer to a
   label — real names/emails/ids never exposed. Entries are a descriptive (no-math) list of posted (non-deleted)
@@ -4459,7 +4459,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   `PublicBalanceSummaryDto` {fromLabel, toLabel, amount, currency}. Allowlist-by-construction — no id/PII/E2EE
   field can be serialized; authenticated Expense/Group/Settlement/User DTOs are never reused.
 - **Files:** backend — `public-shares/{public-projection.controller.ts (+spec), public-projection.service.ts
-  (+spec), public-shares.module.ts}`, `public-shares/dto/{public-ledger.dto.ts, index.ts}`,
+(+spec), public-shares.module.ts}`, `public-shares/dto/{public-ledger.dto.ts, index.ts}`,
   `platform/feature-flags.constants.ts`, `throttler/throttle.constants.ts`, `app.module.ts`. Docs — this Progress
   Log. (No PublicShare entity/migration change.)
 - **Tests:** +2 suites / +18 — valid→projection; sha256 lookup; unknown/revoked/expired/deleted-group/inactive-
@@ -4544,7 +4544,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   top-level route `share/:token` with **NO auth guard** (added outside the MainLayout/authGuard tree in
   `app.routes.ts`; global auth untouched). Reads the token from the route PATH only, requests the projection, and
   renders only `groupName/currency/entries{date,amount,currency,category,transactionType,payerLabel}/balanceSummary
-  {fromLabel,toLabel,amount,currency}/generatedAt` with the existing Currency/Date pipes, mobile-first. "Public ·
+{fromLabel,toLabel,amount,currency}/generatedAt` with the existing Currency/Date pipes, mobile-first. "Public ·
   read-only" banner; no edit/add/delete/settle controls. Every failure → one identical generic "unavailable" block
   (no cause disclosed, token never shown). Uses Angular signals; token not held in state beyond the request.
 - **Owner panel (`features/groups/components/public-share-panel/*`):** embedded in the group Settings tab, gated by
@@ -4587,7 +4587,7 @@ frontend` 501, `nx build backend` ✓, `nx build frontend` ✓, `nx lint backend
   feature-flag-default change; no caching layer, no CDN/Cloudflare change, no frontend change. All PUBLIC-1A–1F
   invariants preserved.
 - **Cache header (`public-projection.controller.ts`):** the handler sets `res.setHeader('Cache-Control',
-  'no-store')` via `@Res({ passthrough: true })` BEFORE the lookup, so it is present on the 200 projection AND on
+'no-store')` via `@Res({ passthrough: true })` BEFORE the lookup, so it is present on the 200 projection AND on
   the thrown generic 404 (the exception filter writes the error with `response.send()`, preserving the pre-set
   header). No ETag/Last-Modified, no interceptor/caching layer. Success serialization + generic-404 semantics
   unchanged.
@@ -4616,6 +4616,7 @@ this repository.** Cloudflare/CDN items therefore apply **only if** operations c
 the production hostname(s) in DNS; otherwise they are **N/A**.
 
 Each item is tagged with exactly one verification category:
+
 - **[CODE-VERIFIED]** — proven by this repository's source/tests/build.
 - **[NGINX/DEPLOYMENT-VERIFY]** — the operator confirms against the live nginx frontend and the API origin
   (no Cloudflare assumption).
@@ -4637,7 +4638,7 @@ Each item is tagged with exactly one verification category:
    `https://finmate-api.prvnsahni.com/api/v1/public/shares/:token` (prod `apiBaseUrl` is that absolute host; this is
    a **cross-origin** call, so confirm CORS already allows the frontend origin — it does for every existing API call).
    No SPA↔API route collision exists because prod does not use the nginx `/api/` proxy.
-5. **[CLOUDFLARE/CDN-VERIFY — CONDITIONAL]** *Only if a CDN proxies the frontend/API hostname:* its request-log
+5. **[CLOUDFLARE/CDN-VERIFY — CONDITIONAL]** _Only if a CDN proxies the frontend/API hostname:_ its request-log
    retention/redaction policy for token-bearing `/share/:token` requests is acceptable per privacy policy. (Backend
    API-side logging already redacts the token — PUBLIC-1C-PRE, [CODE-VERIFIED]; this item covers the CDN's **own**
    access logs.) **N/A** if the hostname is not CDN-proxied.
@@ -4645,8 +4646,8 @@ Each item is tagged with exactly one verification category:
    `publicGroupShare` ON before items 2–5 are satisfied.
 7. **[NGINX/DEPLOYMENT-VERIFY]** Post-deploy smoke: **revoke** and **regenerate** immediately invalidate the old link
    (old token → generic unavailable), and `Cache-Control: no-store` is present on the live
-   `GET /api/v1/public/shares/:token` response (both 200 and 404). *(Invalidation logic and the `no-store` header are
-   [CODE-VERIFIED]; this item confirms them over the wire.)*
+   `GET /api/v1/public/shares/:token` response (both 200 and 404). _(Invalidation logic and the `no-store` header are
+   [CODE-VERIFIED]; this item confirms them over the wire.)_
 8. **[CODE-VERIFIED + NGINX/DEPLOYMENT-VERIFY]** No raw capability token appears in backend application logs
    (**[CODE-VERIFIED]** path redaction of `/public/shares/<token>`, PUBLIC-1C-PRE); confirm on live logs after the
    first real requests (**[NGINX/DEPLOYMENT-VERIFY]**).

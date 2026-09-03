@@ -4,7 +4,7 @@
 
 **Date:** 2026-08-14 · **Branch:** `feature/documentation` · **Baseline HEAD at assessment:** `abec60d` (Goals-v2 backend `c9c290d` + frontend `abec60d`, QA-verified).
 
-**Companion (parking) doc — not modified by this file:** [`FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md`](./FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md). That document *parks the direction*; this document is a *repository-grounded readiness assessment* that inventories what exists today, tests feasibility against the frozen boundaries, and lists the decisions/gates that must precede any implementation. Neither authorises code.
+**Companion (parking) doc — not modified by this file:** [`FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md`](./FINMATE_DOCUMENT_INTELLIGENCE_AND_DYNAMIC_TAXONOMY_FUTURE.md). That document _parks the direction_; this document is a _repository-grounded readiness assessment_ that inventories what exists today, tests feasibility against the frozen boundaries, and lists the decisions/gates that must precede any implementation. Neither authorises code.
 
 **Frozen boundaries preserved and NOT altered here:** SRS v1.0 (FROZEN 2026-08-12) · Decision Ledger · Data Classification & Encryption Matrix (#2) · Security & Privacy Architecture (#3) · Key Management (#4) · AI Data-Access & Privacy Firewall (#5) · IP/AI Confidentiality (#6) · Threat Model (#7) · Ownership Map (#15) · API & Data Contracts (#16) · Backward-Compat & Migration Plan (#17) · Roadmap · Execution Plan · Goal Engine Architecture & Contract · ADRs. **FIN-002 finance parity, E2EE, AI Firewall, REC-1, Goal Engine contract, and SEC-KI1 remain untouched.**
 
@@ -18,31 +18,31 @@
 
 `VERIFIED` FinMate today has a **usable substrate** for document intelligence but **zero** of the intelligence itself. Specifically, it already has: file **attachment + receipt-versioning** storage with per-file key wrapping (`attachments`, `receipt_versions`), a **tabular import** path (`POST /import/expenses`, CSV/XLSX via SheetJS), **server-readable structured metadata reporting** (`analytics/categories` grouped on the plaintext `category` field), an **E2EE-safe soft-duplicate** check (`findPotentialDuplicates` — matches amount+date+currency+scope, deliberately **excludes** the E2EE title), a **replaceable-engine** precedent (`GoalEngine`), and a **FIN-002 parity harness**. What does **not** exist: any OCR/extraction, any line-item model, any tag/taxonomy entity, any classification engine, any statement parser, any population learning.
 
-`TARGET` The right shape is exactly the parking doc's one rule: **freeze two interfaces — `DocumentExtractionEngine` and `ClassificationEngine` — mirroring `GoalEngine`, and keep extraction/classification a descriptive metadata layer that produces *candidates*, never a mutation path into the financial record.** The single largest risk is not OCR accuracy; it is **scope-and-privacy creep** — an extraction/tagging feature becoming a backdoor to (a) server-readable free-text, (b) silent financial mutation, or (c) silent training on private data. Each is independently prohibited by the frozen stack and must stay prohibited.
+`TARGET` The right shape is exactly the parking doc's one rule: **freeze two interfaces — `DocumentExtractionEngine` and `ClassificationEngine` — mirroring `GoalEngine`, and keep extraction/classification a descriptive metadata layer that produces _candidates_, never a mutation path into the financial record.** The single largest risk is not OCR accuracy; it is **scope-and-privacy creep** — an extraction/tagging feature becoming a backdoor to (a) server-readable free-text, (b) silent financial mutation, or (c) silent training on private data. Each is independently prohibited by the frozen stack and must stay prohibited.
 
-**Recommendation:** do **not** start implementation. The near-term, low-risk, high-value slice is **Total-only + attachment (already 90% present)** and **contract design** (the two engine interfaces + the extraction result model as *documentation*), gated behind the decisions in §28–§30. OCR, tagging, taxonomy, CC-statement extraction, and any learning remain **NOT-NOW** (§35).
+**Recommendation:** do **not** start implementation. The near-term, low-risk, high-value slice is **Total-only + attachment (already 90% present)** and **contract design** (the two engine interfaces + the extraction result model as _documentation_), gated behind the decisions in §28–§30. OCR, tagging, taxonomy, CC-statement extraction, and any learning remain **NOT-NOW** (§35).
 
 ---
 
 ## 2. Current repository reality (evidence-backed baseline)
 
-| Concern | CURRENT state | Evidence |
-|---|---|---|
-| Expense text | `title`, `description` = `text`, **E2EE client-side** (Zone-1a). | `shared/data-models/src/lib/expense.entity.ts:37-41`; `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md:103-104` |
-| Expense financials | `amount_total` decimal(12,2), `currency` char(3), `category` varchar(64) — **plaintext, server-readable (Zone-2)**. `transactionType` expense/refund; `encryptionScope` personal/group/direct_shared; `@VersionColumn`; soft-delete. | `expense.entity.ts:43-121`; Matrix `:105-107` |
-| Line items | **Do not exist.** Expense holds a single total; no per-item rows. | `expense.entity.ts` (no item relation) |
-| Category | **Single flat** `varchar(64)`, indexed `['group','category']`. No hierarchy, no per-item categories. | `expense.entity.ts:53-54,28` |
-| Tags / taxonomy | **Do not exist.** No tag entity, no taxonomy table, no aliases/lifecycle. | repository — no such entity |
-| Attachments | `attachments`: `storageKey`, `originalName`, `mimeType`, `sizeBytes`, `checksumSha256`, **`encryptedFileKey`** (per-file key wrapped under the scope key), **`encryptedOriginalName`** (E2EE). Attach target is expense/note/goal/group (CHECK-constrained). | `attachment.entity.ts:16-74` |
-| Receipt versioning | `receipt_versions`: `action` created/replaced/deleted, `snapshot jsonb`, `actorUser`, indexed by `(expense, createdAt)`. | `receipt-version.entity.ts` |
-| OCR / doc extraction | **Does not exist.** No OCR/textract/vision/parse-to-items anywhere. | repository grep |
-| Tabular import | `POST /import/expenses` — Multer `FileInterceptor`, **CSV + XLSX** parsed via SheetJS into `ParsedRow{row,title?,category?,…}`. | `backend/src/app/import/import.controller.ts:30-40`, `import.service.ts:17,105-137` |
-| Export | `GET /expenses/export` + `import/export.controller.ts` + `xlsx-workbook.builder.ts`. | `expenses.controller.ts:174` |
-| Analytics | `analytics/monthly|yearly|categories|all-monthly` — categories grouped on the **plaintext** `category` field. | `expenses.controller.ts:193-298`, `services/expenses-analytics.service.ts:56` |
-| Duplicate check | `GET /expenses/duplicates` → `findPotentialDuplicates` matches **amount + date + currency + scope**; **title deliberately excluded** (E2EE-safe). | `expenses.controller.ts:294-319`, `expenses.service.ts:1315-1360` |
-| AI | Single opt-in `POST /ai/proxy` forwarding a prompt with **UUID redaction only**; projection firewall is TARGET/not-built. | `ai.service.ts:22-52`; AI Firewall doc |
-| Goal Engine | `DeterministicGoalEngine` behind frozen `GoalEngine` interface; **numeric/enum input only**; flag-gated. | `backend/src/app/goals/engine/*` |
-| FIN-002 | Golden-fixture parity harness (BATCH-05) — "same inputs → same balances". | finance golden gate (backend suite) |
+| Concern              | CURRENT state                                                                                                                                                                                                                                                | Evidence                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Expense text         | `title`, `description` = `text`, **E2EE client-side** (Zone-1a).                                                                                                                                                                                             | `shared/data-models/src/lib/expense.entity.ts:37-41`; `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md:103-104` |
+| Expense financials   | `amount_total` decimal(12,2), `currency` char(3), `category` varchar(64) — **plaintext, server-readable (Zone-2)**. `transactionType` expense/refund; `encryptionScope` personal/group/direct_shared; `@VersionColumn`; soft-delete.                         | `expense.entity.ts:43-121`; Matrix `:105-107`                                                                    |
+| Line items           | **Do not exist.** Expense holds a single total; no per-item rows.                                                                                                                                                                                            | `expense.entity.ts` (no item relation)                                                                           |
+| Category             | **Single flat** `varchar(64)`, indexed `['group','category']`. No hierarchy, no per-item categories.                                                                                                                                                         | `expense.entity.ts:53-54,28`                                                                                     |
+| Tags / taxonomy      | **Do not exist.** No tag entity, no taxonomy table, no aliases/lifecycle.                                                                                                                                                                                    | repository — no such entity                                                                                      |
+| Attachments          | `attachments`: `storageKey`, `originalName`, `mimeType`, `sizeBytes`, `checksumSha256`, **`encryptedFileKey`** (per-file key wrapped under the scope key), **`encryptedOriginalName`** (E2EE). Attach target is expense/note/goal/group (CHECK-constrained). | `attachment.entity.ts:16-74`                                                                                     |
+| Receipt versioning   | `receipt_versions`: `action` created/replaced/deleted, `snapshot jsonb`, `actorUser`, indexed by `(expense, createdAt)`.                                                                                                                                     | `receipt-version.entity.ts`                                                                                      |
+| OCR / doc extraction | **Does not exist.** No OCR/textract/vision/parse-to-items anywhere.                                                                                                                                                                                          | repository grep                                                                                                  |
+| Tabular import       | `POST /import/expenses` — Multer `FileInterceptor`, **CSV + XLSX** parsed via SheetJS into `ParsedRow{row,title?,category?,…}`.                                                                                                                              | `backend/src/app/import/import.controller.ts:30-40`, `import.service.ts:17,105-137`                              |
+| Export               | `GET /expenses/export` + `import/export.controller.ts` + `xlsx-workbook.builder.ts`.                                                                                                                                                                         | `expenses.controller.ts:174`                                                                                     |
+| Analytics            | `analytics/monthly                                                                                                                                                                                                                                           | yearly                                                                                                           | categories | all-monthly`— categories grouped on the **plaintext**`category` field. | `expenses.controller.ts:193-298`, `services/expenses-analytics.service.ts:56` |
+| Duplicate check      | `GET /expenses/duplicates` → `findPotentialDuplicates` matches **amount + date + currency + scope**; **title deliberately excluded** (E2EE-safe).                                                                                                            | `expenses.controller.ts:294-319`, `expenses.service.ts:1315-1360`                                                |
+| AI                   | Single opt-in `POST /ai/proxy` forwarding a prompt with **UUID redaction only**; projection firewall is TARGET/not-built.                                                                                                                                    | `ai.service.ts:22-52`; AI Firewall doc                                                                           |
+| Goal Engine          | `DeterministicGoalEngine` behind frozen `GoalEngine` interface; **numeric/enum input only**; flag-gated.                                                                                                                                                     | `backend/src/app/goals/engine/*`                                                                                 |
+| FIN-002              | Golden-fixture parity harness (BATCH-05) — "same inputs → same balances".                                                                                                                                                                                    | finance golden gate (backend suite)                                                                              |
 
 > Do **not** cite this document as evidence that OCR, taxonomy, line items, classification, or population learning exists. They do **not**.
 
@@ -52,14 +52,14 @@
 
 - **Storage substrate is present and E2EE-aware.** `attachments.encryptedFileKey` holds the per-file symmetric key **wrapped under the scope key** (personal master / groupDataKey / expense contentKey — same key model as expenses), and `encryptedOriginalName` keeps the filename client-encrypted. Server holds only opaque `storageKey`, `mimeType`, `sizeBytes`, `checksumSha256`. `attachment.entity.ts:42-71`.
 - **Receipt lifecycle is audited.** `receipt_versions` records created/replaced/deleted with a `jsonb` snapshot + actor, indexed for retrieval. `receipt-version.entity.ts`.
-- **Consequence for this feature:** *uploading and attaching a receipt to a Total-only expense is essentially already supported.* Document intelligence adds an **extraction/candidate layer over the existing attachment**, not a new storage stack. `[ENGINEERING PARAMETER]` where OCR runs (client vs server) directly determines whether the server ever sees decrypted document bytes — this is the pivotal privacy decision (§8, §18).
+- **Consequence for this feature:** _uploading and attaching a receipt to a Total-only expense is essentially already supported._ Document intelligence adds an **extraction/candidate layer over the existing attachment**, not a new storage stack. `[ENGINEERING PARAMETER]` where OCR runs (client vs server) directly determines whether the server ever sees decrypted document bytes — this is the pivotal privacy decision (§8, §18).
 
 ---
 
 ## 4. Existing expense creation / import flows `VERIFIED`
 
 - **Create/update** go through `expenses.controller` (`POST /`, `PATCH /:id`) with client-side E2EE title/description, `@VersionColumn` optimistic locking, version snapshots (`/:id/versions`, `/:id/restore`), and soft duplicate warning.
-- **Import already exists** as tabular: `POST /import/expenses` accepts CSV/XLSX, parses rows to `{title?, category?, …}`. This is the natural **host** for a future "review candidate transactions" step — a statement importer would produce the *same* review list, just from a different upstream extractor.
+- **Import already exists** as tabular: `POST /import/expenses` accepts CSV/XLSX, parses rows to `{title?, category?, …}`. This is the natural **host** for a future "review candidate transactions" step — a statement importer would produce the _same_ review list, just from a different upstream extractor.
 - **Reconciliation precedent:** the existing importer already validates/normalizes rows before persisting; it does not blindly write. Document extraction should feed the **same human-review-then-commit** discipline.
 
 ---
@@ -68,7 +68,7 @@
 
 - **Class-A / Zone-1a (E2EE, opaque to server):** `expense.title`, `expense.description`, `attachment.encryptedOriginalName`, per-file/content keys; `goal.title` (born-E2EE, BATCH-11). Server never key-holds recoverable plaintext outside the frozen RSA-root recovery model.
 - **Zone-2 (plaintext, server-readable for computation):** `amountTotal`, `currency`, `category`, dates, `status`, `transactionType`. These power analytics/dedup **without decryption**.
-- **Hard rule for this feature (restates Matrix §12):** structured taxonomy metadata is a **parallel, classified** layer. It must **not** create pressure to make E2EE free-text server-readable, and it must **not** be used as a decryption backdoor. Any field's classification stays governed by the frozen Matrix; changing a field's class is a frozen-doc change, not something this feature may assume. `[COUNSEL]` any *new* derived field (merchant, item label) needs an explicit Matrix classification before it can be stored server-readable (§18).
+- **Hard rule for this feature (restates Matrix §12):** structured taxonomy metadata is a **parallel, classified** layer. It must **not** create pressure to make E2EE free-text server-readable, and it must **not** be used as a decryption backdoor. Any field's classification stays governed by the frozen Matrix; changing a field's class is a frozen-doc change, not something this feature may assume. `[COUNSEL]` any _new_ derived field (merchant, item label) needs an explicit Matrix classification before it can be stored server-readable (§18).
 
 ---
 
@@ -90,15 +90,15 @@
 
 Feasible **only** behind a replaceable contract, with the provider **undecided**. Classes and trade-offs (no selection made):
 
-| Class | Privacy | Accuracy (receipts/tables) | Latency | Cost | Lock-in | Notes |
-|---|---|---|---|---|---|---|
-| **On-device / client OCR** (e.g. WASM engines) | **Best** — bytes never leave client; compatible with E2EE with no firewall dependency | Moderate; weak on dense tables/handwriting | Device-bound | ~0 marginal | None | Preferred for privacy; heavier client bundle `[ENGINEERING PARAMETER]` |
-| **Self-hosted OCR** (server-side engine) | Server sees decrypted bytes → **breaks E2EE-at-rest unless ephemeral + consented** | Better on tables/PDFs | Server cost | Infra | Low | Needs explicit `[COUNSEL]` + Matrix decision |
-| **Managed OCR / Document-AI** | Bytes leave to a third party → **AI-firewall + ZDR + consent required** | High on receipts/statements | Network | Per-page | High | Blocked until firewall TARGET exists (§6) |
-| **LLM/VLM extraction** | As above + prompt-injection surface | High + structure-aware | High | Highest | High | Adversarial risk (§32) |
-| **Hybrid OCR→structured** | Depends on OCR tier | Highest | Compound | Compound | Medium | Most complex |
+| Class                                          | Privacy                                                                               | Accuracy (receipts/tables)                 | Latency      | Cost        | Lock-in | Notes                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------ | ------------ | ----------- | ------- | ---------------------------------------------------------------------- |
+| **On-device / client OCR** (e.g. WASM engines) | **Best** — bytes never leave client; compatible with E2EE with no firewall dependency | Moderate; weak on dense tables/handwriting | Device-bound | ~0 marginal | None    | Preferred for privacy; heavier client bundle `[ENGINEERING PARAMETER]` |
+| **Self-hosted OCR** (server-side engine)       | Server sees decrypted bytes → **breaks E2EE-at-rest unless ephemeral + consented**    | Better on tables/PDFs                      | Server cost  | Infra       | Low     | Needs explicit `[COUNSEL]` + Matrix decision                           |
+| **Managed OCR / Document-AI**                  | Bytes leave to a third party → **AI-firewall + ZDR + consent required**               | High on receipts/statements                | Network      | Per-page    | High    | Blocked until firewall TARGET exists (§6)                              |
+| **LLM/VLM extraction**                         | As above + prompt-injection surface                                                   | High + structure-aware                     | High         | Highest     | High    | Adversarial risk (§32)                                                 |
+| **Hybrid OCR→structured**                      | Depends on OCR tier                                                                   | Highest                                    | Compound     | Compound    | Medium  | Most complex                                                           |
 
-Cross-cutting `[ENGINEERING PARAMETER]` / `[OPEN QUESTION]`: Indian formats/currency/GST-tax fields, multilingual receipts, handwriting limits, PDF vs image, page/region provenance, **confidence scoring** (must be first-class), fallback when confidence is low (§26 UX: *ask, don't pretend certainty*), reproducibility (same doc → same extraction for audit). **No provider is selected; the repo/frozen docs mandate none.**
+Cross-cutting `[ENGINEERING PARAMETER]` / `[OPEN QUESTION]`: Indian formats/currency/GST-tax fields, multilingual receipts, handwriting limits, PDF vs image, page/region provenance, **confidence scoring** (must be first-class), fallback when confidence is low (§26 UX: _ask, don't pretend certainty_), reproducibility (same doc → same extraction for audit). **No provider is selected; the repo/frozen docs mandate none.**
 
 ---
 
@@ -179,7 +179,7 @@ Extraction produces **candidates only**; a **user confirmation** produces the fi
 ## 16. User corrections and learning signals `TARGET`
 
 - A user correction is authoritative **for that user's record** (`USER_CONFIRMED`, highest authority). Whether a correction may become an **aggregate signal** for global improvement is a **separate, consented** decision — **not** automatic. `[PRODUCT DECISION REQUIRED]` / `[COUNSEL]`.
-- Corrections are the highest-quality learning signal *if* consent + anonymization + governance permit; absent those, they stay **personal only**.
+- Corrections are the highest-quality learning signal _if_ consent + anonymization + governance permit; absent those, they stay **personal only**.
 
 ---
 
@@ -222,7 +222,7 @@ Evaluate any candidate against: accuracy (receipts/tables/line-items/PDF/stateme
 
 ## 23. Migration / schema implications `TARGET` (none created)
 
-Likely *future* additions **when/if approved** — none created here: line-item table **or** attachment-scoped item metadata `[PRODUCT DECISION REQUIRED]`; canonical taxonomy + alias/edge tables; per-item classification link (with provenance/confidence/source-authority); extraction-job/result records; consent + learning-signal records. Each needs a Matrix classification, a migration, and (for E2EE fields) `text` ciphertext columns + `@VersionColumn` where mutable. **No schema, no migration, no entity created or altered in this assessment.**
+Likely _future_ additions **when/if approved** — none created here: line-item table **or** attachment-scoped item metadata `[PRODUCT DECISION REQUIRED]`; canonical taxonomy + alias/edge tables; per-item classification link (with provenance/confidence/source-authority); extraction-job/result records; consent + learning-signal records. Each needs a Matrix classification, a migration, and (for E2EE fields) `text` ciphertext columns + `@VersionColumn` where mutable. **No schema, no migration, no entity created or altered in this assessment.**
 
 ---
 
@@ -253,7 +253,7 @@ Flow (UX, §31): Upload → detect type → **Total-only / Extract** → extract
 
 ## 27. Dependencies and gates `TARGET`
 
-- **AI Firewall TARGET controls must exist** before any *external* extraction/classification (fail-closed, projections, consent, ZDR). On-device class avoids this gate.
+- **AI Firewall TARGET controls must exist** before any _external_ extraction/classification (fail-closed, projections, consent, ZDR). On-device class avoids this gate.
 - **Data-Classification-Matrix entries** for every new derived field before server-readable storage.
 - **FIN-002 harness green** on every touching batch.
 - **REC-1** for any new Class-A material.
@@ -276,7 +276,7 @@ Population-learning legal basis; training/learning consent model; retention of d
 
 ## 31. Production verification requirements `[PRODUCTION VERIFICATION]`
 
-Before any DOC batch ships: FIN-002 harness green; no E2EE field reclassified; on-device path proven to keep bytes on-device (or firewall+ZDR proven for external); migrations run UP/DOWN/re-apply on disposable Postgres; IDOR scoping tested for documents/items/classifications; feature flags default **OFF**; confidence/low-confidence UX proven to *ask* not *assume*.
+Before any DOC batch ships: FIN-002 harness green; no E2EE field reclassified; on-device path proven to keep bytes on-device (or firewall+ZDR proven for external); migrations run UP/DOWN/re-apply on disposable Postgres; IDOR scoping tested for documents/items/classifications; feature flags default **OFF**; confidence/low-confidence UX proven to _ask_ not _assume_.
 
 ## 32. Threat / adversarial analysis `TARGET`
 
@@ -300,7 +300,7 @@ Do **NOT**, in any batch now: integrate/select an OCR/VLM provider; add any OCR/
 
 # ADDENDUM — 2026-08-14 · Scope refinement: document families and extraction paths
 
-**Additive.** This section refines scope on top of §1–§35 above; it **supersedes nothing** and **preserves all prior findings**. Still **documentation only** — no OCR/extraction/taxonomy/tagging/CC/bank import/ML/provider is implemented. Frozen boundaries (FIN-002, E2EE, AI Firewall, REC-1, Goal Engine contract, SEC-KI1) remain intact. **New frozen-doc constraints surfaced this pass** (from SRS v1.0, not modified here): **FUT-004** (V2/FUTURE, MUST — statement/card: *never store CVV/PIN/PAN*; *extract→delete-original by default*; OCR-vendor review; "possible discrepancy" **no-accusation** language) and **OQ-03** (Counsel — *AI/statement features BLOCKED* pending OCR/vendor cross-border transfer decision). SRS scopes statement import as **V1-OPTIONAL "if dependencies safe"** — and per OQ-03 those dependencies are **not yet safe**, so statements stay gated (§A6).
+**Additive.** This section refines scope on top of §1–§35 above; it **supersedes nothing** and **preserves all prior findings**. Still **documentation only** — no OCR/extraction/taxonomy/tagging/CC/bank import/ML/provider is implemented. Frozen boundaries (FIN-002, E2EE, AI Firewall, REC-1, Goal Engine contract, SEC-KI1) remain intact. **New frozen-doc constraints surfaced this pass** (from SRS v1.0, not modified here): **FUT-004** (V2/FUTURE, MUST — statement/card: _never store CVV/PIN/PAN_; _extract→delete-original by default_; OCR-vendor review; "possible discrepancy" **no-accusation** language) and **OQ-03** (Counsel — _AI/statement features BLOCKED_ pending OCR/vendor cross-border transfer decision). SRS scopes statement import as **V1-OPTIONAL "if dependencies safe"** — and per OQ-03 those dependencies are **not yet safe**, so statements stay gated (§A6).
 
 ## §A1. One pipeline, input-specific adapters (refines §9, §13)
 
@@ -327,18 +327,23 @@ SCANNED PDF ──────► pdf-render adapter (render pages → image ada
 Rationale per family; **the machine-readable matrix is §A8.**
 
 **NOW / V1 (no OCR — reuses existing attachment substrate):**
-- **Grocery · Retail · Restaurant · Fuel · Pharmacy receipts** — *Total-only* (category + amount + attached receipt) is ≈already supported (§3, §12). First-class, zero extraction, zero new financial risk. *Itemized* extraction for these is **NEXT** (needs the OCR spike).
+
+- **Grocery · Retail · Restaurant · Fuel · Pharmacy receipts** — _Total-only_ (category + amount + attached receipt) is ≈already supported (§3, §12). First-class, zero extraction, zero new financial risk. _Itemized_ extraction for these is **NEXT** (needs the OCR spike).
 
 **NEXT (V1.x — needs `DocumentExtractionEngine` + OCR/PDF spike; per-family flag; FIN-002 reconciliation):**
+
 - **Online-shopping invoices · General purchase invoices** — often **text-PDF**, so the `pdf-text` adapter can lead (higher accuracy, no OCR); good first itemized target. **Itemized receipts** (grocery/retail/restaurant/fuel/pharmacy) — image OCR; the reconciliation UX proving ground.
 
 **NEXT-but-GATED (V1.x, BLOCKED by OQ-03 counsel + FUT-004 safeguards — do not start until gates clear):**
+
 - **Credit-card statements** (§A3) · **Bank statements** (§A4). SRS = V1-OPTIONAL "if safe"; dependencies are **not** safe (OQ-03). Never NOW.
 
 **FUTURE:**
+
 - **Utility bills · Subscription invoices · Rent/payment receipts** — mostly structured/text-PDF, valuable for recurring-signal detection, but lower priority than the receipt/invoice core. **Loan/EMI statements · Travel payment documents** — statement-like or heterogeneous; after the statement pipeline matures.
 
 **OUT OF CURRENT SCOPE (FUTURE, higher-risk — explicitly not planned):**
+
 - **Investment/broker statements · Complex financial reports · Tax documents · Legal/financial docs requiring interpretation** — require domain interpretation, carry high misclassification/liability risk, and touch domains SRS marks FUTURE/out. Extraction ≠ interpretation; these need `[COUNSEL]` + a separate product decision before even a readiness pass.
 
 ## §A3. Credit-card statements — first-class family, gated (refines §13)
@@ -386,47 +391,47 @@ reconciliationStatus  ∈ { BALANCED | UNDER_ALLOCATED (Δ>0) | OVER_ALLOCATED (
 
 ## §A7. Taxonomy, global learning, E2EE/search, Goal Engine (unchanged direction — pointers)
 
-- **Taxonomy** (§14–§16): user picks the coarse **main category** (exists today); system *derives* fine-grained canonical tags (`milk→dairy→food→grocery`) as **INFERRED, correctable**; user need not classify every item. Shared/global canonical taxonomy with stable IDs, aliases, hierarchy, lifecycle `OBSERVED→CANDIDATE→CONFIRMED→ACTIVE→(MERGED|DEPRECATED)`; personal preferences a separate layer. Final data model **undecided** `[PRODUCT DECISION REQUIRED]`.
+- **Taxonomy** (§14–§16): user picks the coarse **main category** (exists today); system _derives_ fine-grained canonical tags (`milk→dairy→food→grocery`) as **INFERRED, correctable**; user need not classify every item. Shared/global canonical taxonomy with stable IDs, aliases, hierarchy, lifecycle `OBSERVED→CANDIDATE→CONFIRMED→ACTIVE→(MERGED|DEPRECATED)`; personal preferences a separate layer. Final data model **undecided** `[PRODUCT DECISION REQUIRED]`.
 - **Global learning** (§17): keep **runtime inference / evaluation / aggregate learning / training** strictly separate; private corrections do **not** auto-become training data; all gated on consent + legal basis + anonymization + aggregation + retention + poisoning defense + model versioning/rollback + governance — `[COUNSEL]`, **FUTURE**.
 - **E2EE/search** (§5, §7, §18): tags/merchant-id/category/date/amount/currency are structured metadata that can support server-side filtering **within** the frozen Matrix — **no** decryption of title/description/notes. **New caveat:** a **derived tag can itself be sensitive** (e.g. `pharmacy→contraception`, `medical→oncology`) — derived tags are **not automatically harmless**; each new derived field needs a Matrix classification and may warrant client-only storage `[COUNSEL]`.
 - **Goal Engine** (§20): consumes only **minimized numeric/enum signals** (monthly grocery/food spend, category trend, volatility, recurring signal) — never image/OCR-text/description/merchant-dump/PII. **`GoalEngine` contract preserved unchanged.**
 
 ## §A8. Document-type scope matrix
 
-| Document | Input(s) | Extraction strategy | Scope | User review | Line items | Statement txns |
-|---|---|---|---|---|---|---|
-| Grocery receipt | image (pdf) | Total-only NOW; OCR itemized NEXT | **NOW** (total) / NEXT (items) | Yes | NEXT | — |
-| Retail receipt | image (pdf) | Total-only NOW; OCR itemized NEXT | **NOW** / NEXT | Yes | NEXT | — |
-| Restaurant bill | image | Total-only NOW; OCR itemized NEXT | **NOW** / NEXT | Yes | NEXT | — |
-| Fuel receipt | image | Total-only NOW; OCR itemized NEXT | **NOW** / NEXT | Yes | NEXT (few) | — |
-| Pharmacy bill | image | Total-only NOW; OCR itemized NEXT (sensitive tags) | **NOW** / NEXT | Yes | NEXT | — |
-| Online invoice | text-PDF (image) | pdf-text lead; OCR fallback | **NEXT** | Yes | NEXT | — |
-| General invoice | text-PDF / image | pdf-text / OCR | **NEXT** | Yes | NEXT | — |
-| Credit-card statement | PDF / image | statement extraction (gated) | **NEXT — BLOCKED** (OQ-03, FUT-004) | Yes (confirm-before-import) | — | NEXT |
-| Bank statement | PDF / image | statement extraction + bank normalization (gated) | **NEXT/FUTURE — BLOCKED** | Yes | — | NEXT/FUTURE |
-| Utility bill | text-PDF / image | pdf-text / OCR | **FUTURE** | Yes | Maybe | — |
-| Subscription invoice | text-PDF | pdf-text | **FUTURE** (recurring signal) | Yes | Maybe | — |
-| Rent receipt | image / PDF | OCR / pdf-text | **FUTURE** | Yes | No | — |
-| Loan/EMI statement | PDF | statement-like | **FUTURE** | Yes | — | FUTURE |
-| Travel document | mixed | mixed | **FUTURE** | Yes | Maybe | — |
-| Investment statement | PDF | complex | **OUT OF SCOPE** (FUTURE) | — | — | — |
-| Tax document | PDF | interpretation-heavy | **OUT OF SCOPE** (FUTURE, `[COUNSEL]`) | — | — | — |
+| Document              | Input(s)         | Extraction strategy                                | Scope                                  | User review                 | Line items | Statement txns |
+| --------------------- | ---------------- | -------------------------------------------------- | -------------------------------------- | --------------------------- | ---------- | -------------- |
+| Grocery receipt       | image (pdf)      | Total-only NOW; OCR itemized NEXT                  | **NOW** (total) / NEXT (items)         | Yes                         | NEXT       | —              |
+| Retail receipt        | image (pdf)      | Total-only NOW; OCR itemized NEXT                  | **NOW** / NEXT                         | Yes                         | NEXT       | —              |
+| Restaurant bill       | image            | Total-only NOW; OCR itemized NEXT                  | **NOW** / NEXT                         | Yes                         | NEXT       | —              |
+| Fuel receipt          | image            | Total-only NOW; OCR itemized NEXT                  | **NOW** / NEXT                         | Yes                         | NEXT (few) | —              |
+| Pharmacy bill         | image            | Total-only NOW; OCR itemized NEXT (sensitive tags) | **NOW** / NEXT                         | Yes                         | NEXT       | —              |
+| Online invoice        | text-PDF (image) | pdf-text lead; OCR fallback                        | **NEXT**                               | Yes                         | NEXT       | —              |
+| General invoice       | text-PDF / image | pdf-text / OCR                                     | **NEXT**                               | Yes                         | NEXT       | —              |
+| Credit-card statement | PDF / image      | statement extraction (gated)                       | **NEXT — BLOCKED** (OQ-03, FUT-004)    | Yes (confirm-before-import) | —          | NEXT           |
+| Bank statement        | PDF / image      | statement extraction + bank normalization (gated)  | **NEXT/FUTURE — BLOCKED**              | Yes                         | —          | NEXT/FUTURE    |
+| Utility bill          | text-PDF / image | pdf-text / OCR                                     | **FUTURE**                             | Yes                         | Maybe      | —              |
+| Subscription invoice  | text-PDF         | pdf-text                                           | **FUTURE** (recurring signal)          | Yes                         | Maybe      | —              |
+| Rent receipt          | image / PDF      | OCR / pdf-text                                     | **FUTURE**                             | Yes                         | No         | —              |
+| Loan/EMI statement    | PDF              | statement-like                                     | **FUTURE**                             | Yes                         | —          | FUTURE         |
+| Travel document       | mixed            | mixed                                              | **FUTURE**                             | Yes                         | Maybe      | —              |
+| Investment statement  | PDF              | complex                                            | **OUT OF SCOPE** (FUTURE)              | —                           | —          | —              |
+| Tax document          | PDF              | interpretation-heavy                               | **OUT OF SCOPE** (FUTURE, `[COUNSEL]`) | —                           | —          | —              |
 
 ## §A9. Implementation sequence — refined & repo-checked (refines §26, §34)
 
 Repo check: DOC-1 is near-CURRENT (attachments exist); statement batches must move **after** classification/taxonomy and **behind OQ-03/FUT-004**, so the generic template is adjusted. Sequence (none authorised; each batch flag-gated, default **OFF**):
 
-| Batch | Scope | Depends on | Security gate | Migration | Finance gate | E2EE impl. | AI-Firewall impl. | Prod-verify | User approval |
-|---|---|---|---|---|---|---|---|---|---|
-| **DOC-0** | Freeze extraction+classification **contracts** (docs/ADR) | — | none (docs) | No | n/a | none | none | none | **Yes** (plan) |
-| **DOC-1** | Total-only attach/review foundation | attachments (CURRENT) | IDOR scope | No | green (no writes to totals) | reuses file-key model | none | flag OFF, IDOR test | **Yes** |
-| **DOC-2** | `DocumentExtractionEngine` interface + **no-op stub** | DOC-0 | none (stub) | No | green | none | none | stub returns nothing | **Yes** |
-| **DOC-3** | Extraction **spike**: image-OCR vs text-PDF vs scanned-PDF (on-device class first) | DOC-2 | fail-closed if external | No | green | **bytes stay on-device** (on-device class) | **required if any external** | prove bytes-on-device | **Yes** |
-| **DOC-4** | Receipt **itemized extraction + reconciliation** (§A6) | DOC-3 | write-nothing-until-confirm | **likely** (line-item store or attachment metadata `[PRODUCT]`) | **green, mandatory** | subordinate metadata; item labels classify | per DOC-3 | UP/DOWN/re-apply on disposable PG | **Yes** |
-| **DOC-5** | Classification / taxonomy **foundation** (read model, category-parity reporting) | DOC-4 | Matrix class for each derived field | **likely** (taxonomy tables) | green | derived-tag sensitivity `[COUNSEL]` | none (deterministic) | classification provenance test | **Yes** |
-| **DOC-6** | **Credit-card statement** extract/review | DOC-3/5 + **OQ-03 cleared** + **FUT-004** | no CVV/PIN/PAN; delete-original-default | likely (statement/txn) | **green** (candidate-only) | statement free-text E2EE | **required** (external OCR likely) | dedup + no-secret-store test | **Yes + COUNSEL** |
-| **DOC-7** | **Bank statement** extract/review (bank normalization) | DOC-6 | same as DOC-6 | likely | green | same | required | running-balance recon test | **Yes + COUNSEL** |
-| **DOC-8+** | Other families (utility/subscription/rent/EMI/travel); population learning (FUTURE) | DOC-5/7 + `[COUNSEL]` | consent + governance | likely | green | per family | per source | per family | **Yes + COUNSEL** |
+| Batch      | Scope                                                                               | Depends on                                | Security gate                           | Migration                                                       | Finance gate                | E2EE impl.                                 | AI-Firewall impl.                  | Prod-verify                       | User approval     |
+| ---------- | ----------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- | --------------------------------------------------------------- | --------------------------- | ------------------------------------------ | ---------------------------------- | --------------------------------- | ----------------- |
+| **DOC-0**  | Freeze extraction+classification **contracts** (docs/ADR)                           | —                                         | none (docs)                             | No                                                              | n/a                         | none                                       | none                               | none                              | **Yes** (plan)    |
+| **DOC-1**  | Total-only attach/review foundation                                                 | attachments (CURRENT)                     | IDOR scope                              | No                                                              | green (no writes to totals) | reuses file-key model                      | none                               | flag OFF, IDOR test               | **Yes**           |
+| **DOC-2**  | `DocumentExtractionEngine` interface + **no-op stub**                               | DOC-0                                     | none (stub)                             | No                                                              | green                       | none                                       | none                               | stub returns nothing              | **Yes**           |
+| **DOC-3**  | Extraction **spike**: image-OCR vs text-PDF vs scanned-PDF (on-device class first)  | DOC-2                                     | fail-closed if external                 | No                                                              | green                       | **bytes stay on-device** (on-device class) | **required if any external**       | prove bytes-on-device             | **Yes**           |
+| **DOC-4**  | Receipt **itemized extraction + reconciliation** (§A6)                              | DOC-3                                     | write-nothing-until-confirm             | **likely** (line-item store or attachment metadata `[PRODUCT]`) | **green, mandatory**        | subordinate metadata; item labels classify | per DOC-3                          | UP/DOWN/re-apply on disposable PG | **Yes**           |
+| **DOC-5**  | Classification / taxonomy **foundation** (read model, category-parity reporting)    | DOC-4                                     | Matrix class for each derived field     | **likely** (taxonomy tables)                                    | green                       | derived-tag sensitivity `[COUNSEL]`        | none (deterministic)               | classification provenance test    | **Yes**           |
+| **DOC-6**  | **Credit-card statement** extract/review                                            | DOC-3/5 + **OQ-03 cleared** + **FUT-004** | no CVV/PIN/PAN; delete-original-default | likely (statement/txn)                                          | **green** (candidate-only)  | statement free-text E2EE                   | **required** (external OCR likely) | dedup + no-secret-store test      | **Yes + COUNSEL** |
+| **DOC-7**  | **Bank statement** extract/review (bank normalization)                              | DOC-6                                     | same as DOC-6                           | likely                                                          | green                       | same                                       | required                           | running-balance recon test        | **Yes + COUNSEL** |
+| **DOC-8+** | Other families (utility/subscription/rent/EMI/travel); population learning (FUTURE) | DOC-5/7 + `[COUNSEL]`                     | consent + governance                    | likely                                                          | green                       | per family                                 | per source                         | per family                        | **Yes + COUNSEL** |
 
 Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 until OQ-03 + FUT-004 + AI-Firewall gates are cleared.
 
@@ -442,9 +447,10 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 # ADDENDUM — 2026-08-14 · DOC-0 implemented (contracts + stub only)
 
-**This ADDENDUM records a code change** (the assessment sections §1–§35 and §A1–§A10 above remain read-only analysis; the "Reconciliation" block below describes *those* sections). **DOC-0** — the stable contract + safe stub foundation from §A9 — is now implemented. **No OCR, no provider, no taxonomy, no CC/bank import, no ML, no migration, no package, no external call, no finance write.**
+**This ADDENDUM records a code change** (the assessment sections §1–§35 and §A1–§A10 above remain read-only analysis; the "Reconciliation" block below describes _those_ sections). **DOC-0** — the stable contract + safe stub foundation from §A9 — is now implemented. **No OCR, no provider, no taxonomy, no CC/bank import, no ML, no migration, no package, no external call, no finance write.**
 
 **Contract location (backend):** `backend/src/app/document-intelligence/`
+
 - `engine/document-extraction-engine.types.ts` — `DocumentExtractionEngine` interface, normalized input/result envelope (header · line items · reconciliation · statement transactions), `ExtractedField<T>` with `confidence`/`provenance`/`authority`, `DocumentFamily`/`ExtractionStatus`/`ReconciliationStatus` enums, `capabilities()`, and the `DOCUMENT_EXTRACTION_ENGINE` DI token. `confidence` is documented as extraction certainty, **not** financial correctness.
 - `engine/reconciliation.ts` — pure `computeReconciliation()` (`unallocatedDifference = documentTotal − allocatedTotal`; BALANCED/UNDER_ALLOCATED/OVER_ALLOCATED/UNRECONCILED); **surfaces differences, never corrects them**.
 - `engine/stub-document-extraction-engine.ts` — safe stub: validates image/PDF input → returns explicit `invalid_input` / `unsupported_document`; **fabricates no values**, calls no OCR/AI/network, no finance write.
@@ -463,6 +469,7 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 **DOC-1 COMPLETE.** Establishes the safe user-workflow boundary around the **existing** attachment infrastructure — **before** any real extraction. **OCR NOT IMPLEMENTED · PDF extraction NOT IMPLEMENTED · taxonomy NOT IMPLEMENTED · CC/bank statement import NOT IMPLEMENTED · no ML/training · no provider · no package · no migration.**
 
 **What DOC-1 adds (backend `backend/src/app/document-intelligence/intake/`):**
+
 - `document-processing-mode.ts` — `DocumentProcessingMode` enum (`TOTAL_ONLY` | `ITEMIZED`); a **request-level** choice (no persisted column → no migration).
 - `document-intake.service.ts` — owner-scoped `process(userId, attachmentId, mode)`. **TOTAL_ONLY** → no extraction (caller uses the normal expense flow). **ITEMIZED** → invokes the DOC-0 `DOCUMENT_EXTRACTION_ENGINE` with a **minimized** input (`buildExtractionInput`: opaque `documentRef` + `sourceType`/`mimeType`/`sizeBytes` only — never `encryptedFileKey`/`encryptedOriginalName`/`storageKey`/keys/PII) → stub returns explicit `unsupported_document`. `resolveSourceType` maps mime → image/pdf/unknown. IDOR-safe: non-uploader → 404.
 - `document-intake.controller.ts` — `POST /document-intelligence/attachments/:attachmentId/process`, `JwtAuthGuard` + throttled + flag-gated.
@@ -471,7 +478,7 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 - `feature-flags.constants.ts` — additive `document.intelligence` flag (`FEATURE_DOCUMENT_INTELLIGENCE`, default false).
 - `openapi.yaml` — additive path for the **implemented** endpoint only.
 
-**Frontend (minimal, self-contained — `frontend/src/app/features/documents/`):** `DocumentIntelligenceApiService` (POSTs mode only) + `DocumentModeSelectorComponent` (Total-only / Extract-items chooser that shows an explicit *"item extraction isn't available yet"* notice for ITEMIZED — never fake success). **Not wired into the finance-critical create-expense modal** — that integration is deferred to DOC-2 (when extraction is real) to avoid touching finance UX now.
+**Frontend (minimal, self-contained — `frontend/src/app/features/documents/`):** `DocumentIntelligenceApiService` (POSTs mode only) + `DocumentModeSelectorComponent` (Total-only / Extract-items chooser that shows an explicit _"item extraction isn't available yet"_ notice for ITEMIZED — never fake success). **Not wired into the finance-critical create-expense modal** — that integration is deferred to DOC-2 (when extraction is real) to avoid touching finance UX now.
 
 **Boundaries preserved:** FIN-002 (no finance write; golden gate green); E2EE (no server-side decryption; minimized input carries no keys); AI Firewall (no external/OCR call); Goal Engine + SEC-KI1 untouched. **No migration** (mode is request-level; existing attachment storage suffices). Frozen **SRS/Decision-Ledger/ADR/Matrix unmodified**. **Verification:** backend 63 suites/719 tests, frontend 63 suites/524 tests, both builds pass, lint 0.
 
@@ -510,6 +517,7 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 **Why frontend-only:** DOC-3 established the server cannot extract E2EE attachment content (no plaintext); the review layer consumes a `DocumentExtractionResult` and PDF-text extraction runs **client-side** (pdfjs, code-split, in-browser). No new backend endpoint or migration was required (candidates are edited client-side; only an explicit confirm hands a draft to the existing expense flow), so none was added.
 
 **Added (`frontend/src/app/features/documents/`):**
+
 - `document-review.model.ts` — editable review model (fields carry `authority`: EXTRACTED→USER_CORRECTED on edit→USER_CONFIRMED on confirm), `ConfirmedDocumentDraft`.
 - `services/document-review.service.ts` — pure: `fromExtractionResult`, edit/add/delete (raise authority), `reconcile` (BALANCED/UNDER/OVER/UNRECONCILED; **never invents an item, never silently changes the document total**), explicit `confirm()` → draft.
 - `services/document-extraction-client.service.ts` + `receipt-text-parser.ts` — client PDF-text extraction (pluggable pdfjs loader; images honestly `provider_unavailable` — no pretend OCR).
@@ -525,9 +533,10 @@ Do not skip DOC-0. **Stop and re-review after DOC-5**; do not begin DOC-6/7 unti
 
 **DOC-5 COMPLETE.** A deterministic classification foundation over a **single shared canonical taxonomy**, integrated into the DOC-4 review as advisory tags. **No migration, no persistence, no ML/training, no population learning, no cloud/AI, no package, no CC/bank/DOC-6/7 work, no OCR/rasterizer work.**
 
-**Migration decision — NOT required (documented):** the canonical taxonomy is a **bounded code seed** (common to all users by construction — no per-user duplicate, no uncontrolled auto-creation, no taxonomy explosion, stable ids, no destructive renames). Classification is **advisory metadata computed on-the-fly**; user corrections live in the **client review model** (authority transitions). None of this needs a table. **A future migration IS required only to persist** expense↔tag links, per-user tag preferences/corrections, and dynamic tag *proposals* (candidate→reviewed→active→deprecated lifecycle) — **deferred and reported, not created** (see "Deferred persistence" below). Per the batch rule, no migration was silently created.
+**Migration decision — NOT required (documented):** the canonical taxonomy is a **bounded code seed** (common to all users by construction — no per-user duplicate, no uncontrolled auto-creation, no taxonomy explosion, stable ids, no destructive renames). Classification is **advisory metadata computed on-the-fly**; user corrections live in the **client review model** (authority transitions). None of this needs a table. **A future migration IS required only to persist** expense↔tag links, per-user tag preferences/corrections, and dynamic tag _proposals_ (candidate→reviewed→active→deprecated lifecycle) — **deferred and reported, not created** (see "Deferred persistence" below). Per the batch rule, no migration was silently created.
 
 **Single shared taxonomy (`@finmate/data-models`, both BE + FE consume it):**
+
 - `taxonomy/canonical-taxonomy.ts` — `CanonicalTag {id, canonicalName, normalizedKey, aliases, parentId?, status(candidate|reviewed|active|deprecated), version}` + a bounded `CANONICAL_TAXONOMY` seed (food>grocery>dairy>milk…, transport>vehicle>fuel, household>cleaning>detergent, dining>restaurant, utilities). **No medical/pharmacy/health/sensitive categories** (surfaced decision).
 - `taxonomy/classify.ts` — `normalizeTagKey`, `classifyLabel(label, category?)`: deterministic, alias-aware, ancestor-expanding (milk→dairy→grocery→food), deduped, **only active seed tags** (bounded), `[]` when nothing matches. Output is INFERRED, source `rule_based`, `confidence` = match certainty (**never financial correctness**).
 
@@ -583,6 +592,7 @@ Small non-gated hardening of the existing offline image-OCR path — **no new pa
 **Pipeline (all client-side up to the existing finance flow):** image bytes → browser Tesseract WASM → OCR text → `parseReceiptText` → DOC-5 `classifyLabel` advisory tags → DOC-4 review (edit items/tags, reconciliation, explicit confirm) → `ConfirmedDocumentDraft` → **additive** expense-modal pre-fill → existing finance/E2EE logic (user still submits).
 
 **Implemented (frontend):**
+
 - `services/browser-ocr.service.ts` — `BrowserOcrService`: lazy `import('tesseract.js')` (code-split), `createWorker('eng', LSTM_ONLY, { workerPath, corePath, langPath })` all **same-origin `/assets`**, `gzip:false`, `cacheMethod:'none'`, **no logger**. The jsdelivr CDN fallback is unreachable (paths are always set local); a missing/failed asset **fails closed** (throws → `provider_unavailable`), never a network fetch. Loader is injectable for tests.
 - `services/document-extraction-client.service.ts` — the image branch now calls local OCR (was `provider_unavailable`): `ok`/`partial_extraction` with header+items, `no_text_detected` on empty, `provider_unavailable` on failure. Injectable `useOcr()` seam; the service holds **no HttpClient** — receipt bytes never go to the backend.
 - `frontend/project.json` — build `assets` copy tesseract worker (`tesseract.js/dist/worker.min.js`), core WASM+loaders (`tesseract.js-core/*.wasm`, `*.wasm.js`) and the **single committed** `eng.traineddata` (from `backend/src/assets/tessdata`) to `/assets/tesseract` + `/assets/tessdata` (same-origin, **no CDN**, no duplicate binary in git).
@@ -608,6 +618,7 @@ Small non-gated hardening of the existing offline image-OCR path — **no new pa
 **Flow:** modal "Scan a receipt" (create-mode + flag only) → `ReceiptCaptureComponent` overlay → mode select → **TOTAL_ONLY: no extraction** (keep normal flow, existing E2EE attachment) / **EXTRACT_ITEMS**: pick file → browser-local extraction (`DocumentExtractionClientService`: image = DOC-3E Tesseract WASM, text PDF = pdfjs, scanned PDF = `provider_unavailable`) → DOC-4 `DocumentReviewComponent` (edit items, correct tags, reconciliation, **explicit confirm**) → `ConfirmedDocumentDraft` → `mapDraftToExpensePrefill` (header fields only) → modal `applyPrefill` → user **explicitly submits** through the existing finance/E2EE path.
 
 **Implemented (frontend, additive):**
+
 - `receipt-capture.component.ts/.html` — embeddable orchestrator; reuses the mode selector, extraction client, and review component; emits `confirmed`/`totalOnly`/`cancelled`; performs no upload, no finance mutation; extraction runs on the picked file's bytes **in the browser** (no keys/plaintext to backend).
 - `create-expense-modal.component.ts/.html` — **additive** flag-gated "Scan a receipt" button (create-mode only) + overlay + handlers (`onReceiptConfirmed` maps draft → existing `applyPrefill`). Finance logic (payer/split/refund/settlement/duplicate/encryption) **unchanged**; edit mode ignores it.
 - `environments/environment.ts` + `environment.prod.ts` — additive `documentIntelligence` flag, **default OFF** in both (mirrors the backend `document.intelligence`); when OFF the entry point is hidden (no active workflow). Not enabled in production.
@@ -633,6 +644,6 @@ Small non-gated hardening of the existing offline image-OCR path — **no new pa
 - ✅ **No provider selected** — repo/frozen docs mandate none; none chosen here.
 - ✅ **2026-08-14 addendum is additive** — the "Scope refinement" section (§A1–§A10) refines scope on top of §1–§35 and **supersedes no prior finding**. It surfaces (does not modify) SRS constraints **FUT-004** and **OQ-03**; SRS v1.0 remains FROZEN and untouched.
 
-**One-line status:** *Readiness assessment only — substrate exists (attachments, tabular import, category-based reporting, E2EE-safe dedup, replaceable-engine + FIN-002 precedents); intelligence does not. One pipeline with input-specific adapters (image/text-PDF/scanned-PDF) → one normalized contract; receipts NOW (total-only) / NEXT (itemized); CC+bank statements NEXT-but-BLOCKED (OQ-03+FUT-004); investment/tax/legal OUT. Freeze the two engine contracts; implement nothing until the per-batch gates clear.*
+**One-line status:** _Readiness assessment only — substrate exists (attachments, tabular import, category-based reporting, E2EE-safe dedup, replaceable-engine + FIN-002 precedents); intelligence does not. One pipeline with input-specific adapters (image/text-PDF/scanned-PDF) → one normalized contract; receipts NOW (total-only) / NEXT (itemized); CC+bank statements NEXT-but-BLOCKED (OQ-03+FUT-004); investment/tax/legal OUT. Freeze the two engine contracts; implement nothing until the per-batch gates clear._
 
-*End of assessment. Authorises no code, schema, migration, API, model, training, provider, or SRS change.*
+_End of assessment. Authorises no code, schema, migration, API, model, training, provider, or SRS change._

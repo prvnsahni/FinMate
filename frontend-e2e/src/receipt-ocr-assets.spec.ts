@@ -18,10 +18,14 @@ import { test, expect } from '@playwright/test';
  * runs under the standard `frontend-e2e` Playwright harness (BASE_URL served app).
  */
 
-const OCR_CDN_HOSTS = /jsdelivr\.net|unpkg\.com|cdn\.|tessdata|githubusercontent\.com/i;
+const OCR_CDN_HOSTS =
+  /jsdelivr\.net|unpkg\.com|cdn\.|tessdata|githubusercontent\.com/i;
 
 test.describe('DOC-3F local OCR asset guardrails', () => {
-  test('Tesseract worker, core WASM, and eng.traineddata are served same-origin', async ({ request, baseURL }) => {
+  test('Tesseract worker, core WASM, and eng.traineddata are served same-origin', async ({
+    request,
+    baseURL,
+  }) => {
     for (const path of [
       '/assets/tesseract/worker.min.js',
       '/assets/tesseract/tesseract-core-lstm.wasm',
@@ -32,7 +36,9 @@ test.describe('DOC-3F local OCR asset guardrails', () => {
     }
   });
 
-  test('loading the app makes NO request to an external OCR/CDN host', async ({ page }) => {
+  test('loading the app makes NO request to an external OCR/CDN host', async ({
+    page,
+  }) => {
     const external: string[] = [];
     page.on('request', (req) => {
       if (OCR_CDN_HOSTS.test(req.url())) external.push(req.url());
@@ -40,6 +46,9 @@ test.describe('DOC-3F local OCR asset guardrails', () => {
     await page.goto('/');
     // tesseract.js is code-split and only imported during an actual OCR run — a plain app
     // load must pull NOTHING from an external OCR/CDN host.
-    expect(external, `no OCR/CDN requests expected, saw: ${external.join(', ')}`).toEqual([]);
+    expect(
+      external,
+      `no OCR/CDN requests expected, saw: ${external.join(', ')}`,
+    ).toEqual([]);
   });
 });

@@ -49,7 +49,8 @@ export const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagDef> = {
   'enc.p2pNoteE2EE': {
     envKey: 'FEATURE_ENC_P2P_NOTE_E2EE',
     default: false,
-    description: 'BATCH-08 P2P note E2EE (write encrypted); readers stay mixed-state',
+    description:
+      'BATCH-08 P2P note E2EE (write encrypted); readers stay mixed-state',
   },
   'enc.settlementNoteE2EE': {
     envKey: 'FEATURE_ENC_SETTLEMENT_NOTE_E2EE',
@@ -99,12 +100,14 @@ export const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagDef> = {
   'document.intelligence': {
     envKey: 'FEATURE_DOCUMENT_INTELLIGENCE',
     default: false,
-    description: 'DOC-1 document intake (total-only/itemized boundary); itemized extraction not implemented',
+    description:
+      'DOC-1 document intake (total-only/itemized boundary); itemized extraction not implemented',
   },
   'public.groupShare': {
     envKey: 'FEATURE_PUBLIC_GROUP_SHARE',
     default: false,
-    description: 'PUBLIC-1 anonymous read-only group ledger projection (default OFF)',
+    description:
+      'PUBLIC-1 anonymous read-only group ledger projection (default OFF)',
   },
 };
 

@@ -1,5 +1,8 @@
 import { DocumentIntakeController } from './document-intake.controller';
-import { DocumentIntakeService, DocumentIntakeResult } from './document-intake.service';
+import {
+  DocumentIntakeService,
+  DocumentIntakeResult,
+} from './document-intake.service';
 import { DocumentProcessingMode } from './document-processing-mode';
 import { RequestWithUser } from '../../common/interfaces/request-with-user.interface';
 

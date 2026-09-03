@@ -4,7 +4,9 @@ import { FeatureFlagsService } from '../../platform/feature-flags.service';
 
 describe('DocumentIntelligenceEnabledGuard', () => {
   const guardWith = (enabled: boolean) => {
-    const flags = { isEnabled: jest.fn().mockReturnValue(enabled) } as unknown as FeatureFlagsService;
+    const flags = {
+      isEnabled: jest.fn().mockReturnValue(enabled),
+    } as unknown as FeatureFlagsService;
     return { guard: new DocumentIntelligenceEnabledGuard(flags), flags };
   };
 

@@ -3,7 +3,9 @@ import { GoalProjectionInput } from './goal-engine.types';
 
 const engine = new DeterministicGoalEngine();
 
-const input = (over: Partial<GoalProjectionInput> = {}): GoalProjectionInput => ({
+const input = (
+  over: Partial<GoalProjectionInput> = {},
+): GoalProjectionInput => ({
   goal: {
     id: 'g1',
     currency: 'USD',
@@ -18,13 +20,33 @@ const input = (over: Partial<GoalProjectionInput> = {}): GoalProjectionInput => 
 
 describe('DeterministicGoalEngine (Goal Engine V1)', () => {
   it('invalid_goal when target amount is not positive', () => {
-    const r = engine.project(input({ goal: { id: 'g', currency: 'USD', targetAmount: 0, savedAmount: 0, status: 'active' } }));
+    const r = engine.project(
+      input({
+        goal: {
+          id: 'g',
+          currency: 'USD',
+          targetAmount: 0,
+          savedAmount: 0,
+          status: 'active',
+        },
+      }),
+    );
     expect(r.status).toBe('invalid_goal');
     expect(r.projection).toBeUndefined();
   });
 
   it('already reached → ok, on track, completion today', () => {
-    const r = engine.project(input({ goal: { id: 'g', currency: 'USD', targetAmount: 500, savedAmount: 500, status: 'active' } }));
+    const r = engine.project(
+      input({
+        goal: {
+          id: 'g',
+          currency: 'USD',
+          targetAmount: 500,
+          savedAmount: 500,
+          status: 'active',
+        },
+      }),
+    );
     expect(r.status).toBe('ok');
     expect(r.projection?.onTrack).toBe(true);
     expect(r.projection?.projectedCompletionDate).toBe('2026-01-01');
@@ -37,7 +59,18 @@ describe('DeterministicGoalEngine (Goal Engine V1)', () => {
   });
 
   it('insufficient_data still surfaces requiredMonthlyContribution when a target date exists', () => {
-    const r = engine.project(input({ goal: { id: 'g', currency: 'USD', targetAmount: 1200, savedAmount: 0, status: 'active', targetDate: '2027-01-01' } }));
+    const r = engine.project(
+      input({
+        goal: {
+          id: 'g',
+          currency: 'USD',
+          targetAmount: 1200,
+          savedAmount: 0,
+          status: 'active',
+          targetDate: '2027-01-01',
+        },
+      }),
+    );
     expect(r.status).toBe('insufficient_data');
     expect(r.projection?.requiredMonthlyContribution).toBe(100); // 1200 / 12 months
   });
@@ -50,13 +83,37 @@ describe('DeterministicGoalEngine (Goal Engine V1)', () => {
   });
 
   it('on track when the projection meets the target date', () => {
-    const r = engine.project(input({ assumedMonthlyContribution: 100, goal: { id: 'g', currency: 'USD', targetAmount: 1000, savedAmount: 0, status: 'active', targetDate: '2027-01-01' } }));
+    const r = engine.project(
+      input({
+        assumedMonthlyContribution: 100,
+        goal: {
+          id: 'g',
+          currency: 'USD',
+          targetAmount: 1000,
+          savedAmount: 0,
+          status: 'active',
+          targetDate: '2027-01-01',
+        },
+      }),
+    );
     expect(r.projection?.onTrack).toBe(true);
     expect(r.projection?.projectedShortfall).toBeUndefined();
   });
 
   it('off track → computes required contribution and shortfall', () => {
-    const r = engine.project(input({ assumedMonthlyContribution: 100, goal: { id: 'g', currency: 'USD', targetAmount: 1200, savedAmount: 0, status: 'active', targetDate: '2026-06-01' } }));
+    const r = engine.project(
+      input({
+        assumedMonthlyContribution: 100,
+        goal: {
+          id: 'g',
+          currency: 'USD',
+          targetAmount: 1200,
+          savedAmount: 0,
+          status: 'active',
+          targetDate: '2026-06-01',
+        },
+      }),
+    );
     expect(r.projection?.onTrack).toBe(false);
     expect(r.projection?.requiredMonthlyContribution).toBe(240); // 1200 / 5 months
     expect(r.projection?.projectedShortfall).toBe(700); // 1200 - 100*5
@@ -80,7 +137,13 @@ describe('DeterministicGoalEngine (Goal Engine V1)', () => {
     expect(r.explanation.method).toBe('deterministic');
     expect(r.explanation.disclaimers.length).toBeGreaterThan(0);
     const text = JSON.stringify(r).toLowerCase();
-    for (const banned of ['fail', 'ai predicts', 'you should buy', 'invest', 'shame']) {
+    for (const banned of [
+      'fail',
+      'ai predicts',
+      'you should buy',
+      'invest',
+      'shame',
+    ]) {
       expect(text).not.toContain(banned);
     }
   });

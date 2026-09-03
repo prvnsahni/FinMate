@@ -19,10 +19,17 @@ describe('BrowserOcrService (DOC-3E, browser-local)', () => {
   });
 
   /** A fake worker that records the options it was created with. */
-  function fakeTesseract(text: string, opts: { records: Record<string, unknown>[] }): TesseractLike {
+  function fakeTesseract(
+    text: string,
+    opts: { records: Record<string, unknown>[] },
+  ): TesseractLike {
     return {
       OEM: { LSTM_ONLY: 1 },
-      createWorker: async (_lang: string, _oem: number, options: Record<string, unknown>) => {
+      createWorker: async (
+        _lang: string,
+        _oem: number,
+        options: Record<string, unknown>,
+      ) => {
         opts.records.push(options);
         const worker: TesseractWorkerLike = {
           recognize: async () => ({ data: { text } }),
@@ -35,9 +42,14 @@ describe('BrowserOcrService (DOC-3E, browser-local)', () => {
 
   it('configures LOCAL worker/core/lang paths — never a CDN/http URL — and returns trimmed text', async () => {
     const records: Record<string, unknown>[] = [];
-    service.useTesseractLoader(async () => fakeTesseract('  Milk 120\nTOTAL 120  ', { records }));
+    service.useTesseractLoader(async () =>
+      fakeTesseract('  Milk 120\nTOTAL 120  ', { records }),
+    );
 
-    const text = await service.recognize(Uint8Array.from([255, 216, 255]), 'image/jpeg');
+    const text = await service.recognize(
+      Uint8Array.from([255, 216, 255]),
+      'image/jpeg',
+    );
 
     expect(text).toBe('Milk 120\nTOTAL 120');
     expect(records).toHaveLength(1);
@@ -56,7 +68,9 @@ describe('BrowserOcrService (DOC-3E, browser-local)', () => {
     service.useTesseractLoader(async () => {
       throw new Error('assets missing');
     });
-    await expect(service.recognize(Uint8Array.from([1, 2, 3]), 'image/png')).rejects.toThrow();
+    await expect(
+      service.recognize(Uint8Array.from([1, 2, 3]), 'image/png'),
+    ).rejects.toThrow();
   });
 
   it('does not log document content, bytes, or keys', async () => {
@@ -67,7 +81,9 @@ describe('BrowserOcrService (DOC-3E, browser-local)', () => {
       jest.spyOn(console, 'warn').mockImplementation(() => undefined),
       jest.spyOn(console, 'error').mockImplementation(() => undefined),
     ];
-    service.useTesseractLoader(async () => fakeTesseract('secret receipt text', { records: [] }));
+    service.useTesseractLoader(async () =>
+      fakeTesseract('secret receipt text', { records: [] }),
+    );
     await service.recognize(Uint8Array.from([9, 9, 9]), 'image/jpeg');
     for (const s of spies) expect(s).not.toHaveBeenCalled();
   });

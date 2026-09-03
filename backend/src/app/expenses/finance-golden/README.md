@@ -16,13 +16,13 @@ regression gate.
 It exercises the **real production calculation code** (never a reinvented
 calculator) against **independently hand-computed** golden expectations:
 
-| Area | Real code under test | File |
-|---|---|---|
-| Splits (equal / fixed / percent / share, multi-payer remainder, rounding) | `calculateDeterministicSplits` (`@finmate/utils` via `../split-calculator.util`) | `split-parity.spec.ts` |
-| Refunds (partial / full / composed; `signedAmount` negation) | `calculateDeterministicSplits` + documented sign rule | `refund-parity.spec.ts` |
-| Settlements, People/P2P netting, multi-currency (no FX) | `simplifyLedgerDebts` (`@finmate/data-models` via `../../common/ledger-debt-simplifier`) | `settlement-parity.spec.ts` |
-| Household month-lock (FIN-013) | `ExpenseEditPolicyService` (injected clock) | `month-lock-parity.spec.ts` |
-| Spectator exclusion (FIN-014) | participant-driven `calculateDeterministicSplits` invariant (service enforces `EXP_SPECTATOR_SPLIT`) | `spectator-invariant.spec.ts` |
+| Area                                                                      | Real code under test                                                                                 | File                          |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Splits (equal / fixed / percent / share, multi-payer remainder, rounding) | `calculateDeterministicSplits` (`@finmate/utils` via `../split-calculator.util`)                     | `split-parity.spec.ts`        |
+| Refunds (partial / full / composed; `signedAmount` negation)              | `calculateDeterministicSplits` + documented sign rule                                                | `refund-parity.spec.ts`       |
+| Settlements, People/P2P netting, multi-currency (no FX)                   | `simplifyLedgerDebts` (`@finmate/data-models` via `../../common/ledger-debt-simplifier`)             | `settlement-parity.spec.ts`   |
+| Household month-lock (FIN-013)                                            | `ExpenseEditPolicyService` (injected clock)                                                          | `month-lock-parity.spec.ts`   |
+| Spectator exclusion (FIN-014)                                             | participant-driven `calculateDeterministicSplits` invariant (service enforces `EXP_SPECTATOR_SPLIT`) | `spectator-invariant.spec.ts` |
 
 Fixtures live in `golden-fixtures.ts`.
 

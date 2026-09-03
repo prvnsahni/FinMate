@@ -235,8 +235,14 @@ describe('DashboardComponent', () => {
     });
 
     it('drops a stale my-expenses response so it cannot overwrite a newer one (GOAL 4)', () => {
-      const older = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
-      const newer = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      const older = new Subject<{
+        data: unknown[];
+        meta: { totalItems: number };
+      }>();
+      const newer = new Subject<{
+        data: unknown[];
+        meta: { totalItems: number };
+      }>();
       mockExpensesService.getMyExpenses
         .mockReturnValueOnce(older.asObservable())
         .mockReturnValueOnce(newer.asObservable());
@@ -249,7 +255,9 @@ describe('DashboardComponent', () => {
         meta: { totalItems: 1 },
       });
       newer.complete();
-      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual(['new-1']);
+      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual([
+        'new-1',
+      ]);
 
       // Older (stale) arrives later — must be ignored.
       older.next({
@@ -257,7 +265,9 @@ describe('DashboardComponent', () => {
         meta: { totalItems: 1 },
       });
       older.complete();
-      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual(['new-1']);
+      expect(component.myExpenses.map((e: { id: string }) => e.id)).toEqual([
+        'new-1',
+      ]);
     });
 
     it('appends the next page and advances the page cursor on loadMore', () => {

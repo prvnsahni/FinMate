@@ -45,7 +45,10 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
   readonly contractVersion = DOCUMENT_EXTRACTION_CONTRACT_VERSION;
 
   constructor(
-    private readonly adapters: Record<AdapterKind, ExtractionAdapter> = defaultLocalAdapters(),
+    private readonly adapters: Record<
+      AdapterKind,
+      ExtractionAdapter
+    > = defaultLocalAdapters(),
   ) {}
 
   capabilities(): DocumentExtractionCapabilities {
@@ -68,7 +71,9 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
    * cannot resolve E2EE plaintext here, so no extraction is performed and nothing is
    * decrypted. Use `extractFromContent` with explicitly-supplied bytes for the spike.
    */
-  async extract(input: DocumentExtractionInput): Promise<DocumentExtractionResult> {
+  async extract(
+    input: DocumentExtractionInput,
+  ): Promise<DocumentExtractionResult> {
     return this.envelope(
       ACCEPTED_INPUT.includes(input?.sourceType) ? input.sourceType : 'unknown',
       'invalid_input',
@@ -106,9 +111,13 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
       signals,
     );
     if (kind === 'none') {
-      return this.envelope(detectSourceType(content.mimeType), 'unsupported_document', {
-        warnings: ['No extraction adapter matches this input.'],
-      });
+      return this.envelope(
+        detectSourceType(content.mimeType),
+        'unsupported_document',
+        {
+          warnings: ['No extraction adapter matches this input.'],
+        },
+      );
     }
 
     const out = await this.adapters[kind].extract(content);
@@ -116,7 +125,10 @@ export class LocalDocumentExtractionEngine implements DocumentExtractionEngine {
     const total = out.header?.total?.value;
     const reconciliation =
       typeof total === 'number' && out.lineItems && out.lineItems.length > 0
-        ? computeReconciliation(total, out.lineItems.map((li) => li.lineTotal?.value))
+        ? computeReconciliation(
+            total,
+            out.lineItems.map((li) => li.lineTotal?.value),
+          )
         : undefined;
 
     return {

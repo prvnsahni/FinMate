@@ -2,11 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
-import {
-  Expense,
-  GroupMember,
-  PublicShare,
-} from '@finmate/data-models';
+import { Expense, GroupMember, PublicShare } from '@finmate/data-models';
 import { FeatureFlagsService } from '../platform/feature-flags.service';
 import { SettlementsService } from '../settlements/settlements.service';
 import {
@@ -72,7 +68,12 @@ export class PublicProjectionService {
       where: { tokenHash },
       relations: ['group', 'createdByUser'],
     });
-    if (!share || !this.isShareUsable(share) || !share.group || !share.createdByUser) {
+    if (
+      !share ||
+      !this.isShareUsable(share) ||
+      !share.group ||
+      !share.createdByUser
+    ) {
       this.unavailable();
     }
     const group = share!.group;
@@ -100,19 +101,23 @@ export class PublicProjectionService {
       this.unavailable();
     }
 
-    const { labelByMemberId, memberIdByUserId } =
-      await this.buildPseudonyms(group.id);
+    const { labelByMemberId, memberIdByUserId } = await this.buildPseudonyms(
+      group.id,
+    );
 
-    const entries = await this.buildEntries(group.id, labelByMemberId, memberIdByUserId);
+    const entries = await this.buildEntries(
+      group.id,
+      labelByMemberId,
+      memberIdByUserId,
+    );
 
-    const balanceSummary: PublicBalanceSummaryDto[] = overall!.suggestedSettlements.map(
-      (s) => ({
+    const balanceSummary: PublicBalanceSummaryDto[] =
+      overall!.suggestedSettlements.map((s) => ({
         fromLabel: labelByMemberId.get(s.fromGroupMemberId) ?? 'Member',
         toLabel: labelByMemberId.get(s.toGroupMemberId) ?? 'Member',
         amount: s.amount,
         currency: s.currency,
-      }),
-    );
+      }));
 
     return {
       groupName: group.name,
@@ -138,8 +143,12 @@ export class PublicProjectionService {
       relations: ['user'],
     });
     members.sort((a, b) => {
-      const ta = a.joinedAt ? new Date(a.joinedAt).getTime() : Number.MAX_SAFE_INTEGER;
-      const tb = b.joinedAt ? new Date(b.joinedAt).getTime() : Number.MAX_SAFE_INTEGER;
+      const ta = a.joinedAt
+        ? new Date(a.joinedAt).getTime()
+        : Number.MAX_SAFE_INTEGER;
+      const tb = b.joinedAt
+        ? new Date(b.joinedAt).getTime()
+        : Number.MAX_SAFE_INTEGER;
       return ta - tb || a.id.localeCompare(b.id);
     });
     const labelByMemberId = new Map<string, string>();

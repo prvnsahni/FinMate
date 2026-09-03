@@ -24,11 +24,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Any outbound HTTP(S) — including node-fetch, which tesseract.js uses in Node — must
 // throw. If OCR still succeeds, it proves no network was contacted.
 let networkAttempts = 0;
-const boom = (what) => (...args) => {
-  networkAttempts += 1;
-  const url = typeof args[0] === 'string' ? args[0] : (args[0]?.href ?? args[0]?.hostname ?? '?');
-  throw new Error(`NETWORK BLOCKED (${what}) → ${url}`);
-};
+const boom =
+  (what) =>
+  (...args) => {
+    networkAttempts += 1;
+    const url =
+      typeof args[0] === 'string'
+        ? args[0]
+        : (args[0]?.href ?? args[0]?.hostname ?? '?');
+    throw new Error(`NETWORK BLOCKED (${what}) → ${url}`);
+  };
 http.request = boom('http.request');
 http.get = boom('http.get');
 https.request = boom('https.request');
@@ -43,9 +48,9 @@ const FONT = {
   O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
   A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
   L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-  '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
-  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
-  '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+  0: ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+  1: ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  2: ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
   ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
 };
 const TEXT = 'TOTAL 120';
@@ -63,7 +68,9 @@ const height = MARGIN * 2 + GLYPH_H * SCALE;
 const pixel = (r, g, b) => [b, g, r]; // BMP stores BGR
 const white = pixel(255, 255, 255);
 const black = pixel(0, 0, 0);
-const rows = Array.from({ length: height }, () => Array.from({ length: width }, () => white));
+const rows = Array.from({ length: height }, () =>
+  Array.from({ length: width }, () => white),
+);
 
 let penX = MARGIN;
 for (const ch of TEXT) {
@@ -117,7 +124,9 @@ if (!existsSync(resolve(tessdataDir, 'eng.traineddata'))) {
 }
 
 const { createWorker, OEM } = await import('tesseract.js');
-console.log(`[smoke] image ${width}×${height} BMP; langPath=${tessdataDir}; network=BLOCKED`);
+console.log(
+  `[smoke] image ${width}×${height} BMP; langPath=${tessdataDir}; network=BLOCKED`,
+);
 const t0 = Date.now();
 const worker = await createWorker('eng', OEM.LSTM_ONLY, {
   langPath: tessdataDir,
@@ -127,11 +136,15 @@ const worker = await createWorker('eng', OEM.LSTM_ONLY, {
 try {
   const { data } = await worker.recognize(buf);
   const text = (data?.text ?? '').trim();
-  console.log(`[smoke] OCR completed in ${Date.now() - t0} ms with ${networkAttempts} network attempts (must be 0).`);
+  console.log(
+    `[smoke] OCR completed in ${Date.now() - t0} ms with ${networkAttempts} network attempts (must be 0).`,
+  );
   console.log('[smoke] recognized text:', JSON.stringify(text));
   const digitsOk = text.replace(/\s+/g, '').includes('120');
   console.log(`[smoke] contains "120": ${digitsOk}`);
-  console.log(`[smoke] RESULT: offline pipeline ${networkAttempts === 0 ? 'PROVEN (no network)' : 'FAILED (network used)'}`);
+  console.log(
+    `[smoke] RESULT: offline pipeline ${networkAttempts === 0 ? 'PROVEN (no network)' : 'FAILED (network used)'}`,
+  );
 } finally {
   await worker.terminate();
 }

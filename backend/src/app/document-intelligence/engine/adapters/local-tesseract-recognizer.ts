@@ -62,7 +62,9 @@ export function engLangDataAvailable(): boolean {
 
 /** Local-only tesseract.js OCR recognizer. */
 export class LocalTesseractRecognizer implements OcrRecognizer {
-  constructor(private readonly tessdataDir: string | null = resolveTessdataDir()) {}
+  constructor(
+    private readonly tessdataDir: string | null = resolveTessdataDir(),
+  ) {}
 
   /**
    * Recognize text from image bytes using the local model. Never performs a network
@@ -75,7 +77,9 @@ export class LocalTesseractRecognizer implements OcrRecognizer {
     const dir = this.tessdataDir;
     if (!dir) {
       // Defense-in-depth: never fall through to a network fetch.
-      throw new Error('Local OCR language data (eng.traineddata) not found; refusing a network fetch.');
+      throw new Error(
+        'Local OCR language data (eng.traineddata) not found; refusing a network fetch.',
+      );
     }
 
     // Lazy import: tesseract.js stays out of the module graph unless OCR actually runs.

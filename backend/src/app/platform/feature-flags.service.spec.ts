@@ -23,9 +23,7 @@ describe('FeatureFlagsService (W-PLAT-01)', () => {
   });
 
   it('an env override can force a flag OFF', () => {
-    const svc = new FeatureFlagsService(
-      configWith({ FEATURE_GOALS: 'false' }),
-    );
+    const svc = new FeatureFlagsService(configWith({ FEATURE_GOALS: 'false' }));
     expect(svc.isEnabled('feature.goals')).toBe(false);
   });
 

@@ -528,8 +528,14 @@ describe('GroupDetailComponent', () => {
     });
 
     it('drops a stale (older) fetch response so it cannot overwrite a newer one (GOAL 4)', () => {
-      const older = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
-      const newer = new Subject<{ data: unknown[]; meta: { totalItems: number } }>();
+      const older = new Subject<{
+        data: unknown[];
+        meta: { totalItems: number };
+      }>();
+      const newer = new Subject<{
+        data: unknown[];
+        meta: { totalItems: number };
+      }>();
       mockExpensesService.getExpenses = jest
         .fn()
         .mockReturnValueOnce(older.asObservable())
@@ -729,18 +735,24 @@ describe('GroupDetailComponent', () => {
     // A deterministic newest-first dataset the mock slices by (page, limit), so
     // the test observes real page arithmetic rather than hand-fed pages.
     let dataset: { id: string; title: string; amountTotal: number }[];
-    const row = (n: number) => ({ id: `i${n}`, title: `E${n}`, amountTotal: n });
+    const row = (n: number) => ({
+      id: `i${n}`,
+      title: `E${n}`,
+      amountTotal: n,
+    });
 
     const wireSlicingBackend = () => {
       mockExpensesService.getExpenses = jest
         .fn()
-        .mockImplementation((_g: string, opts: { page: number; limit: number }) => {
-          const start = (opts.page - 1) * opts.limit;
-          return of({
-            data: dataset.slice(start, start + opts.limit),
-            meta: { totalItems: dataset.length },
-          });
-        }) as any;
+        .mockImplementation(
+          (_g: string, opts: { page: number; limit: number }) => {
+            const start = (opts.page - 1) * opts.limit;
+            return of({
+              data: dataset.slice(start, start + opts.limit),
+              meta: { totalItems: dataset.length },
+            });
+          },
+        ) as any;
     };
 
     it('after paging to page 3 and creating a newest entry: no duplicates, no missing rows, order preserved, count consistent, load-more still correct', () => {
@@ -756,7 +768,12 @@ describe('GroupDetailComponent', () => {
       component.loadMoreExpenses(); // page 3 → append [i2, i1]
       expect(component.currentPage()).toBe(3);
       expect(component.expenses().map((e) => e.id)).toEqual([
-        'i6', 'i5', 'i4', 'i3', 'i2', 'i1',
+        'i6',
+        'i5',
+        'i4',
+        'i3',
+        'i2',
+        'i1',
       ]);
       expect(component.hasMoreExpenses()).toBe(false);
 
@@ -799,7 +816,10 @@ describe('GroupDetailComponent', () => {
       component.fetchExpenses('group-1', 'reload'); // page 1, limit 3×2=6 → all 4
 
       expect(component.expenses().map((e) => e.id)).toEqual([
-        'i4', 'i3', 'i2', 'i1',
+        'i4',
+        'i3',
+        'i2',
+        'i1',
       ]);
       // ceil(4 / 2) = 2 → clamped from 3 so the user is never stranded past the end.
       expect(component.currentPage()).toBe(2);
@@ -1620,9 +1640,9 @@ describe('GroupDetailComponent', () => {
       component.onExpenseCreated();
 
       // Exactly one authoritative reload for pages 1..3 (page 1, limit 3×2).
-      expect((mockExpensesService.getExpenses as jest.Mock).mock.calls.length).toBe(
-        callsBefore + 1,
-      );
+      expect(
+        (mockExpensesService.getExpenses as jest.Mock).mock.calls.length,
+      ).toBe(callsBefore + 1);
       expect(lastCallOpts()).toEqual(
         expect.objectContaining({ page: 1, limit: 6 }),
       );
@@ -1758,8 +1778,21 @@ describe('GroupDetailComponent', () => {
     beforeEach(() => {
       mockExpensesService.getTaxonomy.mockReturnValue(
         of([
-          { id: 'milk', canonicalName: 'Milk', normalizedKey: 'milk', parentId: 'dairy', status: 'active', version: 1 },
-          { id: 'grocery', canonicalName: 'Grocery', normalizedKey: 'grocery', status: 'active', version: 1 },
+          {
+            id: 'milk',
+            canonicalName: 'Milk',
+            normalizedKey: 'milk',
+            parentId: 'dairy',
+            status: 'active',
+            version: 1,
+          },
+          {
+            id: 'grocery',
+            canonicalName: 'Grocery',
+            normalizedKey: 'grocery',
+            status: 'active',
+            version: 1,
+          },
         ]),
       );
       // Reload the taxonomy map now that the mock returns tags.
@@ -1784,7 +1817,9 @@ describe('GroupDetailComponent', () => {
 
     it('renders safely for expenses with missing or empty tags', () => {
       expect(component.rowTagChips({ id: 'e' } as never)).toEqual([]);
-      expect(component.rowTagOverflowCount({ id: 'e', tags: [] } as never)).toBe(0);
+      expect(
+        component.rowTagOverflowCount({ id: 'e', tags: [] } as never),
+      ).toBe(0);
     });
 
     it('applyTagFromChip adds the tag to the unified filter, preserving other dimensions', () => {

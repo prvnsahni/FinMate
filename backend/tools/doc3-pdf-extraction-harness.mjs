@@ -13,7 +13,8 @@
  */
 
 function makeTextPdf(lines) {
-  const esc = (s) => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const esc = (s) =>
+    s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
   let content = '';
   let y = 210;
   for (const l of lines) {
@@ -46,16 +47,33 @@ const last = (s) => {
   return m ? Number(m[m.length - 1]) : undefined;
 };
 function parse(text) {
-  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
   const totalLine = lines.find((l) => /total/i.test(l));
   const total = totalLine ? last(totalLine) : undefined;
   const merchant = lines.find(
-    (l) => l !== totalLine && !/\d{4}-\d{2}-\d{2}/.test(l) && !/total/i.test(l) && last(l) === undefined,
+    (l) =>
+      l !== totalLine &&
+      !/\d{4}-\d{2}-\d{2}/.test(l) &&
+      !/total/i.test(l) &&
+      last(l) === undefined,
   );
   const date = (lines.join(' ').match(/\d{4}-\d{2}-\d{2}/) || [])[0];
-  const currency = /INR|₹/.test(text) ? 'INR' : /USD|\$/.test(text) ? 'USD' : undefined;
+  const currency = /INR|₹/.test(text)
+    ? 'INR'
+    : /USD|\$/.test(text)
+      ? 'USD'
+      : undefined;
   const items = lines
-    .filter((l) => l !== totalLine && l !== merchant && !/\d{4}-\d{2}-\d{2}/.test(l) && last(l) !== undefined)
+    .filter(
+      (l) =>
+        l !== totalLine &&
+        l !== merchant &&
+        !/\d{4}-\d{2}-\d{2}/.test(l) &&
+        last(l) !== undefined,
+    )
     .map((l) => last(l));
   return { merchant, date, currency, total, items };
 }
@@ -63,13 +81,37 @@ const recon = (total, items) => {
   const alloc = Math.round(items.reduce((a, b) => a + b, 0) * 100) / 100;
   if (total == null) return 'UNRECONCILED';
   const d = Math.round((total - alloc) * 100) / 100;
-  return d === 0 ? 'BALANCED' : d > 0 ? `UNDER_ALLOCATED(${d})` : `OVER_ALLOCATED(${d})`;
+  return d === 0
+    ? 'BALANCED'
+    : d > 0
+      ? `UNDER_ALLOCATED(${d})`
+      : `OVER_ALLOCATED(${d})`;
 };
 
 const fixtures = {
-  'grocery-balanced': ['Example Market', 'Date: 2026-08-15', 'Milk 2 x 60 120', 'Bread 1 x 45 45', 'Rice 1 x 520 520', 'TOTAL INR 685'],
-  'grocery-under': ['Example Market', 'Date: 2026-08-15', 'Milk 120', 'Rice 520', 'TOTAL INR 685'],
-  'grocery-over': ['Example Market', 'Date: 2026-08-15', 'Milk 120', 'Rice 520', 'Ghee 60', 'TOTAL INR 685'],
+  'grocery-balanced': [
+    'Example Market',
+    'Date: 2026-08-15',
+    'Milk 2 x 60 120',
+    'Bread 1 x 45 45',
+    'Rice 1 x 520 520',
+    'TOTAL INR 685',
+  ],
+  'grocery-under': [
+    'Example Market',
+    'Date: 2026-08-15',
+    'Milk 120',
+    'Rice 520',
+    'TOTAL INR 685',
+  ],
+  'grocery-over': [
+    'Example Market',
+    'Date: 2026-08-15',
+    'Milk 120',
+    'Rice 520',
+    'Ghee 60',
+    'TOTAL INR 685',
+  ],
   'blank-scanned-equivalent': ['', ''],
 };
 
@@ -77,19 +119,30 @@ const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 for (const [id, lines] of Object.entries(fixtures)) {
   const bytes = makeTextPdf(lines);
   const t0 = performance.now();
-  const doc = await pdfjs.getDocument({ data: bytes, isEvalSupported: false, useSystemFonts: false }).promise;
+  const doc = await pdfjs.getDocument({
+    data: bytes,
+    isEvalSupported: false,
+    useSystemFonts: false,
+  }).promise;
   let text = '';
   for (let p = 1; p <= doc.numPages; p++) {
     const pg = await doc.getPage(p);
-    text += (await pg.getTextContent()).items.map((i) => i.str).join('\n') + '\n';
+    text +=
+      (await pg.getTextContent()).items.map((i) => i.str).join('\n') + '\n';
   }
   const ms = (performance.now() - t0).toFixed(1);
   const detected = text.trim().length > 0;
   const f = parse(text);
-  console.log(`\n[${id}] size=${bytes.byteLength}B pages=${doc.numPages} textDetected=${detected} ms=${ms}`);
+  console.log(
+    `\n[${id}] size=${bytes.byteLength}B pages=${doc.numPages} textDetected=${detected} ms=${ms}`,
+  );
   if (detected) {
-    console.log(`  merchant=${JSON.stringify(f.merchant)} date=${f.date} currency=${f.currency} total=${f.total} items=${JSON.stringify(f.items)} reconciliation=${recon(f.total, f.items)}`);
+    console.log(
+      `  merchant=${JSON.stringify(f.merchant)} date=${f.date} currency=${f.currency} total=${f.total} items=${JSON.stringify(f.items)} reconciliation=${recon(f.total, f.items)}`,
+    );
   } else {
-    console.log('  no text layer -> route to scanned/OCR path (blocked: rasterizer + language data)');
+    console.log(
+      '  no text layer -> route to scanned/OCR path (blocked: rasterizer + language data)',
+    );
   }
 }

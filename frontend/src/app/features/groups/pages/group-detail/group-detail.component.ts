@@ -368,7 +368,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
 
   /** Count of tags beyond the visible cap (rendered as a "+N" chip). */
   rowTagOverflowCount(expense: GroupExpense): number {
-    return Math.max(0, this.sortedRowTags(expense).length - this.MAX_ROW_TAG_CHIPS);
+    return Math.max(
+      0,
+      this.sortedRowTags(expense).length - this.MAX_ROW_TAG_CHIPS,
+    );
   }
 
   /** Apply a tag from a row chip to the unified filter (adds to existing tag filter). */
@@ -1876,7 +1879,13 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
    * paramMap handler re-invokes it once the id is known.
    */
   private activateLazyTabData(
-    tab: 'ledger' | 'analytics' | 'history' | 'trash' | 'settings' | 'recurring',
+    tab:
+      | 'ledger'
+      | 'analytics'
+      | 'history'
+      | 'trash'
+      | 'settings'
+      | 'recurring',
   ): void {
     const id = this.currentGroupId;
     if (!id) return;

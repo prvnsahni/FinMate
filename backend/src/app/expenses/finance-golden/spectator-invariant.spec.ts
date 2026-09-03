@@ -67,7 +67,11 @@ describe('Finance golden parity — spectator exclusion (FIN-014)', () => {
     const included = keys([
       { participantUserId: 'user-a', splitType: 'equal', shareValue: 1 },
       { participantUserId: 'user-b', splitType: 'equal', shareValue: 1 },
-      { participantUserId: 'user-spectator', splitType: 'equal', shareValue: 1 },
+      {
+        participantUserId: 'user-spectator',
+        splitType: 'equal',
+        shareValue: 1,
+      },
     ]);
     expect(excluded).not.toEqual(included);
     expect(included).toContain('user-spectator');
@@ -85,7 +89,11 @@ describe('Finance golden parity — spectator exclusion (FIN-014)', () => {
       [
         { participantUserId: 'user-a', splitType: 'equal', shareValue: 1 },
         { participantUserId: 'user-b', splitType: 'equal', shareValue: 1 },
-        { participantUserId: 'user-spectator', splitType: 'equal', shareValue: 1 },
+        {
+          participantUserId: 'user-spectator',
+          splitType: 'equal',
+          shareValue: 1,
+        },
       ],
       'user-a',
     );

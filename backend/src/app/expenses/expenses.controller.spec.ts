@@ -15,7 +15,10 @@ describe('ExpensesController', () => {
   let analyticsService: jest.Mocked<ExpensesAnalyticsService>;
   let mockExpensesCrudService: Record<string, jest.Mock>;
   let mockExpensesAnalyticsService: Record<string, jest.Mock>;
-  let mockRecoveryStatusService: { assertConfigured: jest.Mock; isConfigured: jest.Mock };
+  let mockRecoveryStatusService: {
+    assertConfigured: jest.Mock;
+    isConfigured: jest.Mock;
+  };
 
   beforeEach(async () => {
     mockExpensesCrudService = {
@@ -149,9 +152,12 @@ describe('ExpensesController', () => {
 
     it('does NOT require recovery for a personal/group expense (no wrappedContentKeys)', async () => {
       crudService.createExpense.mockResolvedValue({ id: 'exp-3' });
-      await controller.create({ title: 'Lunch' } as any, {
-        user: { id: 'user-1' },
-      } as any);
+      await controller.create(
+        { title: 'Lunch' } as any,
+        {
+          user: { id: 'user-1' },
+        } as any,
+      );
       expect(mockRecoveryStatusService.assertConfigured).not.toHaveBeenCalled();
     });
 

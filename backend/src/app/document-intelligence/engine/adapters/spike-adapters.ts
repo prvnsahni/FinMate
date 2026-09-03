@@ -55,7 +55,11 @@ export class PdfTextExtractionAdapter extends BaseSpikeAdapter {
 export class PdfScanExtractionAdapter extends BaseSpikeAdapter {
   readonly kind = 'pdf_scanned' as const;
   readonly requirement: AdapterRequirement = {
-    requiredPackages: ['pdfjs-dist', 'a rasterizer (node-canvas/@napi-rs/canvas)', 'tesseract.js'],
+    requiredPackages: [
+      'pdfjs-dist',
+      'a rasterizer (node-canvas/@napi-rs/canvas)',
+      'tesseract.js',
+    ],
     processesLocally: true,
     note: 'Render pages then on-device OCR — heaviest path; used only when no text layer.',
   };

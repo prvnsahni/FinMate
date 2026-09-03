@@ -1,7 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { ReceiptCaptureComponent } from './receipt-capture.component';
 import { DocumentExtractionClientService } from './services/document-extraction-client.service';
-import { ConfirmedDocumentDraft, DocumentExtractionResult } from './document-review.model';
+import {
+  ConfirmedDocumentDraft,
+  DocumentExtractionResult,
+} from './document-review.model';
 
 describe('ReceiptCaptureComponent (DOC-3F orchestration)', () => {
   let extractor: { extractFromFile: jest.Mock };
@@ -11,7 +14,9 @@ describe('ReceiptCaptureComponent (DOC-3F orchestration)', () => {
     extractor = { extractFromFile: jest.fn() };
     TestBed.configureTestingModule({
       imports: [ReceiptCaptureComponent],
-      providers: [{ provide: DocumentExtractionClientService, useValue: extractor }],
+      providers: [
+        { provide: DocumentExtractionClientService, useValue: extractor },
+      ],
     });
     comp = TestBed.createComponent(ReceiptCaptureComponent).componentInstance;
   });
@@ -28,7 +33,12 @@ describe('ReceiptCaptureComponent (DOC-3F orchestration)', () => {
   });
 
   it('EXTRACT_ITEMS + file invokes local extraction and stores candidates', async () => {
-    const result: DocumentExtractionResult = { status: 'ok', sourceType: 'image', candidatesOnly: true, warnings: [] };
+    const result: DocumentExtractionResult = {
+      status: 'ok',
+      sourceType: 'image',
+      candidatesOnly: true,
+      warnings: [],
+    };
     extractor.extractFromFile.mockResolvedValue(result);
     comp.onMode('ITEMIZED');
     await comp.onFile(fileEvent('image/jpeg'));
@@ -69,8 +79,18 @@ describe('ReceiptCaptureComponent (DOC-3F orchestration)', () => {
     const confirmed = jest.fn();
     comp.confirmed.subscribe(confirmed);
     const draft: ConfirmedDocumentDraft = {
-      title: 'Shop', amount: 100, currency: 'INR', date: null, itemCount: 1,
-      items: [], reconciliation: { documentTotal: 100, allocatedTotal: 100, unallocatedDifference: 0, reconciliationStatus: 'BALANCED' },
+      title: 'Shop',
+      amount: 100,
+      currency: 'INR',
+      date: null,
+      itemCount: 1,
+      items: [],
+      reconciliation: {
+        documentTotal: 100,
+        allocatedTotal: 100,
+        unallocatedDifference: 0,
+        reconciliationStatus: 'BALANCED',
+      },
     };
     comp.onConfirmed(draft);
     expect(confirmed).toHaveBeenCalledWith(draft);

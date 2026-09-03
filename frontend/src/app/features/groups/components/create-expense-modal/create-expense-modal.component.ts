@@ -329,11 +329,15 @@ export class CreateExpenseModalComponent implements OnChanges {
       category: string;
       expenseDate: string;
     }> = {};
-    if (prefill.title != null && prefill.title !== '') patch.title = prefill.title;
+    if (prefill.title != null && prefill.title !== '')
+      patch.title = prefill.title;
     if (prefill.amountTotal != null) patch.amountTotal = prefill.amountTotal;
-    if (prefill.currency != null && prefill.currency !== '') patch.currency = prefill.currency;
-    if (prefill.category != null && prefill.category !== '') patch.category = prefill.category;
-    if (prefill.expenseDate != null && prefill.expenseDate !== '') patch.expenseDate = prefill.expenseDate;
+    if (prefill.currency != null && prefill.currency !== '')
+      patch.currency = prefill.currency;
+    if (prefill.category != null && prefill.category !== '')
+      patch.category = prefill.category;
+    if (prefill.expenseDate != null && prefill.expenseDate !== '')
+      patch.expenseDate = prefill.expenseDate;
     this.expenseForm.patchValue(patch);
     // TAG-BATCH-A: retain the confirmed tags to attach on the explicit submit
     // (create only). Never a form/finance field — carried alongside, not into,

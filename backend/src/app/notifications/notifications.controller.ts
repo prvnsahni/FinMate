@@ -17,7 +17,10 @@ import { SuccessResponse } from '../common/response.util';
 import { ThrottleAs } from '../throttler/throttle-policy.decorator';
 import { THROTTLE_PROFILES } from '../throttler/throttle.constants';
 import { NotificationsService } from './notifications.service';
-import { MarkNotificationDto, SetNotificationControlDto } from './notifications.dto';
+import {
+  MarkNotificationDto,
+  SetNotificationControlDto,
+} from './notifications.dto';
 
 /**
  * In-app ranked notifications (BATCH-12). Additive, authenticated, throttled, and

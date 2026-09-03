@@ -40,7 +40,11 @@ describe('DocumentIntakeService (DOC-1 intake boundary)', () => {
   });
 
   it('TOTAL_ONLY does NOT invoke extraction', async () => {
-    const r = await svc.process(OWNER, 'att-1', DocumentProcessingMode.TOTAL_ONLY);
+    const r = await svc.process(
+      OWNER,
+      'att-1',
+      DocumentProcessingMode.TOTAL_ONLY,
+    );
     expect(r.extractionAttempted).toBe(false);
     expect(r.extraction).toBeUndefined();
     expect(extractSpy).not.toHaveBeenCalled();
@@ -48,7 +52,11 @@ describe('DocumentIntakeService (DOC-1 intake boundary)', () => {
   });
 
   it('ITEMIZED invokes the engine boundary and returns the explicit unavailable result', async () => {
-    const r = await svc.process(OWNER, 'att-1', DocumentProcessingMode.ITEMIZED);
+    const r = await svc.process(
+      OWNER,
+      'att-1',
+      DocumentProcessingMode.ITEMIZED,
+    );
     expect(extractSpy).toHaveBeenCalledTimes(1);
     expect(r.extractionAttempted).toBe(true);
     expect(r.extraction?.status).toBe('unsupported_document');
@@ -58,7 +66,9 @@ describe('DocumentIntakeService (DOC-1 intake boundary)', () => {
   });
 
   it('is owner-scoped: another user cannot process the attachment (IDOR → 404, engine not called)', async () => {
-    repo.findOne.mockResolvedValue(attachment({ uploaderUser: { id: 'attacker' } as never }));
+    repo.findOne.mockResolvedValue(
+      attachment({ uploaderUser: { id: 'attacker' } as never }),
+    );
     await expect(
       svc.process(OWNER, 'att-1', DocumentProcessingMode.ITEMIZED),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -95,9 +105,16 @@ describe('DocumentIntakeService (DOC-1 intake boundary)', () => {
     // Structural: the service depends only on the attachment repo + the engine.
     // There is no expense/settlement/balance repository to write through.
     const deps = svc as unknown as Record<string, unknown>;
-    expect(Object.values(deps).some((d) => d === repo || d === engine)).toBe(true);
+    expect(Object.values(deps).some((d) => d === repo || d === engine)).toBe(
+      true,
+    );
     const surface = svc as unknown as Record<string, unknown>;
-    for (const forbidden of ['createExpense', 'saveExpense', 'mutate', 'settle']) {
+    for (const forbidden of [
+      'createExpense',
+      'saveExpense',
+      'mutate',
+      'settle',
+    ]) {
       expect(typeof surface[forbidden]).toBe('undefined');
     }
   });
@@ -126,7 +143,9 @@ describe('buildExtractionInput (minimization)', () => {
       mimeType: 'application/pdf',
       sizeBytes: 4096,
     });
-    expect(JSON.stringify(input)).not.toMatch(/key|encrypt|storage|password|token/i);
+    expect(JSON.stringify(input)).not.toMatch(
+      /key|encrypt|storage|password|token/i,
+    );
   });
 
   it('omits sizeBytes when unavailable', () => {

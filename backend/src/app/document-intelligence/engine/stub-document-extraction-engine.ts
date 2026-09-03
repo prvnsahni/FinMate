@@ -43,7 +43,9 @@ export class StubDocumentExtractionEngine implements DocumentExtractionEngine {
     };
   }
 
-  async extract(input: DocumentExtractionInput): Promise<DocumentExtractionResult> {
+  async extract(
+    input: DocumentExtractionInput,
+  ): Promise<DocumentExtractionResult> {
     // Reject malformed / unsupported input explicitly (distinct from "recognised
     // input we simply cannot extract yet").
     if (

@@ -34,12 +34,16 @@ describe('getActiveCanonicalTaxonomy / getActiveCanonicalTag (TAG-BATCH-B)', () 
 
 describe('classifyLabel (deterministic, bounded, no fabrication)', () => {
   it('classifies milk into its ancestor chain (milk → dairy → grocery → food)', () => {
-    const ids = classifyLabel('Milk').map((t) => t.tagId).sort();
+    const ids = classifyLabel('Milk')
+      .map((t) => t.tagId)
+      .sort();
     expect(ids).toEqual(['dairy', 'food', 'grocery', 'milk']);
   });
 
   it('classifies fuel into fuel → vehicle → transport', () => {
-    const ids = classifyLabel('Petrol').map((t) => t.tagId).sort();
+    const ids = classifyLabel('Petrol')
+      .map((t) => t.tagId)
+      .sort();
     expect(ids).toEqual(['fuel', 'transport', 'vehicle']);
   });
 
@@ -74,24 +78,42 @@ describe('classifyLabel (deterministic, bounded, no fabrication)', () => {
   });
 
   it('bounded growth: only ever suggests ids from the active canonical seed', () => {
-    const activeIds = new Set(CANONICAL_TAXONOMY.filter((t) => t.status === 'active').map((t) => t.id));
+    const activeIds = new Set(
+      CANONICAL_TAXONOMY.filter((t) => t.status === 'active').map((t) => t.id),
+    );
     for (const label of ['Milk', 'Petrol', 'Detergent', 'Rice', 'Restaurant']) {
-      for (const t of classifyLabel(label)) expect(activeIds.has(t.tagId)).toBe(true);
+      for (const t of classifyLabel(label))
+        expect(activeIds.has(t.tagId)).toBe(true);
     }
   });
 
   it('never suggests a deprecated tag (misc)', () => {
-    expect(classifyLabel('misc miscellaneous').some((t) => t.tagId === 'misc')).toBe(false);
+    expect(
+      classifyLabel('misc miscellaneous').some((t) => t.tagId === 'misc'),
+    ).toBe(false);
   });
 
   it('SENSITIVE-TAG boundary: does not derive medical/pharmacy/health tags', () => {
-    for (const label of ['pharmacy', 'medicine', 'paracetamol', 'hospital', 'clinic', 'therapy']) {
+    for (const label of [
+      'pharmacy',
+      'medicine',
+      'paracetamol',
+      'hospital',
+      'clinic',
+      'therapy',
+    ]) {
       const tags = classifyLabel(label);
-      expect(tags.map((t) => t.canonicalName).join(' ')).not.toMatch(/medic|pharmac|health|clinic|hospital/i);
+      expect(tags.map((t) => t.canonicalName).join(' ')).not.toMatch(
+        /medic|pharmac|health|clinic|hospital/i,
+      );
     }
   });
 
   it('uses the coarse category as an additional signal', () => {
-    expect(classifyLabel('unknownitem', 'Grocery').some((t) => t.tagId === 'grocery')).toBe(true);
+    expect(
+      classifyLabel('unknownitem', 'Grocery').some(
+        (t) => t.tagId === 'grocery',
+      ),
+    ).toBe(true);
   });
 });

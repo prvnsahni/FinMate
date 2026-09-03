@@ -70,7 +70,10 @@ export class PublicShareService {
     );
   }
 
-  create(groupId: string, expiresAt?: string | null): Observable<PublicShareSecret> {
+  create(
+    groupId: string,
+    expiresAt?: string | null,
+  ): Observable<PublicShareSecret> {
     return this.http.post<PublicShareSecret>(
       `${this.baseUrl}/groups/${groupId}/public-share`,
       expiresAt ? { expiresAt } : {},

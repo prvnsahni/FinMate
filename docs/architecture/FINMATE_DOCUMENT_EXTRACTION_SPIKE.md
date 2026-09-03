@@ -12,14 +12,14 @@
 
 ## 1. Current repository capabilities `CURRENT`
 
-| Capability | State | Evidence |
-|---|---|---|
-| Spreadsheet parse | `xlsx` (SheetJS) present — used by tabular import. | root `package.json` (`"xlsx": "^0.18.5"`) |
-| PDF text/table extraction | **None.** No `pdfjs-dist`/`pdf-parse`/`mupdf`. | dependency grep — none |
-| OCR | **None.** No `tesseract`/`tesseract.js`/cloud OCR SDK. | dependency grep — none |
-| Image rasterization | **None.** No `canvas`/`@napi-rs/canvas`/`sharp`/`jimp`. | dependency grep — none |
-| Extraction contract | DOC-0 `DocumentExtractionEngine` + result envelope + `computeReconciliation` + stub. | `document-intelligence/engine/*` |
-| Intake boundary | DOC-1 TOTAL_ONLY / ITEMIZED, owner-scoped, flag-gated, minimized input. | `document-intelligence/intake/*` |
+| Capability                | State                                                                                | Evidence                                  |
+| ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
+| Spreadsheet parse         | `xlsx` (SheetJS) present — used by tabular import.                                   | root `package.json` (`"xlsx": "^0.18.5"`) |
+| PDF text/table extraction | **None.** No `pdfjs-dist`/`pdf-parse`/`mupdf`.                                       | dependency grep — none                    |
+| OCR                       | **None.** No `tesseract`/`tesseract.js`/cloud OCR SDK.                               | dependency grep — none                    |
+| Image rasterization       | **None.** No `canvas`/`@napi-rs/canvas`/`sharp`/`jimp`.                              | dependency grep — none                    |
+| Extraction contract       | DOC-0 `DocumentExtractionEngine` + result envelope + `computeReconciliation` + stub. | `document-intelligence/engine/*`          |
+| Intake boundary           | DOC-1 TOTAL_ONLY / ITEMIZED, owner-scoped, flag-gated, minimized input.              | `document-intelligence/intake/*`          |
 
 **Conclusion:** FinMate can, today, parse spreadsheets — but has **zero** image/PDF extraction capability. Any real receipt/PDF extraction requires at least one new package. **DOC-2 therefore builds the architecture and defers the package/provider choice.**
 
@@ -27,42 +27,42 @@
 
 Receipts are overwhelmingly photos → the image path is the highest-value, lowest-structure target.
 
-| Option | Class | Privacy | Accuracy (receipts) | Notes |
-|---|---|---|---|---|
-| **Tesseract.js (WASM)** `CANDIDATE — NOT SELECTED` | on-device OCR | **Best** — in-process, no external call | Moderate; needs preprocessing (deskew/threshold) for photos | Apache-2.0; ~a few MB WASM + language data; runs in Node and browser |
-| Native Tesseract binding | server OCR | server sees bytes | Moderate–good | Native build/deploy complexity |
-| Managed OCR / Document-AI | cloud | bytes leave device → **AI Firewall + OQ-03 + ZDR** | High | `CANDIDATE — NOT SELECTED`; blocked (§10) |
-| VLM (vision LLM) | cloud AI | bytes+prompt leave → firewall + injection risk | High, structure-aware | `CANDIDATE — NOT SELECTED`; blocked (§10) |
+| Option                                             | Class         | Privacy                                            | Accuracy (receipts)                                         | Notes                                                                |
+| -------------------------------------------------- | ------------- | -------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Tesseract.js (WASM)** `CANDIDATE — NOT SELECTED` | on-device OCR | **Best** — in-process, no external call            | Moderate; needs preprocessing (deskew/threshold) for photos | Apache-2.0; ~a few MB WASM + language data; runs in Node and browser |
+| Native Tesseract binding                           | server OCR    | server sees bytes                                  | Moderate–good                                               | Native build/deploy complexity                                       |
+| Managed OCR / Document-AI                          | cloud         | bytes leave device → **AI Firewall + OQ-03 + ZDR** | High                                                        | `CANDIDATE — NOT SELECTED`; blocked (§10)                            |
+| VLM (vision LLM)                                   | cloud AI      | bytes+prompt leave → firewall + injection risk     | High, structure-aware                                       | `CANDIDATE — NOT SELECTED`; blocked (§10)                            |
 
 ## 3. Text-PDF options
 
 Online/general invoices are frequently **text-layer PDFs** — extractable **without OCR** at high fidelity.
 
-| Option | Class | Privacy | Notes |
-|---|---|---|---|
-| **pdfjs-dist** `CANDIDATE — NOT SELECTED` | local text + layout | in-process | Mozilla, Apache-2.0; text with positions (provenance); runs in Node/browser |
-| **pdf-parse** `CANDIDATE — NOT SELECTED` | local text | in-process | MIT; simpler text-only (weaker table/position data) |
-| Table extraction (heuristics on positioned text) | local | in-process | Built on pdfjs positions; `[ENGINEERING PARAMETER]` column detection |
+| Option                                           | Class               | Privacy    | Notes                                                                       |
+| ------------------------------------------------ | ------------------- | ---------- | --------------------------------------------------------------------------- |
+| **pdfjs-dist** `CANDIDATE — NOT SELECTED`        | local text + layout | in-process | Mozilla, Apache-2.0; text with positions (provenance); runs in Node/browser |
+| **pdf-parse** `CANDIDATE — NOT SELECTED`         | local text          | in-process | MIT; simpler text-only (weaker table/position data)                         |
+| Table extraction (heuristics on positioned text) | local               | in-process | Built on pdfjs positions; `[ENGINEERING PARAMETER]` column detection        |
 
 ## 4. Scanned-PDF options
 
 Image-only PDFs → **render pages, then OCR** (compose §3 render + §2 OCR).
 
-| Option | Class | Privacy | Notes |
-|---|---|---|---|
-| pdfjs render → raster → Tesseract.js `CANDIDATE — NOT SELECTED` | on-device | in-process | Needs a rasterizer (`canvas`/`@napi-rs/canvas`) — heaviest path |
-| Managed Document-AI | cloud | leaves device | blocked (§10) |
+| Option                                                          | Class     | Privacy       | Notes                                                           |
+| --------------------------------------------------------------- | --------- | ------------- | --------------------------------------------------------------- |
+| pdfjs render → raster → Tesseract.js `CANDIDATE — NOT SELECTED` | on-device | in-process    | Needs a rasterizer (`canvas`/`@napi-rs/canvas`) — heaviest path |
+| Managed Document-AI                                             | cloud     | leaves device | blocked (§10)                                                   |
 
 ## 5. Candidate technologies (summary — none selected)
 
-| Tech | Handles | On-device | License | Approx. weight | Verdict |
-|---|---|---|---|---|---|
-| Tesseract.js | image, scanned-PDF (with raster) | ✅ | Apache-2.0 | WASM + lang data (MB) | `CANDIDATE — NOT SELECTED` |
-| pdfjs-dist | text-PDF, PDF render | ✅ | Apache-2.0 | moderate | `CANDIDATE — NOT SELECTED` |
-| pdf-parse | text-PDF (text only) | ✅ | MIT | small | `CANDIDATE — NOT SELECTED` |
-| canvas / @napi-rs/canvas | rasterize PDF pages | ✅ | MIT-ish | native build | `CANDIDATE — NOT SELECTED` |
-| Managed OCR / Document-AI | all | ❌ | commercial | n/a | `CANDIDATE — NOT SELECTED` (firewall/OQ-03) |
-| VLM extraction | all | ❌ | commercial | n/a | `CANDIDATE — NOT SELECTED` (firewall/injection) |
+| Tech                      | Handles                          | On-device | License    | Approx. weight        | Verdict                                         |
+| ------------------------- | -------------------------------- | --------- | ---------- | --------------------- | ----------------------------------------------- |
+| Tesseract.js              | image, scanned-PDF (with raster) | ✅        | Apache-2.0 | WASM + lang data (MB) | `CANDIDATE — NOT SELECTED`                      |
+| pdfjs-dist                | text-PDF, PDF render             | ✅        | Apache-2.0 | moderate              | `CANDIDATE — NOT SELECTED`                      |
+| pdf-parse                 | text-PDF (text only)             | ✅        | MIT        | small                 | `CANDIDATE — NOT SELECTED`                      |
+| canvas / @napi-rs/canvas  | rasterize PDF pages              | ✅        | MIT-ish    | native build          | `CANDIDATE — NOT SELECTED`                      |
+| Managed OCR / Document-AI | all                              | ❌        | commercial | n/a                   | `CANDIDATE — NOT SELECTED` (firewall/OQ-03)     |
+| VLM extraction            | all                              | ❌        | commercial | n/a                   | `CANDIDATE — NOT SELECTED` (firewall/injection) |
 
 ## 6. Fixture results
 
@@ -149,15 +149,15 @@ Adapters are an **internal detail**: the caller only ever sees a `DocumentExtrac
 - ✅ **No package installed, no provider selected, no external service called, no migration, no finance change, no E2EE decryption, no DOC-0 contract change, no AI-Firewall change.**
 - ⛔ Real OCR/PDF extraction is **blocked on a package decision** (§16/§18) — reported, not resolved.
 
-**One-line status:** *Extraction architecture is ready and contract-verified; the technology choice narrows to an on-device-first, text-PDF-first path (pdfjs-dist then Tesseract.js), pending an explicit package-install approval for DOC-3. No provider selected.*
+**One-line status:** _Extraction architecture is ready and contract-verified; the technology choice narrows to an on-device-first, text-PDF-first path (pdfjs-dist then Tesseract.js), pending an explicit package-install approval for DOC-3. No provider selected._
 
-*End of DOC-2 spike. Authorises no package, provider, external call, migration, or production change.*
+_End of DOC-2 spike. Authorises no package, provider, external call, migration, or production change._
 
 ---
 
 # DOC-3 — MEASURED RESULTS (2026-08-14) · local pdfjs + tesseract.js
 
-**Packages installed (approved):** `pdfjs-dist@6.2.108`, `tesseract.js@7.0.0` (+ `tesseract.js-core@7.0.0`; 11 transitive packages total). **No other package installed. No external service. No cloud/AI. No migration. No finance change. No E2EE decryption.** These are DOC-3 *measured* results — distinct from the DOC-2 *architectural* findings above.
+**Packages installed (approved):** `pdfjs-dist@6.2.108`, `tesseract.js@7.0.0` (+ `tesseract.js-core@7.0.0`; 11 transitive packages total). **No other package installed. No external service. No cloud/AI. No migration. No finance change. No E2EE decryption.** These are DOC-3 _measured_ results — distinct from the DOC-2 _architectural_ findings above.
 
 ## D1. What runs, and how it was measured
 
@@ -167,12 +167,12 @@ The real adapters live behind the unchanged DOC-0 contract in `engine/adapters/`
 
 Real pdfjs text extraction on synthetic text PDFs (no network, no canvas):
 
-| Fixture | text detected | merchant | date | currency | total | items | reconciliation | time |
-|---|---|---|---|---|---|---|---|---|
-| grocery-balanced | yes | ✅ Example Market | ✅ 2026-08-15 | ✅ INR | ✅ 685 | ✅ [120,45,520] | **BALANCED** | ~283 ms cold |
-| grocery-under | yes | ✅ | ✅ | ✅ | ✅ 685 | [120,520] | **UNDER_ALLOCATED (Δ45)** | ~32 ms |
-| grocery-over | yes | ✅ | ✅ | ✅ | ✅ 685 | [120,520,60] | **OVER_ALLOCATED (Δ−15)** | ~15 ms |
-| blank (scanned-equiv) | **no** | — | — | — | — | — | routes to OCR | ~5 ms |
+| Fixture               | text detected | merchant          | date          | currency | total  | items           | reconciliation            | time         |
+| --------------------- | ------------- | ----------------- | ------------- | -------- | ------ | --------------- | ------------------------- | ------------ |
+| grocery-balanced      | yes           | ✅ Example Market | ✅ 2026-08-15 | ✅ INR   | ✅ 685 | ✅ [120,45,520] | **BALANCED**              | ~283 ms cold |
+| grocery-under         | yes           | ✅                | ✅            | ✅       | ✅ 685 | [120,520]       | **UNDER_ALLOCATED (Δ45)** | ~32 ms       |
+| grocery-over          | yes           | ✅                | ✅            | ✅       | ✅ 685 | [120,520,60]    | **OVER_ALLOCATED (Δ−15)** | ~15 ms       |
+| blank (scanned-equiv) | **no**        | —                 | —             | —        | —      | —               | routes to OCR             | ~5 ms        |
 
 **Observation:** for genuine text-layer PDFs, pdfjs extracts merchant/date/currency/total/line-items accurately and fast (cold ~280 ms incl. pdfjs init; warm ~15–32 ms), and `computeReconciliation` classifies BALANCED/UNDER/OVER correctly end-to-end. A PDF with **no** text layer is correctly detected (`no_text_detected`) and routed to the scanned/OCR path. **pdfjs-dist is sufficient for text PDFs.**
 
@@ -194,11 +194,11 @@ Render→OCR needs to rasterize PDF pages to pixels, which pdfjs-dist can only d
 
 ## D6. Answers to the DOC-3 questions
 
-1. **Is local OCR accurate enough for receipt item extraction?** *Unproven here* — tesseract.js couldn't run offline (no local language data; CDN default suppressed). The adapter + parser are ready; a measured answer needs the language-data decision (§D3). Text-PDFs need no OCR at all.
+1. **Is local OCR accurate enough for receipt item extraction?** _Unproven here_ — tesseract.js couldn't run offline (no local language data; CDN default suppressed). The adapter + parser are ready; a measured answer needs the language-data decision (§D3). Text-PDFs need no OCR at all.
 2. **Is pdfjs-dist sufficient for text PDFs?** **Yes** — measured accurate extraction of merchant/date/currency/total/items with correct reconciliation, fast, fully local.
 3. **Is scanned-PDF extraction usable?** **Not with the approved packages** — rendering needs a rasterizer (canvas) outside the approved set (§D4).
 4. **Biggest OCR failure modes (expected / structural):** no offline language data (network dependency); receipt photos need preprocessing (deskew/threshold); dense tables/handwriting/Indian-GST formats are weak; text-run→line reconstruction is heuristic.
-5. **Is on-device/local processing viable?** **Yes for text-PDF (measured).** For image/scanned OCR it is viable *in principle* but needs a local language-data asset (and, for scanned, a rasterizer) — neither enabled here to avoid network/unapproved packages.
+5. **Is on-device/local processing viable?** **Yes for text-PDF (measured).** For image/scanned OCR it is viable _in principle_ but needs a local language-data asset (and, for scanned, a rasterizer) — neither enabled here to avoid network/unapproved packages.
 6. **What should DOC-4 build next?** The **extraction review UI** (item edit/add/remove + reconciliation + user confirmation) on top of the **text-PDF path that works today**, keeping it out of the finance-critical expense modal until confirmed. Line-item persistence remains a separate `[PRODUCT DECISION]`.
 7. **What should remain blocked?** Image OCR until the **language-data decision** (install/commit `eng.traineddata` locally, no CDN) is made; **scanned-PDF** until a **rasterizer package** is approved; all **managed OCR / VLM** until AI-Firewall controls + OQ-03 counsel clear. No production document-learning, taxonomy, statement import, or ML.
 
@@ -209,6 +209,6 @@ Render→OCR needs to rasterize PDF pages to pixels, which pdfjs-dist can only d
 - `[ENGINEERING]` text-run→line reconstruction (use pdfjs item positions / `hasEOL`) for dense layouts; confidence calibration; Indian GST/multi-currency parsing.
 - `[SECURITY]` npm audit reports pre-existing tree vulnerabilities (52 across 2249 pkgs) — unchanged by DOC-3 scope; not addressed here.
 
-**DOC-3 one-line status:** *Local text-PDF extraction works and is measured (accurate, fast, offline); image OCR is wired but blocked on an offline language-data decision; scanned-PDF is blocked on a rasterizer. No provider/cloud/AI, no migration, no finance change.*
+**DOC-3 one-line status:** _Local text-PDF extraction works and is measured (accurate, fast, offline); image OCR is wired but blocked on an offline language-data decision; scanned-PDF is blocked on a rasterizer. No provider/cloud/AI, no migration, no finance change._
 
-*End of DOC-3. Two approved packages installed (pdfjs-dist, tesseract.js). No other package, provider, external call, migration, or production change.*
+_End of DOC-3. Two approved packages installed (pdfjs-dist, tesseract.js). No other package, provider, external call, migration, or production change._

@@ -25,7 +25,9 @@ const clampLevel = (n: number): NotificationLevel =>
  * confidence: high urgency + sufficient confidence promotes one level; low
  * confidence demotes one level.
  */
-export function computeLevel(candidate: NotificationCandidate): NotificationLevel {
+export function computeLevel(
+  candidate: NotificationCandidate,
+): NotificationLevel {
   let level: number = IMPORTANCE_BASE_LEVEL[candidate.importance] ?? 3;
   if (
     candidate.urgency >= URGENCY_PROMOTE_THRESHOLD &&

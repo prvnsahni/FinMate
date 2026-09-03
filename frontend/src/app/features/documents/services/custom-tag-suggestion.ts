@@ -73,7 +73,8 @@ export function suggestCustomTags(
   // 1) Correction memory — only ids still authorized (drops deprecated/unknown).
   for (const id of rememberedTagIds) {
     const tag = authById.get(id);
-    if (tag) consider(tag, CONFIDENCE_CORRECTION, 'Matched a previous correction');
+    if (tag)
+      consider(tag, CONFIDENCE_CORRECTION, 'Matched a previous correction');
   }
 
   for (const tag of authorizedTags) {

@@ -17,9 +17,9 @@ describe('log-redaction.util', () => {
     });
 
     it('redacts a reset-token URL', () => {
-      expect(redactUrl('/api/v1/auth/reset-password?token=supersecret123')).toBe(
-        '/api/v1/auth/reset-password?token=[REDACTED]',
-      );
+      expect(
+        redactUrl('/api/v1/auth/reset-password?token=supersecret123'),
+      ).toBe('/api/v1/auth/reset-password?token=[REDACTED]');
     });
 
     it('redacts a verification-token URL', () => {
@@ -35,9 +35,9 @@ describe('log-redaction.util', () => {
     });
 
     it('redacts multiple sensitive parameters', () => {
-      expect(
-        redactUrl('/x?token=aaa&password=bbb&secret=ccc'),
-      ).toBe('/x?token=[REDACTED]&password=[REDACTED]&secret=[REDACTED]');
+      expect(redactUrl('/x?token=aaa&password=bbb&secret=ccc')).toBe(
+        '/x?token=[REDACTED]&password=[REDACTED]&secret=[REDACTED]',
+      );
     });
 
     it('redacts repeated occurrences of the same sensitive parameter', () => {
@@ -66,9 +66,9 @@ describe('log-redaction.util', () => {
     });
 
     it('redacts only the sensitive params in a mixed query', () => {
-      expect(
-        redactUrl('/x?page=2&token=secret&email=a@b.com&sort=desc'),
-      ).toBe('/x?page=2&token=[REDACTED]&email=[REDACTED]&sort=desc');
+      expect(redactUrl('/x?page=2&token=secret&email=a@b.com&sort=desc')).toBe(
+        '/x?page=2&token=[REDACTED]&email=[REDACTED]&sort=desc',
+      );
     });
 
     it('handles a valueless sensitive param without throwing', () => {
@@ -109,9 +109,9 @@ describe('log-redaction.util', () => {
       });
 
       it('still redacts a sensitive query param after the capability route', () => {
-        expect(redactUrl(`/api/v1/public/shares/${RAW}?token=leak&page=2`)).toBe(
-          '/api/v1/public/shares/[REDACTED]?token=[REDACTED]&page=2',
-        );
+        expect(
+          redactUrl(`/api/v1/public/shares/${RAW}?token=leak&page=2`),
+        ).toBe('/api/v1/public/shares/[REDACTED]?token=[REDACTED]&page=2');
       });
 
       it('never leaves the raw capability token anywhere in the output', () => {
@@ -126,7 +126,9 @@ describe('log-redaction.util', () => {
         expect(redactUrl('/api/v1/groups/123/members')).toBe(
           '/api/v1/groups/123/members',
         );
-        expect(redactUrl('/api/v1/public/health')).toBe('/api/v1/public/health');
+        expect(redactUrl('/api/v1/public/health')).toBe(
+          '/api/v1/public/health',
+        );
         // A deeper segment after the token is not the capability secret.
         expect(redactUrl('/public/shares/tok/extra')).toBe(
           '/public/shares/[REDACTED]/extra',

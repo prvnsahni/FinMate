@@ -19,5 +19,5 @@
 - **Related Ledger items:** K-1, K-2, K-3, A3.
 - **Related Threat Model:** T-08 (server key), T-10 (DB leak).
 - **Related architecture docs:** Key Management (#4); Security & Privacy Architecture (#3).
-- **Simple explanation:** Some things are locked so only *you* have the key (journal). Some things FinMate can unlock under strict rules, because it needs to read them to help (mood analysis).
+- **Simple explanation:** Some things are locked so only _you_ have the key (journal). Some things FinMate can unlock under strict rules, because it needs to read them to help (mood analysis).
 - **Technical explanation:** Class A = client-held random keys, server stores ciphertext + wrapped keys only. Class B = per-user server-managed keys with consent/purpose-gated decryption; wellbeing/intelligence use Class B, never E2EE.

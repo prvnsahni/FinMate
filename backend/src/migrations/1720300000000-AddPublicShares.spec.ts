@@ -37,7 +37,9 @@ describe('AddPublicShares1720300000000', () => {
   it('stores a UNIQUE token HASH, never a raw token', async () => {
     const sql = await runMigration('up');
     expect(sql).toMatch(/"token_hash" VARCHAR\(64\) NOT NULL/);
-    expect(sql).toMatch(/CONSTRAINT "uq_public_shares_token_hash" UNIQUE \("token_hash"\)/);
+    expect(sql).toMatch(
+      /CONSTRAINT "uq_public_shares_token_hash" UNIQUE \("token_hash"\)/,
+    );
     // No raw/plaintext token column.
     expect(sql).not.toMatch(/"token"\s+(VAR|TEXT)|plaintext_token|raw_token/i);
   });

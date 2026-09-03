@@ -22,11 +22,34 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
   const setup = (
     tags: { tagId: string; total: number; currency: string }[],
     taxonomy = [
-      { id: 'grocery', canonicalName: 'Grocery', normalizedKey: 'grocery', status: 'active', version: 1 },
-      { id: 'food', canonicalName: 'Food', normalizedKey: 'food', status: 'active', version: 1 },
-      { id: 'fuel', canonicalName: 'Fuel', normalizedKey: 'fuel', status: 'active', version: 1 },
+      {
+        id: 'grocery',
+        canonicalName: 'Grocery',
+        normalizedKey: 'grocery',
+        status: 'active',
+        version: 1,
+      },
+      {
+        id: 'food',
+        canonicalName: 'Food',
+        normalizedKey: 'food',
+        status: 'active',
+        version: 1,
+      },
+      {
+        id: 'fuel',
+        canonicalName: 'Fuel',
+        normalizedKey: 'fuel',
+        status: 'active',
+        version: 1,
+      },
     ],
-    trend: { month: string; tagId: string; total: number; currency: string }[] = [],
+    trend: {
+      month: string;
+      tagId: string;
+      total: number;
+      currency: string;
+    }[] = [],
     customTagNames?: Map<string, { name: string | null; deprecated: boolean }>,
   ) => {
     expensesService = {
@@ -67,7 +90,9 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
     expect(component.processedTags[0].name).toBe('Food');
     // Bar widths are relative to the largest (food=100%), NOT a % of a summed whole.
     expect(component.processedTags[0].barWidth).toBe(100);
-    expect(component.processedTags[1].barWidth).toBe(Math.round((8420 / 9870) * 100));
+    expect(component.processedTags[1].barWidth).toBe(
+      Math.round((8420 / 9870) * 100),
+    );
     // Overlapping totals: they intentionally sum to > any single "grand total".
     const sum = component.processedTags.reduce((s, t) => s + t.total, 0);
     expect(sum).toBe(8420 + 9870 + 2100);
@@ -105,15 +130,11 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
 
   // ── Tag trend (TAG-BATCH-B2) ─────────────────────────────────────────────────
   it('builds a month × tag trend matrix and renders it for ≥2 months', () => {
-    setup(
-      [{ tagId: 'grocery', total: 8420, currency: 'INR' }],
-      undefined,
-      [
-        { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
-        { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
-        { month: '2026-08', tagId: 'food', total: 9870, currency: 'INR' },
-      ],
-    );
+    setup([{ tagId: 'grocery', total: 8420, currency: 'INR' }], undefined, [
+      { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
+      { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+      { month: '2026-08', tagId: 'food', total: 9870, currency: 'INR' },
+    ]);
 
     expect(component.tagTrendMonths).toEqual(['2026-07', '2026-08']);
     // food (9870) outranks grocery (7200+8420=15620)? grocery total is larger → first.
@@ -196,7 +217,10 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
       undefined,
       new Map([[UUID, { name: 'Old Tag', deprecated: true }]]),
     );
-    expect(component.processedTags[0]).toMatchObject({ name: 'Old Tag', deprecated: true });
+    expect(component.processedTags[0]).toMatchObject({
+      name: 'Old Tag',
+      deprecated: true,
+    });
 
     const emitted: string[] = [];
     component.tagSelected.subscribe((id) => emitted.push(id));
@@ -205,7 +229,9 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
     ) as HTMLButtonElement;
     // Disabled + a "Deprecated" badge is shown.
     expect(btn.disabled).toBe(true);
-    expect(btn.querySelector('[data-testid="tag-deprecated-badge"]')).not.toBeNull();
+    expect(
+      btn.querySelector('[data-testid="tag-deprecated-badge"]'),
+    ).not.toBeNull();
     // Programmatic activation is a no-op — never applies a filter the backend rejects.
     component.onTagBarActivate(UUID, true);
     expect(emitted).toEqual([]);
@@ -234,7 +260,9 @@ describe('AnalyticsChartsComponent — spending by tag', () => {
     const callsBefore = expensesService.getTagAnalytics.mock.calls.length;
 
     // Parent resolves names asynchronously → input change.
-    component.customTagNames = new Map([[UUID, { name: 'Resolved Later', deprecated: false }]]);
+    component.customTagNames = new Map([
+      [UUID, { name: 'Resolved Later', deprecated: false }],
+    ]);
     component.ngOnChanges({
       customTagNames: {
         currentValue: component.customTagNames,

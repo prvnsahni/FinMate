@@ -1096,7 +1096,9 @@ describe('CreateExpenseModalComponent', () => {
     it('seeds only non-finance fields in create mode; never refund/split', () => {
       component.expense = null; // create mode
       component.prefill = prefill;
-      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+      component.ngOnChanges({
+        prefill: new SimpleChange(null, component.prefill, true),
+      });
 
       const v = component.expenseForm.getRawValue();
       expect(v.title).toBe('Corner Grocery');
@@ -1113,7 +1115,9 @@ describe('CreateExpenseModalComponent', () => {
       component.expense = { id: 'exp-1' } as any; // edit mode (truthy)
       component.prefill = prefill;
       // Only the prefill change fires; the edit-mode branch (changes['expense']) does not.
-      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+      component.ngOnChanges({
+        prefill: new SimpleChange(null, component.prefill, true),
+      });
 
       // Guard `!this.expense` blocks the prefill — the title stays at its default.
       expect(component.expenseForm.getRawValue().title).toBe('');
@@ -1123,7 +1127,9 @@ describe('CreateExpenseModalComponent', () => {
       component.expense = null;
       component.prefill = { amountTotal: 10 };
       const originalDate = component.expenseForm.getRawValue().expenseDate;
-      component.ngOnChanges({ prefill: new SimpleChange(null, component.prefill, true) });
+      component.ngOnChanges({
+        prefill: new SimpleChange(null, component.prefill, true),
+      });
 
       const v = component.expenseForm.getRawValue();
       expect(v.amountTotal).toBe(10);
@@ -1135,8 +1141,18 @@ describe('CreateExpenseModalComponent', () => {
   // --- DOC-3F: in-modal receipt-capture launcher (flag-gated, no finance mutation) -----
   describe('DOC-3F receipt-capture launcher', () => {
     const draft = {
-      title: 'Corner Grocery', amount: 42.5, currency: 'INR', date: '2026-08-01', itemCount: 1,
-      items: [], reconciliation: { documentTotal: 42.5, allocatedTotal: 42.5, unallocatedDifference: 0, reconciliationStatus: 'BALANCED' as const },
+      title: 'Corner Grocery',
+      amount: 42.5,
+      currency: 'INR',
+      date: '2026-08-01',
+      itemCount: 1,
+      items: [],
+      reconciliation: {
+        documentTotal: 42.5,
+        allocatedTotal: 42.5,
+        unallocatedDifference: 0,
+        reconciliationStatus: 'BALANCED' as const,
+      },
     };
 
     it('feature flag OFF (default): entry point hidden and openReceiptCapture is inert', () => {
@@ -1145,21 +1161,28 @@ describe('CreateExpenseModalComponent', () => {
       component.openReceiptCapture();
       expect(component.showReceiptCapture()).toBe(false); // flag off → no active workflow
       fixture.detectChanges();
-      const btn = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="scan-receipt-button"]');
+      const btn = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="scan-receipt-button"]',
+      );
       expect(btn).toBeNull();
     });
 
     it('feature flag ON: the receipt entry point is shown in create mode', () => {
-      (environment as { documentIntelligence: boolean }).documentIntelligence = true;
+      (environment as { documentIntelligence: boolean }).documentIntelligence =
+        true;
       try {
         const f = TestBed.createComponent(CreateExpenseModalComponent);
         f.componentInstance.expense = null;
         f.detectChanges();
         expect(f.componentInstance.docIntelEnabled).toBe(true);
-        const btn = (f.nativeElement as HTMLElement).querySelector('[data-testid="scan-receipt-button"]');
+        const btn = (f.nativeElement as HTMLElement).querySelector(
+          '[data-testid="scan-receipt-button"]',
+        );
         expect(btn).not.toBeNull();
       } finally {
-        (environment as { documentIntelligence: boolean }).documentIntelligence = false;
+        (
+          environment as { documentIntelligence: boolean }
+        ).documentIntelligence = false;
       }
     });
 
@@ -1180,12 +1203,17 @@ describe('CreateExpenseModalComponent', () => {
     });
 
     it('is inert in EDIT mode (never overwrites an existing expense from a receipt)', () => {
-      component.expense = { id: 'exp-1', title: 'Original' } as unknown as typeof component.expense;
+      component.expense = {
+        id: 'exp-1',
+        title: 'Original',
+      } as unknown as typeof component.expense;
       component.openReceiptCapture();
       expect(component.showReceiptCapture()).toBe(false);
       component.onReceiptConfirmed(draft);
       // Edit mode: onReceiptConfirmed returns early — the form title is not seeded from the draft.
-      expect(component.expenseForm.getRawValue().title).not.toBe('Corner Grocery');
+      expect(component.expenseForm.getRawValue().title).not.toBe(
+        'Corner Grocery',
+      );
     });
   });
 });

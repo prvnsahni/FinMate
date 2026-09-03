@@ -19,8 +19,12 @@ describe('PublicSharesController (PUBLIC-1B)', () => {
   beforeEach(async () => {
     service = {
       create: jest.fn().mockResolvedValue({ token: 'raw', status: 'active' }),
-      getStatus: jest.fn().mockResolvedValue({ active: true, status: 'active' }),
-      regenerate: jest.fn().mockResolvedValue({ token: 'raw2', status: 'active' }),
+      getStatus: jest
+        .fn()
+        .mockResolvedValue({ active: true, status: 'active' }),
+      regenerate: jest
+        .fn()
+        .mockResolvedValue({ token: 'raw2', status: 'active' }),
       revoke: jest.fn().mockResolvedValue({ revoked: true }),
     };
     const module: TestingModule = await Test.createTestingModule({

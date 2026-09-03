@@ -31,7 +31,10 @@ import { DocumentIntelligenceEnabledGuard } from './intake/document-intelligence
   imports: [TypeOrmModule.forFeature([Attachment])],
   controllers: [DocumentIntakeController],
   providers: [
-    { provide: DOCUMENT_EXTRACTION_ENGINE, useClass: StubDocumentExtractionEngine },
+    {
+      provide: DOCUMENT_EXTRACTION_ENGINE,
+      useClass: StubDocumentExtractionEngine,
+    },
     { provide: CLASSIFICATION_ENGINE, useClass: RuleBasedClassificationEngine },
     DocumentIntakeService,
     DocumentIntelligenceEnabledGuard,

@@ -85,13 +85,16 @@ export class PublicSharePanelComponent implements OnInit {
             createdAt: res.createdAt,
             revokedAt: null,
           });
-          this.notice.set('Link created. Copy it now — for security it is shown only once.');
+          this.notice.set(
+            'Link created. Copy it now — for security it is shown only once.',
+          );
           this.busy.set(false);
         },
         error: (e) => {
           this.error.set(this.messageFor(e));
           this.busy.set(false);
-          if (e instanceof HttpErrorResponse && e.status === 409) this.loadStatus();
+          if (e instanceof HttpErrorResponse && e.status === 409)
+            this.loadStatus();
         },
       });
   }
@@ -123,7 +126,9 @@ export class PublicSharePanelComponent implements OnInit {
             createdAt: res.createdAt,
             revokedAt: null,
           });
-          this.notice.set('New link created. The previous link no longer works.');
+          this.notice.set(
+            'New link created. The previous link no longer works.',
+          );
           this.busy.set(false);
         },
         error: (e) => {
@@ -153,8 +158,16 @@ export class PublicSharePanelComponent implements OnInit {
       .subscribe({
         next: () => {
           this.shareUrl.set(null);
-          this.status.set({ active: false, status: 'revoked', expiresAt: null, createdAt: null, revokedAt: new Date().toISOString() });
-          this.notice.set('Public sharing turned off. The link no longer works.');
+          this.status.set({
+            active: false,
+            status: 'revoked',
+            expiresAt: null,
+            createdAt: null,
+            revokedAt: new Date().toISOString(),
+          });
+          this.notice.set(
+            'Public sharing turned off. The link no longer works.',
+          );
           this.busy.set(false);
         },
         error: (e) => {
@@ -187,9 +200,12 @@ export class PublicSharePanelComponent implements OnInit {
   /** Name-free, token-free error message. */
   private messageFor(e: unknown): string {
     if (e instanceof HttpErrorResponse) {
-      if (e.status === 403) return 'Only group owners and admins can manage public sharing.';
-      if (e.status === 409) return 'A public link is already active. Refresh, then regenerate or turn it off.';
-      if (e.status === 0) return 'Network error. Please check your connection and try again.';
+      if (e.status === 403)
+        return 'Only group owners and admins can manage public sharing.';
+      if (e.status === 409)
+        return 'A public link is already active. Refresh, then regenerate or turn it off.';
+      if (e.status === 0)
+        return 'Network error. Please check your connection and try again.';
     }
     return "Couldn't update public sharing. Please try again.";
   }

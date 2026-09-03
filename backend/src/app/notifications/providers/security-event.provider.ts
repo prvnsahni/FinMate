@@ -30,7 +30,8 @@ const SECURITY_EVENTS: Record<string, SecurityEventDef> = {
   'auth.password_reset': {
     importance: 'critical',
     title: 'Your password was reset',
-    message: 'If you did not request this, contact support and secure your account.',
+    message:
+      'If you did not request this, contact support and secure your account.',
   },
   'auth.mfa_disabled': {
     importance: 'critical',
@@ -103,7 +104,9 @@ export class SecurityEventNotificationProvider
       if (!def) continue; // ignore benign/noisy events (anti-nag)
       candidates.push({
         // Opaque, deterministic id — never exposes the raw audit primary key.
-        id: 'sec-' + createHash('sha256').update(row.id).digest('hex').slice(0, 16),
+        id:
+          'sec-' +
+          createHash('sha256').update(row.id).digest('hex').slice(0, 16),
         category: 'security',
         sourceDomain: 'CORE',
         title: def.title,

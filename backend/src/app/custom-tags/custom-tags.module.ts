@@ -1,10 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import {
-  CustomTag,
-  GroupKeyVersion,
-  GroupMember,
-} from '@finmate/data-models';
+import { CustomTag, GroupKeyVersion, GroupMember } from '@finmate/data-models';
 import {
   CustomTagsController,
   GroupCustomTagsController,

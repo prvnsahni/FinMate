@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { CanActivate, Injectable, NotFoundException } from '@nestjs/common';
 import { FeatureFlagsService } from '../../platform/feature-flags.service';
 
 /**
@@ -17,7 +13,9 @@ export class DocumentIntelligenceEnabledGuard implements CanActivate {
 
   canActivate(): boolean {
     if (!this.flags.isEnabled('document.intelligence')) {
-      throw new NotFoundException('Document intelligence feature is not available');
+      throw new NotFoundException(
+        'Document intelligence feature is not available',
+      );
     }
     return true;
   }

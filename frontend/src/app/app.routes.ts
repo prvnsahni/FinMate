@@ -36,7 +36,9 @@ export const appRoutes: Route[] = [
       {
         path: 'documents',
         loadChildren: () =>
-          import('./features/documents/documents.routes').then((m) => m.documentsRoutes),
+          import('./features/documents/documents.routes').then(
+            (m) => m.documentsRoutes,
+          ),
       },
       // People supersedes the old Friends page; keep the path as a redirect
       // for backwards compatibility (bookmarks, existing links).
@@ -56,9 +58,9 @@ export const appRoutes: Route[] = [
   {
     path: 'share/:token',
     loadComponent: () =>
-      import(
-        './features/public-share/public-share-viewer.component'
-      ).then((m) => m.PublicShareViewerComponent),
+      import('./features/public-share/public-share-viewer.component').then(
+        (m) => m.PublicShareViewerComponent,
+      ),
   },
   { path: '**', redirectTo: '' },
 ];

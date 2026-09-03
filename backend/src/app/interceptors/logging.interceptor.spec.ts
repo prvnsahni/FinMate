@@ -37,7 +37,9 @@ describe('LoggingInterceptor (SEC-W2)', () => {
     };
     const res = { statusCode: 200 };
 
-    await lastValueFrom(interceptor.intercept(buildContext(req, res), handler()));
+    await lastValueFrom(
+      interceptor.intercept(buildContext(req, res), handler()),
+    );
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const logged = logSpy.mock.calls[0][0] as string;
@@ -55,7 +57,9 @@ describe('LoggingInterceptor (SEC-W2)', () => {
     };
     const res = { statusCode: 200 };
 
-    await lastValueFrom(interceptor.intercept(buildContext(req, res), handler()));
+    await lastValueFrom(
+      interceptor.intercept(buildContext(req, res), handler()),
+    );
 
     const logged = logSpy.mock.calls[0][0] as string;
     const expectedHash = createHash('sha256').update('9.9.9.9').digest('hex');

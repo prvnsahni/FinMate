@@ -29,11 +29,23 @@ const conf = (score: number): FieldConfidence => ({
   band: score >= 0.66 ? 'high' : score >= 0.4 ? 'medium' : 'low',
 });
 
-const field = <T>(value: T, score: number, adapter?: string, page?: number): ExtractedField<T> => ({
+const field = <T>(
+  value: T,
+  score: number,
+  adapter?: string,
+  page?: number,
+): ExtractedField<T> => ({
   value,
   authority: 'EXTRACTED',
   confidence: conf(score),
-  ...(adapter || page ? { provenance: { ...(adapter ? { adapter } : {}), ...(page ? { page } : {}) } } : {}),
+  ...(adapter || page
+    ? {
+        provenance: {
+          ...(adapter ? { adapter } : {}),
+          ...(page ? { page } : {}),
+        },
+      }
+    : {}),
 });
 
 const lastNumber = (s: string): number | undefined => {
@@ -62,12 +74,19 @@ export function parseReceiptText(
   const unresolved: string[] = [];
 
   if (lines.length === 0) {
-    return { warnings: ['No text lines detected.'], unresolvedFields: ['header', 'lineItems'] };
+    return {
+      warnings: ['No text lines detected.'],
+      unresolvedFields: ['header', 'lineItems'],
+    };
   }
 
-  const currencyLine = lines.find((l) => CURRENCY_MAP.some(([re]) => re.test(l)));
+  const currencyLine = lines.find((l) =>
+    CURRENCY_MAP.some(([re]) => re.test(l)),
+  );
   const currency = currencyLine
-    ? (CURRENCY_MAP.find(([re]) => re.test(currencyLine)) as [RegExp, string])[1]
+    ? (
+        CURRENCY_MAP.find(([re]) => re.test(currencyLine)) as [RegExp, string]
+      )[1]
     : undefined;
 
   const dateLine = lines.find((l) => DATE_RE.test(l));
@@ -80,7 +99,11 @@ export function parseReceiptText(
 
   // Merchant: first line that is not the date/total and has no trailing amount.
   const merchant = lines.find(
-    (l) => l !== totalLine && !DATE_RE.test(l) && !/total/i.test(l) && lastNumber(l) === undefined,
+    (l) =>
+      l !== totalLine &&
+      !DATE_RE.test(l) &&
+      !/total/i.test(l) &&
+      lastNumber(l) === undefined,
   );
 
   // Line items: lines with a trailing amount that are not the total/date line.
@@ -90,7 +113,8 @@ export function parseReceiptText(
     const lineTotal = lastNumber(l);
     if (lineTotal === undefined) continue;
     const qty = l.match(QTY_RE);
-    const description = l.replace(NUM_RE, '').replace(/[x×]/gi, '').trim() || 'item';
+    const description =
+      l.replace(NUM_RE, '').replace(/[x×]/gi, '').trim() || 'item';
     items.push({
       authority: 'EXTRACTED',
       confidence: conf(0.5),

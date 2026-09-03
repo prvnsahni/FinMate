@@ -27,7 +27,11 @@ export class PdfScanExtractionAdapter implements ExtractionAdapter {
 
   async extract(content: AdapterContent): Promise<AdapterExtraction> {
     if (content.sourceType !== 'pdf') {
-      return { status: 'invalid_input', warnings: ['pdf_scanned adapter requires a PDF.'], unresolvedFields: [] };
+      return {
+        status: 'invalid_input',
+        warnings: ['pdf_scanned adapter requires a PDF.'],
+        unresolvedFields: [],
+      };
     }
     return {
       status: 'provider_unavailable',

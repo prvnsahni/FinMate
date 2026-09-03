@@ -1,4 +1,12 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { DocumentReviewService } from './services/document-review.service';
 import { CustomTagSuggestionService } from './services/custom-tag-suggestion.service';
 import { AuthorizedCustomTag } from './services/custom-tag-suggestion';
@@ -89,12 +97,31 @@ export class DocumentReviewComponent {
 
   editHeader(field: ReviewHeaderField, event: Event): void {
     const m = this.model();
-    if (m) this.model.set(this.review.editHeaderField(m, field, (event.target as HTMLInputElement).value));
+    if (m)
+      this.model.set(
+        this.review.editHeaderField(
+          m,
+          field,
+          (event.target as HTMLInputElement).value,
+        ),
+      );
   }
 
-  editItem(itemId: string, field: keyof Omit<ReviewLineItem, 'id'>, event: Event): void {
+  editItem(
+    itemId: string,
+    field: keyof Omit<ReviewLineItem, 'id'>,
+    event: Event,
+  ): void {
     const m = this.model();
-    if (m) this.model.set(this.review.editItemField(m, itemId, field, (event.target as HTMLInputElement).value));
+    if (m)
+      this.model.set(
+        this.review.editItemField(
+          m,
+          itemId,
+          field,
+          (event.target as HTMLInputElement).value,
+        ),
+      );
   }
 
   addItem(): void {
@@ -145,7 +172,11 @@ export class DocumentReviewComponent {
     for (const it of model.items) {
       for (const t of it.tags) {
         if (t.custom && authorizedIds.has(t.tagId)) {
-          this.suggestions.recordCorrection(scope, it.description.value, t.tagId);
+          this.suggestions.recordCorrection(
+            scope,
+            it.description.value,
+            t.tagId,
+          );
         }
       }
     }

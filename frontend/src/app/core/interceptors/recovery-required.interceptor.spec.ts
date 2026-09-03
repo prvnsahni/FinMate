@@ -5,11 +5,8 @@ import {
   RECOVERY_REQUIRED_EVENT,
 } from './recovery-required.interceptor';
 
-const run = (
-  interceptor: HttpInterceptorFn,
-  req: any,
-  next: (r: any) => any,
-) => (interceptor as any)(req, next);
+const run = (interceptor: HttpInterceptorFn, req: any, next: (r: any) => any) =>
+  (interceptor as any)(req, next);
 
 describe('recoveryRequiredInterceptor (REC-1 defense-in-depth)', () => {
   const req = { url: '/api/v1/groups/g1/keys', method: 'POST' } as any;
@@ -44,12 +41,18 @@ describe('recoveryRequiredInterceptor (REC-1 defense-in-depth)', () => {
       error: { errorCode: 'RES_ALREADY_EXISTS' },
     });
     await expect(
-      firstValueFrom(run(recoveryRequiredInterceptor, req, () => throwError(() => conflict))),
+      firstValueFrom(
+        run(recoveryRequiredInterceptor, req, () => throwError(() => conflict)),
+      ),
     ).rejects.toBe(conflict);
 
     const forbidden = new HttpErrorResponse({ status: 403, error: {} });
     await expect(
-      firstValueFrom(run(recoveryRequiredInterceptor, req, () => throwError(() => forbidden))),
+      firstValueFrom(
+        run(recoveryRequiredInterceptor, req, () =>
+          throwError(() => forbidden),
+        ),
+      ),
     ).rejects.toBe(forbidden);
 
     expect(events.length).toBe(0);

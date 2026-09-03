@@ -75,7 +75,11 @@ describe('AuthController transport (W-AUTH)', () => {
 
     it('logout uses the body token and clears no cookies', async () => {
       const res = makeRes();
-      await controller.logout({ refreshToken: 'R' } as any, makeReq(), res as any);
+      await controller.logout(
+        { refreshToken: 'R' } as any,
+        makeReq(),
+        res as any,
+      );
       expect(authService.logout).toHaveBeenCalledWith('R', 'user-1');
       expect(res.clearCookie).not.toHaveBeenCalled();
     });
@@ -105,7 +109,10 @@ describe('AuthController transport (W-AUTH)', () => {
         path: '/api/v1/auth/refresh',
       });
       expect(refreshCall[2]).not.toHaveProperty('domain'); // host-only
-      expect(csrfCall[2]).toMatchObject({ path: '/api/v1/auth', httpOnly: true });
+      expect(csrfCall[2]).toMatchObject({
+        path: '/api/v1/auth',
+        httpOnly: true,
+      });
 
       // dual-emit: body still carries the refresh token for legacy clients,
       // plus the CSRF token for the new web client to echo.
@@ -131,7 +138,9 @@ describe('AuthController transport (W-AUTH)', () => {
     });
 
     it('refresh via cookie with a MISSING CSRF header is forbidden', async () => {
-      const req = makeReq({ cookie: `${REFRESH_COOKIE}=CTOK; ${CSRF_COOKIE}=CS` });
+      const req = makeReq({
+        cookie: `${REFRESH_COOKIE}=CTOK; ${CSRF_COOKIE}=CS`,
+      });
       await expect(
         controller.refresh({} as any, req, makeRes() as any),
       ).rejects.toBeInstanceOf(ForbiddenException);
@@ -154,7 +163,11 @@ describe('AuthController transport (W-AUTH)', () => {
         'x-csrf-token': 'CS',
       });
       await expect(
-        controller.refresh({ refreshToken: 'DIFFERENT' } as any, req, makeRes() as any),
+        controller.refresh(
+          { refreshToken: 'DIFFERENT' } as any,
+          req,
+          makeRes() as any,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -171,7 +184,9 @@ describe('AuthController transport (W-AUTH)', () => {
 
     it('logout reads the cookie token and clears both transport cookies', async () => {
       const res = makeRes();
-      const req = makeReq({ cookie: `${REFRESH_COOKIE}=CTOK; ${CSRF_COOKIE}=CS` });
+      const req = makeReq({
+        cookie: `${REFRESH_COOKIE}=CTOK; ${CSRF_COOKIE}=CS`,
+      });
       await controller.logout({} as any, req, res as any);
       expect(authService.logout).toHaveBeenCalledWith('CTOK', 'user-1');
       expect(res.clearCookie).toHaveBeenCalledTimes(2);

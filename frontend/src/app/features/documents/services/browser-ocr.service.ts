@@ -60,14 +60,18 @@ export class BrowserOcrService {
    */
   async recognize(bytes: Uint8Array, mimeType: string): Promise<string> {
     const tesseract = await this.loadTesseract();
-    const worker = await tesseract.createWorker('eng', tesseract.OEM.LSTM_ONLY, {
-      workerPath: this.workerPath, // local → same-origin, never the CDN
-      corePath: this.corePath, // local WASM core + loaders
-      langPath: this.langPath, // local eng.traineddata dir
-      gzip: false, // committed asset is uncompressed .traineddata
-      cacheMethod: 'none', // never read/write a cache copy
-      // No `logger`: receipt text / progress must never be logged.
-    });
+    const worker = await tesseract.createWorker(
+      'eng',
+      tesseract.OEM.LSTM_ONLY,
+      {
+        workerPath: this.workerPath, // local → same-origin, never the CDN
+        corePath: this.corePath, // local WASM core + loaders
+        langPath: this.langPath, // local eng.traineddata dir
+        gzip: false, // committed asset is uncompressed .traineddata
+        cacheMethod: 'none', // never read/write a cache copy
+        // No `logger`: receipt text / progress must never be logged.
+      },
+    );
     try {
       // Copy into a fresh ArrayBuffer-backed view so the Blob type is unambiguous
       // (a plain Uint8Array may be typed as ArrayBufferLike / SharedArrayBuffer).

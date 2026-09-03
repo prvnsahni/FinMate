@@ -8,11 +8,7 @@ import {
   NotFoundException,
   PreconditionFailedException,
 } from '@nestjs/common';
-import {
-  CustomTag,
-  GroupKeyVersion,
-  GroupMember,
-} from '@finmate/data-models';
+import { CustomTag, GroupKeyVersion, GroupMember } from '@finmate/data-models';
 import { CustomTagsService } from './custom-tags.service';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -178,7 +174,10 @@ describe('CustomTagsService', () => {
       ownerUser: { id: USER_A },
     } as unknown as CustomTag);
     await expect(
-      service.rename(USER_B, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+      service.rename(USER_B, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 1,
+      }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(customTagRepository.save).not.toHaveBeenCalled();
   });
@@ -257,7 +256,10 @@ describe('CustomTagsService', () => {
     } as unknown as CustomTag);
     asNonMember();
     await expect(
-      service.rename(USER_B, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+      service.rename(USER_B, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 1,
+      }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(customTagRepository.save).not.toHaveBeenCalled();
   });
@@ -308,7 +310,9 @@ describe('CustomTagsService', () => {
   });
 
   it('16/17. no decrypt path and no plaintext/key logging during CRUD', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const logSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
     const errSpy = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -522,7 +526,11 @@ describe('CustomTagsService', () => {
 
   it('C5b-2. a group owner/admin restores a deprecated group tag', async () => {
     customTagRepository.findOne.mockResolvedValue(
-      deprecatedPersonal({ scopeType: 'group', ownerUser: null, group: { id: GROUP_X } }),
+      deprecatedPersonal({
+        scopeType: 'group',
+        ownerUser: null,
+        group: { id: GROUP_X },
+      }),
     );
     asAdmin();
     const res = await service.restore(USER_A, TAG_ID, { version: 2 });
@@ -541,7 +549,11 @@ describe('CustomTagsService', () => {
 
   it('C5b-4. a non-member cannot restore a group tag (IDOR → NotFound)', async () => {
     customTagRepository.findOne.mockResolvedValue(
-      deprecatedPersonal({ scopeType: 'group', ownerUser: null, group: { id: GROUP_X } }),
+      deprecatedPersonal({
+        scopeType: 'group',
+        ownerUser: null,
+        group: { id: GROUP_X },
+      }),
     );
     asNonMember();
     await expect(
@@ -551,7 +563,9 @@ describe('CustomTagsService', () => {
   });
 
   it('C5b-5. a stale version on restore → CON_VERSION_CONFLICT', async () => {
-    customTagRepository.findOne.mockResolvedValue(deprecatedPersonal({ version: 5 }));
+    customTagRepository.findOne.mockResolvedValue(
+      deprecatedPersonal({ version: 5 }),
+    );
     try {
       await service.restore(USER_A, TAG_ID, { version: 2 });
       fail('expected conflict');
@@ -586,7 +600,10 @@ describe('CustomTagsService', () => {
   it('C5b-13. a deprecated tag CANNOT be renamed (must restore first) → Conflict', async () => {
     customTagRepository.findOne.mockResolvedValue(deprecatedPersonal());
     try {
-      await service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 2 });
+      await service.rename(USER_A, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 2,
+      });
       fail('expected conflict');
     } catch (e) {
       expect(e).toBeInstanceOf(ConflictException);
@@ -650,8 +667,12 @@ describe('CustomTagsService', () => {
   });
 
   it('C5b-17. restore exposes no hard-delete path (service has no delete/remove)', () => {
-    expect((service as unknown as Record<string, unknown>)['delete']).toBeUndefined();
-    expect((service as unknown as Record<string, unknown>)['hardDelete']).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>)['delete'],
+    ).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>)['hardDelete'],
+    ).toBeUndefined();
     expect(
       (customTagRepository as unknown as Record<string, unknown>)['delete'],
     ).toBeUndefined();
@@ -683,7 +704,10 @@ describe('CustomTagsService', () => {
 
     customTagRepository.findOne.mockResolvedValue(groupTag());
     await expect(
-      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+      service.rename(USER_A, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 1,
+      }),
     ).resolves.toBeDefined();
     await expect(service.deprecate(USER_A, TAG_ID)).resolves.toBeDefined();
   });
@@ -700,7 +724,10 @@ describe('CustomTagsService', () => {
     customTagRepository.findOne.mockResolvedValue(groupTag());
     asMember();
     await expect(
-      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+      service.rename(USER_A, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 1,
+      }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(customTagRepository.save).not.toHaveBeenCalled();
   });
@@ -751,7 +778,10 @@ describe('CustomTagsService', () => {
     } as unknown as CustomTag);
     // No membership lookup happens for a personal tag; owner governs directly.
     await expect(
-      service.rename(USER_A, TAG_ID, { encryptedName: CIPHERTEXT_2, version: 1 }),
+      service.rename(USER_A, TAG_ID, {
+        encryptedName: CIPHERTEXT_2,
+        version: 1,
+      }),
     ).resolves.toBeDefined();
   });
 });

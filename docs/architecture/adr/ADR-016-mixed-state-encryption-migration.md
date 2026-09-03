@@ -17,7 +17,7 @@
 - **Dependencies:** ADR-004 (keys), ADR-003, OQ-11 gate.
 - **Related SRS:** MIG-001/002/003/008, P2P-003/004, SET-002, GRP-005.
 - **Related Ledger items:** B-2, FLD-1, FLD-2.
-- **Related Threat Model:** SEC-KI1 (rotation/ciphertext display). **⟳ Status note (2026-08-13, additive — original rationale unchanged):** SEC-KI1's canonical `versionId` path was **verified fixed** in the repository (2026-07-17); see [FINMATE_SEC_KI1_VERIFICATION.md](../FINMATE_SEC_KI1_VERIFICATION.md). This ADR does **not** describe or depend on a SEC-KI1 fix — it references the *ciphertext-display* class only, which maps to the **display-only GRP-007** residual. No ADR decision changes; no migration required.
+- **Related Threat Model:** SEC-KI1 (rotation/ciphertext display). **⟳ Status note (2026-08-13, additive — original rationale unchanged):** SEC-KI1's canonical `versionId` path was **verified fixed** in the repository (2026-07-17); see [FINMATE_SEC_KI1_VERIFICATION.md](../FINMATE_SEC_KI1_VERIFICATION.md). This ADR does **not** describe or depend on a SEC-KI1 fix — it references the _ciphertext-display_ class only, which maps to the **display-only GRP-007** residual. No ADR decision changes; no migration required.
 - **Related architecture docs:** Data Classification Matrix (#2); Key Management (#4).
 - **Simple explanation:** Old notes written in plain text stay readable; new ones are locked; your device quietly re-locks the old ones next time you log in. Nothing is forced or lost.
 - **Technical explanation:** Additive discriminator + client-side opportunistic backfill with defined actor/key per field; permanent mixed-state; no server-side decryption; group.description gated on OQ-11.

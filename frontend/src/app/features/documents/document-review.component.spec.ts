@@ -20,7 +20,11 @@ const okResult = (): DocumentExtractionResult => ({
   sourceType: 'pdf',
   candidatesOnly: true,
   warnings: [],
-  header: { merchant: ef('Example Market'), currency: ef('INR'), total: ef(685) },
+  header: {
+    merchant: ef('Example Market'),
+    currency: ef('INR'),
+    total: ef(685),
+  },
   lineItems: [
     { authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) },
     { authority: 'EXTRACTED', description: ef('Rice'), lineTotal: ef(520) },
@@ -52,7 +56,9 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     const fixture = build(okResult());
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text).toContain('UNDER_ALLOCATED');
-    expect(fixture.componentInstance.reconciliation()?.unallocatedDifference).toBe(45);
+    expect(
+      fixture.componentInstance.reconciliation()?.unallocatedDifference,
+    ).toBe(45);
   });
 
   it('requires explicit confirm — emits a draft only when confirm() is called', () => {
@@ -70,19 +76,31 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     const fixture = build(okResult());
     const comp = fixture.componentInstance;
     const id = comp.model()!.items[0].id;
-    comp.editItem(id, 'lineTotal', { target: { value: '999' } } as unknown as Event);
+    comp.editItem(id, 'lineTotal', {
+      target: { value: '999' },
+    } as unknown as Event);
     expect(comp.model()?.documentTotal.value).toBe(685);
   });
 
   it('surfaces provider_unavailable honestly (no pretend OCR, no editable form)', () => {
-    const fixture = build({ status: 'provider_unavailable', sourceType: 'image', candidatesOnly: true, warnings: [] });
+    const fixture = build({
+      status: 'provider_unavailable',
+      sourceType: 'image',
+      candidatesOnly: true,
+      warnings: [],
+    });
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text).toMatch(/isn't available/i);
     expect(fixture.componentInstance.hasCandidates()).toBe(false);
   });
 
   it('handles extraction failure state', () => {
-    const fixture = build({ status: 'document_corrupt', sourceType: 'pdf', candidatesOnly: true, warnings: [] });
+    const fixture = build({
+      status: 'document_corrupt',
+      sourceType: 'pdf',
+      candidatesOnly: true,
+      warnings: [],
+    });
     expect(fixture.componentInstance.hasCandidates()).toBe(false);
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text).toMatch(/couldn't read|Total only/i);
@@ -96,7 +114,14 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     ]);
     suggestionsMock.suggest.mockImplementation((label: string | null) =>
       label === 'Milk'
-        ? [{ tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name', confidence: 0.8 }]
+        ? [
+            {
+              tagId: 'ct-1',
+              name: 'My Grocery',
+              reason: 'Matched tag name',
+              confidence: 0.8,
+            },
+          ]
         : [],
     );
 
@@ -104,9 +129,15 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     await flush();
     fixture.detectChanges();
 
-    const milk = fixture.componentInstance.model()!.items.find((i) => i.description.value === 'Milk')!;
+    const milk = fixture.componentInstance
+      .model()!
+      .items.find((i) => i.description.value === 'Milk')!;
     const custom = milk.tags.find((t) => t.tagId === 'ct-1');
-    expect(custom).toMatchObject({ custom: true, authority: 'INFERRED', reason: 'Matched tag name' });
+    expect(custom).toMatchObject({
+      custom: true,
+      authority: 'INFERRED',
+      reason: 'Matched tag name',
+    });
     // Canonical tags remain present alongside the custom suggestion.
     expect(milk.tags.some((t) => t.tagId === 'milk' && !t.custom)).toBe(true);
   });
@@ -118,7 +149,14 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     ]);
     suggestionsMock.suggest.mockImplementation((label: string | null) =>
       label === 'Milk'
-        ? [{ tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name', confidence: 0.8 }]
+        ? [
+            {
+              tagId: 'ct-1',
+              name: 'My Grocery',
+              reason: 'Matched tag name',
+              confidence: 0.8,
+            },
+          ]
         : [],
     );
 
@@ -140,7 +178,9 @@ describe('DocumentReviewComponent (DOC-4)', () => {
     const fixture = build(okResult());
     await flush();
     expect(suggestionsMock.loadAuthorizedTags).not.toHaveBeenCalled();
-    const milk = fixture.componentInstance.model()!.items.find((i) => i.description.value === 'Milk')!;
+    const milk = fixture.componentInstance
+      .model()!
+      .items.find((i) => i.description.value === 'Milk')!;
     expect(milk.tags.every((t) => !t.custom)).toBe(true);
   });
 });

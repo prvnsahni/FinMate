@@ -13,7 +13,8 @@ import {
   ReviewTag,
 } from '../document-review.model';
 
-const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number): number =>
+  Math.round((n + Number.EPSILON) * 100) / 100;
 
 let itemSeq = 0;
 const nextId = (): string => `item-${++itemSeq}`;
@@ -76,7 +77,9 @@ export class DocumentReviewService {
   addTag(model: ReviewModel, itemId: string, text: string): ReviewModel {
     const label = text.trim();
     if (label === '') return model;
-    const match = classifyLabel(label).find((t) => normalizeTagKey(t.canonicalName) === normalizeTagKey(label));
+    const match = classifyLabel(label).find(
+      (t) => normalizeTagKey(t.canonicalName) === normalizeTagKey(label),
+    );
     const tag: ReviewTag = {
       tagId: match ? match.tagId : normalizeTagKey(label),
       canonicalName: match ? match.canonicalName : label,
@@ -94,7 +97,9 @@ export class DocumentReviewService {
   /** Remove a tag from an item (user correction). */
   removeTag(model: ReviewModel, itemId: string, tagId: string): ReviewModel {
     const items = model.items.map((it) =>
-      it.id === itemId ? { ...it, tags: it.tags.filter((t) => t.tagId !== tagId) } : it,
+      it.id === itemId
+        ? { ...it, tags: it.tags.filter((t) => t.tagId !== tagId) }
+        : it,
     );
     return { ...model, items };
   }
@@ -111,7 +116,9 @@ export class DocumentReviewService {
    */
   mergeCustomSuggestions(
     model: ReviewModel,
-    suggestFor: (label: string | null) => { tagId: string; name: string; reason: string }[],
+    suggestFor: (
+      label: string | null,
+    ) => { tagId: string; name: string; reason: string }[],
   ): ReviewModel {
     const items = model.items.map((it) => {
       const suggestions = suggestFor(it.description.value);
@@ -127,18 +134,27 @@ export class DocumentReviewService {
           custom: true,
           reason: s.reason,
         }));
-      return additions.length ? { ...it, tags: [...it.tags, ...additions] } : it;
+      return additions.length
+        ? { ...it, tags: [...it.tags, ...additions] }
+        : it;
     });
     return { ...model, items };
   }
 
   /** Edit a header field → authority USER_CORRECTED. Returns a new model. */
-  editHeaderField(model: ReviewModel, field: ReviewHeaderField, value: string): ReviewModel {
+  editHeaderField(
+    model: ReviewModel,
+    field: ReviewHeaderField,
+    value: string,
+  ): ReviewModel {
     if (field === 'documentTotal') {
       return { ...model, documentTotal: this.corrected(this.toNumber(value)) };
     }
     const key = field === 'date' ? 'date' : field;
-    return { ...model, [key]: this.corrected<string>(value === '' ? null : value) } as ReviewModel;
+    return {
+      ...model,
+      [key]: this.corrected<string>(value === '' ? null : value),
+    } as ReviewModel;
   }
 
   /** Edit a line-item field → authority USER_CORRECTED. Returns a new model. */
@@ -151,7 +167,9 @@ export class DocumentReviewService {
     const items = model.items.map((it) => {
       if (it.id !== itemId) return it;
       const isNumeric = field !== 'description';
-      const next = isNumeric ? this.corrected(this.toNumber(value)) : this.corrected(value === '' ? null : value);
+      const next = isNumeric
+        ? this.corrected(this.toNumber(value))
+        : this.corrected(value === '' ? null : value);
       return { ...it, [field]: next };
     });
     return { ...model, items };
@@ -181,18 +199,33 @@ export class DocumentReviewService {
    */
   reconcile(model: ReviewModel): ReviewReconciliation {
     const allocatedTotal = round2(
-      model.items.reduce((s, it) => (typeof it.lineTotal.value === 'number' ? s + it.lineTotal.value : s), 0),
+      model.items.reduce(
+        (s, it) =>
+          typeof it.lineTotal.value === 'number' ? s + it.lineTotal.value : s,
+        0,
+      ),
     );
     const documentTotal = model.documentTotal.value;
     if (documentTotal === null || !Number.isFinite(documentTotal)) {
-      return { documentTotal, allocatedTotal, unallocatedDifference: 0, reconciliationStatus: 'UNRECONCILED' };
+      return {
+        documentTotal,
+        allocatedTotal,
+        unallocatedDifference: 0,
+        reconciliationStatus: 'UNRECONCILED',
+      };
     }
     const unallocatedDifference = round2(documentTotal - allocatedTotal);
     let reconciliationStatus: ReconciliationStatus;
     if (unallocatedDifference === 0) reconciliationStatus = 'BALANCED';
-    else if (unallocatedDifference > 0) reconciliationStatus = 'UNDER_ALLOCATED';
+    else if (unallocatedDifference > 0)
+      reconciliationStatus = 'UNDER_ALLOCATED';
     else reconciliationStatus = 'OVER_ALLOCATED';
-    return { documentTotal, allocatedTotal, unallocatedDifference, reconciliationStatus };
+    return {
+      documentTotal,
+      allocatedTotal,
+      unallocatedDifference,
+      reconciliationStatus,
+    };
   }
 
   /**
@@ -200,7 +233,10 @@ export class DocumentReviewService {
    * USER_CONFIRMED; user-edited fields keep USER_CORRECTED. Produces a draft for the
    * existing expense flow — it does NOT create an expense or mutate finance data.
    */
-  confirm(model: ReviewModel): { model: ReviewModel; draft: ConfirmedDocumentDraft } {
+  confirm(model: ReviewModel): {
+    model: ReviewModel;
+    draft: ConfirmedDocumentDraft;
+  } {
     const confirmField = <T>(field: ReviewField<T>): ReviewField<T> =>
       field.authority === 'EXTRACTED' || field.authority === 'INFERRED'
         ? { ...field, authority: 'USER_CONFIRMED' }
@@ -219,7 +255,11 @@ export class DocumentReviewService {
         unitPrice: confirmField(it.unitPrice),
         lineTotal: confirmField(it.lineTotal),
         // Kept engine suggestions become USER_CONFIRMED; user tags stay USER_CORRECTED.
-        tags: it.tags.map((t) => (t.authority === 'INFERRED' ? { ...t, authority: 'USER_CONFIRMED' as const } : t)),
+        tags: it.tags.map((t) =>
+          t.authority === 'INFERRED'
+            ? { ...t, authority: 'USER_CONFIRMED' as const }
+            : t,
+        ),
       })),
       confirmed: true,
     };

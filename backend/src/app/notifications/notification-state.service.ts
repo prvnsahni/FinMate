@@ -29,9 +29,7 @@ export class NotificationStateService {
   }
 
   /** The user's seen/acted map: opaque notification id → state. */
-  async getSeenMap(
-    userId: string,
-  ): Promise<Record<string, NotificationState>> {
+  async getSeenMap(userId: string): Promise<Record<string, NotificationState>> {
     const raw = await this.redis.get(this.seenKey(userId));
     if (!raw) return {};
     try {

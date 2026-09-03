@@ -36,7 +36,8 @@ export function makeTextPdf(lines: string[]): Uint8Array {
 
   const xrefStart = pdf.length;
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const off of offsets) pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+  for (const off of offsets)
+    pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
   pdf += `trailer\n<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xrefStart}\n%%EOF`;
 
   return Uint8Array.from(Buffer.from(pdf, 'latin1'));

@@ -9,7 +9,7 @@
 - **Security impact:** SEC-W3/T-02 closes at sunset, not before.
 - **Privacy impact:** Neutral.
 - **Performance impact:** Negligible.
-- **Backward-compatibility impact:** HIGH — this ADR *is* the compatibility bridge.
+- **Backward-compatibility impact:** HIGH — this ADR _is_ the compatibility bridge.
 - **Migration impact:** Phased FE+BE+native + min-version enforcement.
 - **User impact:** None if phased; seamless for updated clients.
 - **Operational impact:** Compatibility telemetry to detect old-path usage; min-version gate.

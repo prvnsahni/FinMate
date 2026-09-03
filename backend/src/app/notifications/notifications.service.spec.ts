@@ -99,7 +99,9 @@ describe('NotificationsService (BATCH-12 engine)', () => {
         state as any,
         [bad, provider] as any,
       );
-      provider.getCandidates.mockResolvedValue([cand({ id: 'ok', importance: 'high' })]);
+      provider.getCandidates.mockResolvedValue([
+        cand({ id: 'ok', importance: 'high' }),
+      ]);
       const res = await svc.getNotifications('u1');
       expect(res.notifications.map((n) => n.id)).toEqual(['ok']);
     });

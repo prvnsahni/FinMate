@@ -5,64 +5,74 @@
 **Nature:** Policy + governance + operational control. Authorises **no** code, schema, migration, API, encryption, AI-provider, or production change. No locked architecture decision is altered. Legal statements are general and marked **[COUNSEL]**; unselected tools are **[ENG-UNKNOWN / future engineering]**.
 **Reading model:** each major concept is **Simple** first, then **Technical/operational**. Diagram IDs IP-01..IP-09 are local to this document. Grounded in ledger **IP-1, IP-2, GOV-5**, and risks **SEC-W1/W2/W3, OPS-1**.
 
-> **The honest limit (IP-2), stated up front:** It is **not technically possible to guarantee** that an external AI system will never independently generate a similar product, idea, UI pattern, algorithm, or workflow. This policy does not claim otherwise. It **reduces the risk of exposing FinMate's *specific* implementation, architecture, algorithms, business logic, security design, and roadmap.**
+> **The honest limit (IP-2), stated up front:** It is **not technically possible to guarantee** that an external AI system will never independently generate a similar product, idea, UI pattern, algorithm, or workflow. This policy does not claim otherwise. It **reduces the risk of exposing FinMate's _specific_ implementation, architecture, algorithms, business logic, security design, and roadmap.**
 
 ---
 
 ## 1. FinMate Confidentiality Explained in 5 Minutes
 
 ### Simple explanation
+
 FinMate handles three kinds of information:
-- **User data** — belongs to the *user* (their money, mood, journal, photos). FinMate protects it *for* them.
-- **FinMate confidential information** — belongs to *FinMate* (how the app works inside, its algorithms, its plans). FinMate protects it *from* copying.
+
+- **User data** — belongs to the _user_ (their money, mood, journal, photos). FinMate protects it _for_ them.
+- **FinMate confidential information** — belongs to _FinMate_ (how the app works inside, its algorithms, its plans). FinMate protects it _from_ copying.
 - **Public information** — safe to share (open-source libraries, public docs).
 
 They must **not** be treated the same, because they're protected for **different reasons**: user data for privacy/law; FinMate IP for competitive/trade-secret value; public data needs no protection. A tool (like a coding AI) that needs to see one should not automatically see the others.
 
 ### Technical explanation
+
 The confidentiality axis (USER / IP / PUBLIC) is **orthogonal** to the data-sensitivity zones (Z-1..3). A document can be low on the privacy axis but maximal on the IP axis (e.g., the threat model contains no user PII but is crown-jewel IP). Controls minimize what any external party — AI provider, coding agent, developer, contractor, vendor, analytics, support — receives, per **minimum necessary context**.
 
 ---
 
 ## 2. Data categories
 
-**A. USER DATA** — financial records, health/wellbeing, mood, journal, photos, wardrobe, goals, contacts, investments, income, relationships, behavioural information. *(Protected by the privacy architecture, Documents #2–#5.)*
+**A. USER DATA** — financial records, health/wellbeing, mood, journal, photos, wardrobe, goals, contacts, investments, income, relationships, behavioural information. _(Protected by the privacy architecture, Documents #2–#5.)_
 
 **B. FINMATE CONFIDENTIAL IP** — proprietary algorithms, business logic, application/security/encryption/AI-firewall/intelligence/recommendation/ranking/personalization design, product strategy, future roadmap, unreleased features, internal experiments, database architecture, threat model, internal security controls.
 
 **C. PUBLIC INFORMATION** — public documentation, intentionally-exposed public APIs, open-source dependencies, public legal/standards information, public datasets, anything FinMate intentionally releases.
 
 **IP-01 — Three information classes**
+
 ```mermaid
 flowchart TB
   UD["USER DATA (user owns)"] --> P1["Protected for privacy/law"]
   IP["FINMATE IP (FinMate owns)"] --> P2["Protected for competitive/trade-secret value"]
   PUB["PUBLIC (no owner)"] --> P3["Freely shareable"]
 ```
-*Simple:* three buckets, three reasons to (not) protect. *Technical:* every artifact is tagged on both the privacy zone and this IP axis; egress controls consult both.
+
+_Simple:_ three buckets, three reasons to (not) protect. _Technical:_ every artifact is tagged on both the privacy zone and this IP axis; egress controls consult both.
 
 ---
 
 ## 3. Critical distinction
 
 **USER DATA ≠ FINMATE IP.**
+
 - A user's expense record is **not** FinMate's IP (it's the user's personal data).
 - FinMate's recommendation algorithm is **not** user data (it's FinMate's IP).
-Both need protection, but the reasons, owners, and legal frameworks differ. Confusing them leads to either over-sharing IP (treating it as "just app code") or mishandling user data (treating it as "our asset").
+  Both need protection, but the reasons, owners, and legal frameworks differ. Confusing them leads to either over-sharing IP (treating it as "just app code") or mishandling user data (treating it as "our asset").
 
 ---
 
 ## 4. AI access principle — minimum necessary context
 
 ### Simple explanation
+
 An AI helper gets **only what it needs for the job in front of it**, nothing more.
 
 ### Technical explanation (parallels the runtime firewall, Document #5)
+
 Example — an agent fixing an Angular component:
+
 - **ALLOW:** the relevant component, its related service, the required DTO/interface, the relevant test, the specific design requirement.
 - **DO NOT automatically provide:** the production database, unrelated financial entities, security keys, the full roadmap, confidential algorithms, unrelated modules, user data, deployment credentials.
 
 **IP-02 — AI context minimization**
+
 ```mermaid
 flowchart LR
   Task["Task"] --> Need["Determine required context"]
@@ -75,13 +85,13 @@ flowchart LR
 
 ## 5. Task-scoped AI context classification
 
-| Level | Name | Examples |
-|---|---|---|
-| **0** | PUBLIC | open-source usage, public docs, generic patterns |
-| **1** | GENERAL PROJECT | routine components, DTOs, tests, non-sensitive business logic |
-| **2** | CONFIDENTIAL DEVELOPMENT | internal service logic, module internals, non-crown-jewel algorithms |
-| **3** | HIGHLY CONFIDENTIAL ARCHITECTURE | security/key/AI-firewall design, threat model, crown-jewel algorithms, roadmap |
-| **4** | **SECRET / NEVER PROVIDE** | passwords, API keys, DB credentials, encryption keys, refresh/session tokens, production secrets, customer PII, production database dumps |
+| Level | Name                             | Examples                                                                                                                                  |
+| ----- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **0** | PUBLIC                           | open-source usage, public docs, generic patterns                                                                                          |
+| **1** | GENERAL PROJECT                  | routine components, DTOs, tests, non-sensitive business logic                                                                             |
+| **2** | CONFIDENTIAL DEVELOPMENT         | internal service logic, module internals, non-crown-jewel algorithms                                                                      |
+| **3** | HIGHLY CONFIDENTIAL ARCHITECTURE | security/key/AI-firewall design, threat model, crown-jewel algorithms, roadmap                                                            |
+| **4** | **SECRET / NEVER PROVIDE**       | passwords, API keys, DB credentials, encryption keys, refresh/session tokens, production secrets, customer PII, production database dumps |
 
 **[REQUIREMENT]** Level 4 must **never** be provided to any external AI or agent. Level 3 goes only to internal, controlled contexts and prefers interfaces over implementations (§12).
 
@@ -90,6 +100,7 @@ flowchart LR
 ## 6. AI-safe development context (workflow)
 
 **IP-03 — Development-agent workflow**
+
 ```mermaid
 flowchart TD
   Req["User request"] --> Class["Task classification (Level 0-4)"]
@@ -104,6 +115,7 @@ flowchart TD
   Sec -->|secret found| Block["Block / remediate"]
   IPc -->|Level 3-4| Escalate["Escalate / use internal context"]
 ```
+
 **[REQUIREMENT]** Do not provide the entire repository unless genuinely necessary. Secret scan + PII check + IP check gate the context before it reaches an agent.
 
 ---
@@ -111,6 +123,7 @@ flowchart TD
 ## 7. Repository controls
 
 Recommended (implementation choices marked **[ENG-UNKNOWN / future]** where no tool is selected):
+
 - **Secret scanning** (e.g., gitleaks or trufflehog — options per SEC-W1; selection = future eng) — CI + pre-commit.
 - **Dependency scanning** (SCA) — future eng.
 - **Pre-commit checks** — secret/PII gates.
@@ -143,11 +156,11 @@ Before using any external provider (AI or otherwise), verify: business privacy t
 
 ## 10. IP exposure model
 
-| Level | Example prompt | Handling |
-|---|---|---|
-| **LOW** | "Implement a date picker." | normal (Level 0/1) |
-| **MEDIUM** | "Implement FinMate's expense categorization UI." | minimize context (Level 2) |
-| **HIGH** | "Explain FinMate's proprietary spending-prediction algorithm." | abstract; interfaces not implementation (Level 3) |
+| Level         | Example prompt                                                                                              | Handling                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **LOW**       | "Implement a date picker."                                                                                  | normal (Level 0/1)                                      |
+| **MEDIUM**    | "Implement FinMate's expense categorization UI."                                                            | minimize context (Level 2)                              |
+| **HIGH**      | "Explain FinMate's proprietary spending-prediction algorithm."                                              | abstract; interfaces not implementation (Level 3)       |
 | **VERY HIGH** | "Provide the complete architecture and algorithm for FinMate's personalized financial intelligence engine." | **do not expose**; internal-only; crown-jewel isolation |
 
 The higher the level → minimize context, prefer internal agents, abstract proprietary algorithms, expose **interfaces** rather than **implementations**.
@@ -157,14 +170,17 @@ The higher the level → minimize context, prefer internal agents, abstract prop
 ## 11. Crown-jewel IP
 
 ### Simple explanation
+
 A few of FinMate's algorithms are its "secret sauce." Those deserve extra walls so no outside tool ever sees how they actually work.
 
 ### Technical explanation
+
 **Potential** crown-jewel candidates: proprietary recommendation/personalization/financial-intelligence/ranking algorithms, behavioural-adaptation logic, AI-orchestration logic, security/privacy-firewall logic.
 **[PRODUCT/ENGINEERING REVIEW REQUIRED]** — this document does **not** decide which exact algorithms are crown jewels (ledger IP-1 says isolate only the 1–2 genuinely differentiating ones). Selection is a pending review.
-**Control:** isolate a chosen crown-jewel algorithm behind an **internal API** so agents/tools can understand the *interface* without the *implementation* (§12). **[REQUIREMENT]** don't over-isolate — over-restriction kills development velocity (IP-1).
+**Control:** isolate a chosen crown-jewel algorithm behind an **internal API** so agents/tools can understand the _interface_ without the _implementation_ (§12). **[REQUIREMENT]** don't over-isolate — over-restriction kills development velocity (IP-1).
 
 **IP-05 — Crown-jewel isolation**
+
 ```mermaid
 flowchart LR
   App["Application / agent"] --> API["Internal API (interface only)"]
@@ -177,9 +193,11 @@ flowchart LR
 ## 12. Internal API boundary
 
 ### Simple explanation
+
 Show tools the **door and its label**, not the **machine behind it**.
 
 ### Technical explanation
+
 Preferred: `Application → Internal API → Protected proprietary algorithm`. Avoid: `External AI → complete proprietary algorithm source`. Agents work against a stable interface + acceptance criteria; the implementation stays in a restricted module/repo (IP-1). This lets normal development proceed while the differentiating logic remains unexposed.
 
 ---
@@ -194,12 +212,12 @@ Preferred: `Application → Internal API → Protected proprietary algorithm`. A
 
 ## 14. AI agent permissions
 
-| Permission | Default | Escalation |
-|---|---|---|
-| **READ** | required scope only | broader read requires justification |
-| **WRITE** | proposed diffs / branch | merge requires human review |
-| **EXECUTE** | sandboxed/test only | — |
-| **DEPLOY** | **denied by default** | explicit authorization |
+| Permission            | Default                            | Escalation                                    |
+| --------------------- | ---------------------------------- | --------------------------------------------- |
+| **READ**              | required scope only                | broader read requires justification           |
+| **WRITE**             | proposed diffs / branch            | merge requires human review                   |
+| **EXECUTE**           | sandboxed/test only                | —                                             |
+| **DEPLOY**            | **denied by default**              | explicit authorization                        |
 | **PRODUCTION ACCESS** | **exceptional; denied by default** | explicit, time-boxed, audited (ties to ACC-1) |
 
 **[REQUIREMENT]** Default = READ only for the required scope; higher permissions require explicit authorization; production access is exceptional. Cross-references: **OPS-1** (prod DB access is a live exposure), **SEC-W1/W2/W3** (secrets/tokens must not be in scope agents can read).
@@ -216,6 +234,7 @@ Preferred: `Application → Internal API → Protected proprietary algorithm`. A
 ## 16. Information flow
 
 **IP-04 — AI trust boundary / information flow**
+
 ```mermaid
 flowchart LR
   subgraph Src["Information classes"]
@@ -229,26 +248,28 @@ flowchart LR
   App2 --> IntSvc["Internal services"]
 ```
 
-| Destination | USER DATA | FINMATE IP | PUBLIC |
-|---|---|---|---|
-| Application | ALLOWED | ALLOWED | ALLOWED |
-| Internal services | ALLOWED (purpose-limited) | ALLOWED (need-to-know) | ALLOWED |
-| AI agents (dev) | **DENIED** | CONDITIONAL (Level ≤2; interfaces) | ALLOWED |
+| Destination           | USER DATA                                | FINMATE IP                            | PUBLIC  |
+| --------------------- | ---------------------------------------- | ------------------------------------- | ------- |
+| Application           | ALLOWED                                  | ALLOWED                               | ALLOWED |
+| Internal services     | ALLOWED (purpose-limited)                | ALLOWED (need-to-know)                | ALLOWED |
+| AI agents (dev)       | **DENIED**                               | CONDITIONAL (Level ≤2; interfaces)    | ALLOWED |
 | External AI (runtime) | CONDITIONAL (projection+consent, Doc #5) | **DENIED** (except minimal necessary) | ALLOWED |
-| Vendors | CONDITIONAL (DPA, minimized) | CONDITIONAL (NDA, minimized) | ALLOWED |
-| Developers | CONDITIONAL (least-privilege) | CONDITIONAL (need-to-know) | ALLOWED |
-| Production | ALLOWED (controlled) | ALLOWED | ALLOWED |
+| Vendors               | CONDITIONAL (DPA, minimized)             | CONDITIONAL (NDA, minimized)          | ALLOWED |
+| Developers            | CONDITIONAL (least-privilege)            | CONDITIONAL (need-to-know)            | ALLOWED |
+| Production            | ALLOWED (controlled)                     | ALLOWED                               | ALLOWED |
 
 ---
 
 ## 17. AI provider compromise
 
 **IP-07 — Provider compromise**
+
 ```mermaid
 flowchart TD
   Comp["External AI provider compromised"] --> Had["Provider only ever held: task-specific minimized info / numeric projections"]
   Had --> NotHad["Did NOT hold: database, keys, prod credentials, complete architecture, full roadmap, complete algorithms"]
 ```
+
 Because only **task-specific minimized information** (runtime: numeric projections; dev: scoped interfaces + synthetic data) crossed the boundary, a provider compromise cannot yield FinMate's database, keys, credentials, complete architecture, full roadmap, or complete proprietary algorithms.
 
 ---
@@ -257,7 +278,7 @@ Because only **task-specific minimized information** (runtime: numeric projectio
 
 **[REQUIREMENT — stated explicitly]** FinMate **cannot technically guarantee** that an external AI will never generate similar product ideas, UI patterns, algorithms, workflows, or business concepts. Models can reach adjacent designs with **zero** exposure to FinMate — this is not preventable by technical controls.
 
-**What FinMate *can* do (risk reduction, not prevention):** minimize context, provider/contractual controls, keep proprietary algorithms private, internal-API boundaries, access control, repository isolation, audit logging, IP/legal protections, trade-secret practices, employee/contractor confidentiality agreements.
+**What FinMate _can_ do (risk reduction, not prevention):** minimize context, provider/contractual controls, keep proprietary algorithms private, internal-API boundaries, access control, repository isolation, audit logging, IP/legal protections, trade-secret practices, employee/contractor confidentiality agreements.
 
 **[COUNSEL]** legal protections and their scope require counsel; no legal claim is made here beyond general principles.
 
@@ -266,9 +287,11 @@ Because only **task-specific minimized information** (runtime: numeric projectio
 ## 19. Trade-secret protection
 
 ### Simple explanation
+
 Something counts as a "trade secret" **only while you actually keep it secret**. So the walls you build (restricted access, NDAs, logging) are also what make the legal protection real.
 
 ### Technical / operational
+
 General principle: trade-secret protection typically depends on **reasonable measures to keep information secret**. Operational measures (no legal claim asserted): restricted access, confidentiality agreements, access logging, repository controls, need-to-know access, secret management, documentation classification (§21), vendor agreements. **[COUNSEL REQUIRED]** for jurisdiction-specific legal interpretation and whether specific measures suffice.
 
 ---
@@ -282,6 +305,7 @@ Future features are **not** automatically exposed to development agents — incl
 ## 21. Document classification
 
 **IP-09 — Document classification**
+
 ```mermaid
 flowchart TB
   Pub["PUBLIC"] --> P["README, public API docs, licenses"]
@@ -290,13 +314,14 @@ flowchart TB
   HConf["HIGHLY CONFIDENTIAL"] --> H["security architecture, key management, AI firewall, threat model, roadmap"]
   Sec["SECRET"] --> S["credentials, keys, tokens, prod dumps (never in docs)"]
 ```
-| Class | Example FinMate documents |
-|---|---|
-| PUBLIC | README, public API/openapi (as intentionally exposed), licenses |
-| INTERNAL | contributing/coding rules, general dev docs |
-| CONFIDENTIAL | this IP policy, Decision Ledger, Data Classification Matrix |
+
+| Class               | Example FinMate documents                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| PUBLIC              | README, public API/openapi (as intentionally exposed), licenses                                                                  |
+| INTERNAL            | contributing/coding rules, general dev docs                                                                                      |
+| CONFIDENTIAL        | this IP policy, Decision Ledger, Data Classification Matrix                                                                      |
 | HIGHLY CONFIDENTIAL | Security & Privacy Architecture, Key Management, AI Firewall spec, **Threat Model**, product roadmap, crown-jewel algorithm docs |
-| SECRET | credentials/keys/tokens/prod data (never stored in documents) |
+| SECRET              | credentials/keys/tokens/prod data (never stored in documents)                                                                    |
 
 **[REQUIREMENT]** The security architecture, key architecture, and threat model must **not** be treated as public documentation.
 
@@ -305,6 +330,7 @@ flowchart TB
 ## 22. Incident response — confidential IP sent to external AI
 
 **IP-08 — Confidentiality incident response**
+
 ```mermaid
 flowchart TD
   Stop["STOP"] --> Rec["Record incident"]
@@ -317,6 +343,7 @@ flowchart TD
   Review --> Fix["Correct workflow"]
   Fix --> Prevent["Prevent recurrence"]
 ```
+
 **[REQUIREMENT]** Do not claim provider deletion is guaranteed unless contractually verified. **[COUNSEL]** impact/legal assessment.
 
 ---
@@ -329,19 +356,20 @@ Immediately: stop processing → identify affected data → identify users/data 
 
 ## 24. Diagram index
 
-| ID | Name | Location |
-|---|---|---|
-| IP-01 | Three information classes | §2 |
-| IP-02 | AI context minimization | §4 |
-| IP-03 | Development-agent workflow | §6 |
-| IP-04 | AI trust boundary / information flow | §16 |
-| IP-05 | Crown-jewel isolation | §11 |
-| IP-06 | Repository access boundary | below |
-| IP-07 | Provider compromise | §17 |
-| IP-08 | Confidentiality incident response | §22 |
-| IP-09 | Document classification | §21 |
+| ID    | Name                                 | Location |
+| ----- | ------------------------------------ | -------- |
+| IP-01 | Three information classes            | §2       |
+| IP-02 | AI context minimization              | §4       |
+| IP-03 | Development-agent workflow           | §6       |
+| IP-04 | AI trust boundary / information flow | §16      |
+| IP-05 | Crown-jewel isolation                | §11      |
+| IP-06 | Repository access boundary           | below    |
+| IP-07 | Provider compromise                  | §17      |
+| IP-08 | Confidentiality incident response    | §22      |
+| IP-09 | Document classification              | §21      |
 
 **IP-06 — Repository access boundary**
+
 ```mermaid
 flowchart LR
   Dev["Developer / agent"] --> Checkout["Secretless working tree"]
@@ -349,7 +377,8 @@ flowchart LR
   Restricted[("Crown-jewel module / roadmap (Level 3)")] -. need-to-know .- Dev
   Secrets[("Secrets / prod data (Level 4)")] -. never in tree .- Checkout
 ```
-*Simple:* the working copy has no secrets and no crown jewels unless you specifically need them. *Technical:* secrets injected at CI/deploy; crown-jewel + roadmap in restricted paths/repos; agents operate on a secretless checkout.
+
+_Simple:_ the working copy has no secrets and no crown jewels unless you specifically need them. _Technical:_ secrets injected at CI/deploy; crown-jewel + roadmap in restricted paths/repos; agents operate on a secretless checkout.
 
 ---
 
@@ -381,4 +410,4 @@ Checked against Documents #1–#5:
 
 Complete IP / AI Confidentiality Policy, dual-leveled, 9 diagrams (IP-01..IP-09), consistent with the frozen architecture set and honest about the limits of preventing independent AI reproduction. No code, schema, migration, API, encryption, AI-provider, or production change was made.
 
-*End of Document #6 (FROZEN). STOP — not proceeding to the Threat Model (Document #7) or the SRS.*
+_End of Document #6 (FROZEN). STOP — not proceeding to the Threat Model (Document #7) or the SRS._

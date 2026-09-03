@@ -2398,7 +2398,8 @@ paths:
                 currency: { type: string, maxLength: 3 }
                 targetDate: { type: string, format: date }
                 priority: { type: integer, minimum: 0 }
-                status: { type: string, enum: [active, achieved, paused, cancelled] }
+                status:
+                  { type: string, enum: [active, achieved, paused, cancelled] }
       responses:
         '200': { description: Goal updated }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -2621,7 +2622,8 @@ paths:
                         id: { type: string }
                         category:
                           type: string
-                          enum: [security, recurring, settlement, reminder, finance]
+                          enum:
+                            [security, recurring, settlement, reminder, finance]
                         level: { type: integer, minimum: 1, maximum: 5 }
                         title: { type: string }
                         message: { type: string }

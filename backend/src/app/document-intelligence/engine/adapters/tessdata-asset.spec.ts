@@ -12,11 +12,21 @@ import { resolveTessdataDir } from './local-tesseract-recognizer';
  * `provider_unavailable` in production or (worse) a wrong model. Values must match
  * `backend/src/assets/tessdata/PROVENANCE.md` (tessdata_fast @ 4.1.0, Apache-2.0).
  */
-const EXPECTED_SHA256 = '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2';
+const EXPECTED_SHA256 =
+  '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2';
 const EXPECTED_BYTES = 4113088;
 
 // Canonical committed location (source of truth), independent of the runtime resolver.
-const CANONICAL_ASSET = resolve(__dirname, '..', '..', '..', '..', 'assets', 'tessdata', 'eng.traineddata');
+const CANONICAL_ASSET = resolve(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  'assets',
+  'tessdata',
+  'eng.traineddata',
+);
 
 describe('offline OCR asset integrity (eng.traineddata)', () => {
   it('is present at the committed source location with the exact pinned size', () => {
@@ -25,7 +35,9 @@ describe('offline OCR asset integrity (eng.traineddata)', () => {
   });
 
   it('matches the SHA-256 recorded in PROVENANCE.md (exact model, not corrupted/swapped)', () => {
-    const hash = createHash('sha256').update(readFileSync(CANONICAL_ASSET)).digest('hex');
+    const hash = createHash('sha256')
+      .update(readFileSync(CANONICAL_ASSET))
+      .digest('hex');
     expect(hash).toBe(EXPECTED_SHA256);
   });
 

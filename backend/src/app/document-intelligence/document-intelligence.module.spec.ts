@@ -25,7 +25,9 @@ import { RuleBasedClassificationEngine } from './engine/rule-based-classificatio
  * are untouched.
  */
 const testModule = (): TestingModuleBuilder =>
-  Test.createTestingModule({ imports: [DocumentIntelligenceModule, PlatformModule] })
+  Test.createTestingModule({
+    imports: [DocumentIntelligenceModule, PlatformModule],
+  })
     .overrideProvider(getRepositoryToken(Attachment))
     .useValue({ findOne: jest.fn() })
     .overrideGuard(JwtAuthGuard)
@@ -35,8 +37,12 @@ describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)',
   it('binds the stub engines to their tokens by default', async () => {
     const moduleRef = await testModule().compile();
 
-    const extraction = moduleRef.get<DocumentExtractionEngine>(DOCUMENT_EXTRACTION_ENGINE);
-    const classification = moduleRef.get<ClassificationEngine>(CLASSIFICATION_ENGINE);
+    const extraction = moduleRef.get<DocumentExtractionEngine>(
+      DOCUMENT_EXTRACTION_ENGINE,
+    );
+    const classification = moduleRef.get<ClassificationEngine>(
+      CLASSIFICATION_ENGINE,
+    );
 
     expect(extraction).toBeInstanceOf(StubDocumentExtractionEngine);
     expect(classification).toBeInstanceOf(RuleBasedClassificationEngine);
@@ -64,7 +70,9 @@ describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)',
           usesExternalProvider: false,
         };
       }
-      async extract(_input: DocumentExtractionInput): Promise<DocumentExtractionResult> {
+      async extract(
+        _input: DocumentExtractionInput,
+      ): Promise<DocumentExtractionResult> {
         return {
           engine: {
             name: this.name,
@@ -88,7 +96,9 @@ describe('DocumentIntelligenceModule (DI / replaceable boundary — test §16)',
       .useClass(FakeLocalOcrEngine)
       .compile();
 
-    const engine = moduleRef.get<DocumentExtractionEngine>(DOCUMENT_EXTRACTION_ENGINE);
+    const engine = moduleRef.get<DocumentExtractionEngine>(
+      DOCUMENT_EXTRACTION_ENGINE,
+    );
     expect(engine).toBeInstanceOf(FakeLocalOcrEngine);
     expect(engine.name).toBe('fake-local-ocr');
     // The consumer still depends only on the interface — replacement required no consumer change.

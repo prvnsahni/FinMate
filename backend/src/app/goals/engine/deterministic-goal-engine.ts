@@ -7,7 +7,8 @@ import {
 } from './goal-engine.types';
 
 /** Deterministic 2-dp money rounding (app-consistent). */
-const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number): number =>
+  Math.round((n + Number.EPSILON) * 100) / 100;
 
 const toUtc = (iso: string): Date => new Date(iso);
 
@@ -52,7 +53,11 @@ export class DeterministicGoalEngine implements GoalEngine {
 
     if (!(goal.targetAmount > 0)) {
       return base('invalid_goal', {
-        explanation: this.explain('This goal has no positive target amount.', [], []),
+        explanation: this.explain(
+          'This goal has no positive target amount.',
+          [],
+          [],
+        ),
       });
     }
 
@@ -103,7 +108,11 @@ export class DeterministicGoalEngine implements GoalEngine {
         projection: Object.keys(projection).length ? projection : undefined,
         explanation: this.explain(
           'Add a monthly contribution (or some savings history) to project a completion date.',
-          ['targetAmount', 'savedAmount', ...(targetDate ? ['targetDate'] : [])],
+          [
+            'targetAmount',
+            'savedAmount',
+            ...(targetDate ? ['targetDate'] : []),
+          ],
           [],
         ),
       });
@@ -116,12 +125,15 @@ export class DeterministicGoalEngine implements GoalEngine {
         ? projectedCompletionDate <= dateOnly(goal.targetDate as string)
         : undefined;
     const projectedShortfall =
-      targetDate !== null && onTrack === false && monthsUntilTarget !== undefined
+      targetDate !== null &&
+      onTrack === false &&
+      monthsUntilTarget !== undefined
         ? Math.max(0, round2(remaining - rate * monthsUntilTarget))
         : undefined;
 
     const usedAssumption =
-      !!input.assumedMonthlyContribution && input.assumedMonthlyContribution > 0;
+      !!input.assumedMonthlyContribution &&
+      input.assumedMonthlyContribution > 0;
 
     const summary = this.buildSummary(
       rate,
@@ -146,12 +158,10 @@ export class DeterministicGoalEngine implements GoalEngine {
       },
       explanation: this.explain(
         summary,
-        [
-          'targetAmount',
-          'savedAmount',
-          ...(targetDate ? ['targetDate'] : []),
-        ],
-        usedAssumption ? ['assumedMonthlyContribution'] : ['observedMonthlyRate'],
+        ['targetAmount', 'savedAmount', ...(targetDate ? ['targetDate'] : [])],
+        usedAssumption
+          ? ['assumedMonthlyContribution']
+          : ['observedMonthlyRate'],
       ),
     });
   }
@@ -198,8 +208,7 @@ export class DeterministicGoalEngine implements GoalEngine {
       status,
       generatedAt: input.now,
       explanation:
-        extra.explanation ??
-        this.explain('No projection available.', [], []),
+        extra.explanation ?? this.explain('No projection available.', [], []),
       ...(extra.projection ? { projection: extra.projection } : {}),
       ...(extra.confidence ? { confidence: extra.confidence } : {}),
     };

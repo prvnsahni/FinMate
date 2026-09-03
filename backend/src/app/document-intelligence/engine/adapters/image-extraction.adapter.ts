@@ -5,7 +5,10 @@ import {
   ExtractionAdapter,
 } from './extraction-adapter.types';
 import { parseReceiptText } from './receipt-text-parser';
-import { LocalTesseractRecognizer, engLangDataAvailable } from './local-tesseract-recognizer';
+import {
+  LocalTesseractRecognizer,
+  engLangDataAvailable,
+} from './local-tesseract-recognizer';
 
 /** Local OCR provider seam. A real impl wraps tesseract.js configured LOCAL-ONLY. */
 export interface OcrRecognizer {
@@ -31,7 +34,10 @@ export interface OcrRecognizer {
 export class ImageExtractionAdapter implements ExtractionAdapter {
   readonly kind = 'image' as const;
   readonly requirement: AdapterRequirement = {
-    requiredPackages: ['tesseract.js', 'eng.traineddata (committed local asset — backend/src/assets/tessdata/)'],
+    requiredPackages: [
+      'tesseract.js',
+      'eng.traineddata (committed local asset — backend/src/assets/tessdata/)',
+    ],
     processesLocally: true,
     note: 'On-device WASM OCR, configured LOCAL-ONLY (langPath → committed asset; no CDN, no network).',
   };
@@ -43,7 +49,11 @@ export class ImageExtractionAdapter implements ExtractionAdapter {
 
   async extract(content: AdapterContent): Promise<AdapterExtraction> {
     if (content.sourceType !== 'image') {
-      return { status: 'invalid_input', warnings: ['image adapter requires an image.'], unresolvedFields: [] };
+      return {
+        status: 'invalid_input',
+        warnings: ['image adapter requires an image.'],
+        unresolvedFields: [],
+      };
     }
 
     if (!this.recognizer && !this.langDataAvailable()) {
@@ -78,7 +88,8 @@ export class ImageExtractionAdapter implements ExtractionAdapter {
     }
 
     const parsed = parseReceiptText(text, { adapter: 'image' });
-    const complete = parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
+    const complete =
+      parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
     return {
       status: complete ? 'ok' : 'partial_extraction',
       ...(parsed.header ? { header: parsed.header } : {}),

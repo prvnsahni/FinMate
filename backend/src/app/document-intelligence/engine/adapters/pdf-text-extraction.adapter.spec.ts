@@ -13,7 +13,9 @@ const fakePdfjs = (pages: string[][]): PdfjsModule => ({
     promise: Promise.resolve({
       numPages: pages.length,
       getPage: async (n: number) => ({
-        getTextContent: async () => ({ items: pages[n - 1].map((str) => ({ str })) }),
+        getTextContent: async () => ({
+          items: pages[n - 1].map((str) => ({ str })),
+        }),
       }),
     }),
   }),
@@ -28,17 +30,27 @@ const pdfContent: AdapterContent = {
 describe('PdfTextExtractionAdapter (pdfjs text layer)', () => {
   it('extracts header + line items from the text layer (status ok)', async () => {
     const adapter = new PdfTextExtractionAdapter(async () =>
-      fakePdfjs([['Example Market', 'Date: 2026-08-15', 'Milk 2 x 60 120', 'Rice 1 x 520 520', 'TOTAL INR 685']]),
+      fakePdfjs([
+        [
+          'Example Market',
+          'Date: 2026-08-15',
+          'Milk 2 x 60 120',
+          'Rice 1 x 520 520',
+          'TOTAL INR 685',
+        ],
+      ]),
     );
     const out = await adapter.extract(pdfContent);
     expect(out.status).toBe('ok');
     expect(out.header?.total?.value).toBe(685);
     expect(out.header?.total?.authority).toBe('EXTRACTED');
-    expect((out.lineItems?.length ?? 0)).toBeGreaterThanOrEqual(2);
+    expect(out.lineItems?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 
   it('returns no_text_detected for a PDF with no text layer (route to OCR)', async () => {
-    const adapter = new PdfTextExtractionAdapter(async () => fakePdfjs([['   ']]));
+    const adapter = new PdfTextExtractionAdapter(async () =>
+      fakePdfjs([['   ']]),
+    );
     const out = await adapter.extract(pdfContent);
     expect(out.status).toBe('no_text_detected');
     expect(out.lineItems).toBeUndefined();
@@ -46,10 +58,15 @@ describe('PdfTextExtractionAdapter (pdfjs text layer)', () => {
 
   it('preserves page provenance across multiple pages', async () => {
     const adapter = new PdfTextExtractionAdapter(async () =>
-      fakePdfjs([['Example Market', 'Milk 120'], ['Rice 520', 'TOTAL 640']]),
+      fakePdfjs([
+        ['Example Market', 'Milk 120'],
+        ['Rice 520', 'TOTAL 640'],
+      ]),
     );
     const out = await adapter.extract(pdfContent);
-    const pages = (out.lineItems ?? []).map((li) => li.lineTotal?.provenance?.page);
+    const pages = (out.lineItems ?? []).map(
+      (li) => li.lineTotal?.provenance?.page,
+    );
     expect(pages).toEqual(expect.arrayContaining([1, 2]));
   });
 

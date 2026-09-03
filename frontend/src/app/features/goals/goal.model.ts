@@ -62,7 +62,11 @@ export interface GoalProjection {
     requiredMonthlyContribution?: number;
     projectedShortfall?: number;
   };
-  confidence?: { score: number; band: 'low' | 'medium' | 'high'; basis: string };
+  confidence?: {
+    score: number;
+    band: 'low' | 'medium' | 'high';
+    basis: string;
+  };
   explanation: {
     method: string;
     summary: string;

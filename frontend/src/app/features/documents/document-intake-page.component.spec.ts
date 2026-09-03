@@ -11,9 +11,13 @@ describe('DocumentIntakePageComponent (DOC-4 orchestration)', () => {
     extractor = { extractFromFile: jest.fn() };
     TestBed.configureTestingModule({
       imports: [DocumentIntakePageComponent],
-      providers: [{ provide: DocumentExtractionClientService, useValue: extractor }],
+      providers: [
+        { provide: DocumentExtractionClientService, useValue: extractor },
+      ],
     });
-    comp = TestBed.createComponent(DocumentIntakePageComponent).componentInstance;
+    comp = TestBed.createComponent(
+      DocumentIntakePageComponent,
+    ).componentInstance;
   });
 
   it('TOTAL_ONLY selection does NOT invoke extraction', () => {
@@ -23,7 +27,12 @@ describe('DocumentIntakePageComponent (DOC-4 orchestration)', () => {
   });
 
   it('ITEMIZED + file runs client extraction and stores the result', async () => {
-    const result: DocumentExtractionResult = { status: 'ok', sourceType: 'pdf', candidatesOnly: true, warnings: [] };
+    const result: DocumentExtractionResult = {
+      status: 'ok',
+      sourceType: 'pdf',
+      candidatesOnly: true,
+      warnings: [],
+    };
     extractor.extractFromFile.mockResolvedValue(result);
     comp.onMode('ITEMIZED');
     const file = { name: 'r.pdf', type: 'application/pdf' } as File;
@@ -35,13 +44,27 @@ describe('DocumentIntakePageComponent (DOC-4 orchestration)', () => {
 
   it('surfaces an error if extraction throws (no crash, no finance mutation)', async () => {
     extractor.extractFromFile.mockRejectedValue(new Error('boom'));
-    await comp.onFile({ target: { files: [{ type: 'application/pdf' } as File] } } as unknown as Event);
+    await comp.onFile({
+      target: { files: [{ type: 'application/pdf' } as File] },
+    } as unknown as Event);
     expect(comp.error()).toBeTruthy();
     expect(comp.result()).toBeNull();
   });
 
   it('holds the confirmed draft for handoff — does not create an expense itself', () => {
-    comp.onConfirmed({ title: 'X', amount: 685, currency: 'INR', date: null, itemCount: 2, reconciliation: { documentTotal: 685, allocatedTotal: 685, unallocatedDifference: 0, reconciliationStatus: 'BALANCED' } });
+    comp.onConfirmed({
+      title: 'X',
+      amount: 685,
+      currency: 'INR',
+      date: null,
+      itemCount: 2,
+      reconciliation: {
+        documentTotal: 685,
+        allocatedTotal: 685,
+        unallocatedDifference: 0,
+        reconciliationStatus: 'BALANCED',
+      },
+    });
     expect(comp.confirmedDraft()?.amount).toBe(685);
   });
 });

@@ -1,4 +1,7 @@
-import { ImageExtractionAdapter, OcrRecognizer } from './image-extraction.adapter';
+import {
+  ImageExtractionAdapter,
+  OcrRecognizer,
+} from './image-extraction.adapter';
 import { AdapterContent } from './extraction-adapter.types';
 
 const imageContent: AdapterContent = {
@@ -20,23 +23,30 @@ describe('ImageExtractionAdapter (tesseract.js, safe-by-default)', () => {
 
   it('parses OCR text into candidates when a local recognizer IS provided (no fabrication)', async () => {
     const recognizer: OcrRecognizer = {
-      recognize: async () => 'Example Market\nMilk 120\nRice 520\nTOTAL INR 685',
+      recognize: async () =>
+        'Example Market\nMilk 120\nRice 520\nTOTAL INR 685',
     };
     const adapter = new ImageExtractionAdapter(recognizer);
     const out = await adapter.extract(imageContent);
     expect(out.header?.total?.value).toBe(685);
     expect(out.header?.total?.authority).toBe('EXTRACTED');
-    expect((out.lineItems?.length ?? 0)).toBeGreaterThanOrEqual(2);
+    expect(out.lineItems?.length ?? 0).toBeGreaterThanOrEqual(2);
   });
 
   it('returns no_text_detected when OCR yields nothing', async () => {
     const adapter = new ImageExtractionAdapter({ recognize: async () => '' });
-    expect((await adapter.extract(imageContent)).status).toBe('no_text_detected');
+    expect((await adapter.extract(imageContent)).status).toBe(
+      'no_text_detected',
+    );
   });
 
   it('rejects non-image content', async () => {
     const adapter = new ImageExtractionAdapter({ recognize: async () => 'x' });
-    const out = await adapter.extract({ ...imageContent, sourceType: 'pdf', mimeType: 'application/pdf' });
+    const out = await adapter.extract({
+      ...imageContent,
+      sourceType: 'pdf',
+      mimeType: 'application/pdf',
+    });
     expect(out.status).toBe('invalid_input');
   });
 
@@ -68,7 +78,9 @@ describe('ImageExtractionAdapter (tesseract.js, safe-by-default)', () => {
     // Default constructor uses engLangDataAvailable (a pure fs check). With the committed
     // asset present it does NOT short-circuit to provider_unavailable; we inject a fake
     // recognizer so no real worker runs, proving the gate is the filesystem, never a fetch.
-    const adapter = new ImageExtractionAdapter({ recognize: async () => 'Milk 120\nTOTAL 120' });
+    const adapter = new ImageExtractionAdapter({
+      recognize: async () => 'Milk 120\nTOTAL 120',
+    });
     const out = await adapter.extract(imageContent);
     expect(out.status).not.toBe('provider_unavailable');
     expect(out.header?.total?.value).toBe(120);

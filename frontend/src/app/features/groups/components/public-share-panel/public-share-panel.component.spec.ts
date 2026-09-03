@@ -6,7 +6,13 @@ import { PublicShareService } from '../../../../core/services/public-share.servi
 
 const G = 'group-1';
 const RAW = 'RAWTOKEN-abc123';
-const secret = (token = RAW) => ({ token, status: 'active' as const, expiresAt: null, createdAt: '2026-09-02', revokedAt: null });
+const secret = (token = RAW) => ({
+  token,
+  status: 'active' as const,
+  expiresAt: null,
+  createdAt: '2026-09-02',
+  revokedAt: null,
+});
 
 describe('PublicSharePanelComponent (PUBLIC-1E)', () => {
   let service: {
@@ -27,11 +33,21 @@ describe('PublicSharePanelComponent (PUBLIC-1E)', () => {
 
   beforeEach(() => {
     service = {
-      getStatus: jest.fn().mockReturnValue(of({ active: false, status: null, expiresAt: null, createdAt: null, revokedAt: null })),
+      getStatus: jest.fn().mockReturnValue(
+        of({
+          active: false,
+          status: null,
+          expiresAt: null,
+          createdAt: null,
+          revokedAt: null,
+        }),
+      ),
       create: jest.fn().mockReturnValue(of(secret())),
       regenerate: jest.fn().mockReturnValue(of(secret('RAWTOKEN-new'))),
       revoke: jest.fn().mockReturnValue(of({ revoked: true })),
-      buildShareUrl: jest.fn().mockImplementation((t: string) => `https://app/share/${t}`),
+      buildShareUrl: jest
+        .fn()
+        .mockImplementation((t: string) => `https://app/share/${t}`),
     };
     TestBed.configureTestingModule({
       imports: [PublicSharePanelComponent],
@@ -73,7 +89,9 @@ describe('PublicSharePanelComponent (PUBLIC-1E)', () => {
   });
 
   it('surfaces a name-free error on 403 (server remains the authority)', () => {
-    service.create.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    service.create.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403 })),
+    );
     const comp = build();
     comp.create();
     expect(comp.error()).toMatch(/owners and admins/i);

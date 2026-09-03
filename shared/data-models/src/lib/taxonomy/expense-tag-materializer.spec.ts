@@ -14,16 +14,29 @@ describe('materializeConfirmedExpenseTags', () => {
 
   it('persists an INFERRED tag with its ancestors (milk → dairy → grocery → food)', () => {
     const rows = materializeConfirmedExpenseTags([
-      { tagId: 'milk', authority: 'INFERRED', source: 'rule_based', confidence: 0.6 },
+      {
+        tagId: 'milk',
+        authority: 'INFERRED',
+        source: 'rule_based',
+        confidence: 0.6,
+      },
     ]);
     const ids = rows.map((r) => r.tagId).sort();
     expect(ids).toEqual(['dairy', 'food', 'grocery', 'milk']);
 
     const map = byId(rows);
-    expect(map.get('milk')).toMatchObject({ authority: 'INFERRED', source: 'rule_based', confidence: 0.6 });
+    expect(map.get('milk')).toMatchObject({
+      authority: 'INFERRED',
+      source: 'rule_based',
+      confidence: 0.6,
+    });
     // Derived ancestors are INFERRED/rule_based with no confidence.
     for (const anc of ['dairy', 'grocery', 'food']) {
-      expect(map.get(anc)).toMatchObject({ authority: 'INFERRED', source: 'rule_based', confidence: null });
+      expect(map.get(anc)).toMatchObject({
+        authority: 'INFERRED',
+        source: 'rule_based',
+        confidence: null,
+      });
     }
     // Every row is stamped with the canonical taxonomy version.
     expect(rows.every((r) => r.taxonomyVersion === 1)).toBe(true);
@@ -34,7 +47,10 @@ describe('materializeConfirmedExpenseTags', () => {
       { tagId: 'fuel', authority: 'USER_CORRECTED', source: 'user' },
     ]);
     const map = byId(rows);
-    expect(map.get('fuel')).toMatchObject({ authority: 'USER_CORRECTED', source: 'user' });
+    expect(map.get('fuel')).toMatchObject({
+      authority: 'USER_CORRECTED',
+      source: 'user',
+    });
     // Ancestors of fuel: vehicle → transport, derived INFERRED.
     expect(map.get('vehicle')).toMatchObject({ authority: 'INFERRED' });
     expect(map.get('transport')).toMatchObject({ authority: 'INFERRED' });
@@ -54,7 +70,10 @@ describe('materializeConfirmedExpenseTags', () => {
       const map = byId(materializeConfirmedExpenseTags(inputs));
       // grocery is BOTH an explicit USER_CONFIRMED tag AND an inferred ancestor
       // of milk — the higher authority must win regardless of order.
-      expect(map.get('grocery')).toMatchObject({ authority: 'USER_CONFIRMED', source: 'user' });
+      expect(map.get('grocery')).toMatchObject({
+        authority: 'USER_CONFIRMED',
+        source: 'user',
+      });
     }
   });
 
@@ -63,14 +82,27 @@ describe('materializeConfirmedExpenseTags', () => {
       { tagId: 'milk', authority: 'INFERRED' },
       { tagId: 'milk', authority: 'INFERRED' },
     ]);
-    expect(rows.map((r) => r.tagId).sort()).toEqual(['dairy', 'food', 'grocery', 'milk']);
+    expect(rows.map((r) => r.tagId).sort()).toEqual([
+      'dairy',
+      'food',
+      'grocery',
+      'milk',
+    ]);
     expect(rows.filter((r) => r.tagId === 'milk')).toHaveLength(1);
   });
 
   it('drops deprecated and unknown tag ids (never fabricates)', () => {
     // `misc` is a deprecated seed tag; `does-not-exist` is unknown.
-    expect(materializeConfirmedExpenseTags([{ tagId: 'misc', authority: 'USER_CONFIRMED' }])).toEqual([]);
-    expect(materializeConfirmedExpenseTags([{ tagId: 'does-not-exist', authority: 'INFERRED' }])).toEqual([]);
+    expect(
+      materializeConfirmedExpenseTags([
+        { tagId: 'misc', authority: 'USER_CONFIRMED' },
+      ]),
+    ).toEqual([]);
+    expect(
+      materializeConfirmedExpenseTags([
+        { tagId: 'does-not-exist', authority: 'INFERRED' },
+      ]),
+    ).toEqual([]);
   });
 
   it('returns [] for empty / nullish input', () => {
@@ -85,7 +117,12 @@ describe('materializeConfirmedExpenseTags', () => {
     const input: ConfirmedTagInput = { tagId: 'milk', authority: 'INFERRED' };
     expect(Object.keys(input).sort()).toEqual(['authority', 'tagId']);
     const rows = materializeConfirmedExpenseTags([input]);
-    expect(rows.every((r) => Object.keys(r).sort().join(',') ===
-      'authority,confidence,source,tagId,taxonomyVersion')).toBe(true);
+    expect(
+      rows.every(
+        (r) =>
+          Object.keys(r).sort().join(',') ===
+          'authority,confidence,source,tagId,taxonomyVersion',
+      ),
+    ).toBe(true);
   });
 });

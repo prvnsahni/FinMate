@@ -41,9 +41,11 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
       encrypt: jest.fn().mockResolvedValue('IV=:CIPHER'),
     };
     session = {
-      ensureGroupKey: jest
-        .fn()
-        .mockResolvedValue({ status: 'ready', key: groupKey, versionId: 'v-1' }),
+      ensureGroupKey: jest.fn().mockResolvedValue({
+        status: 'ready',
+        key: groupKey,
+        versionId: 'v-1',
+      }),
       ensureCryptoContext: jest.fn().mockResolvedValue({ masterKey }),
     };
 
@@ -72,7 +74,9 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
     const result = await promise;
     expect(session.ensureGroupKey).toHaveBeenCalledWith('g-1', 'read', 'v-1');
     expect(encryption.decrypt).toHaveBeenCalledWith('aXY=:Y2lwaGVy', groupKey);
-    expect(result).toEqual([{ id: 'ct-1', scopeType: 'group', name: 'Groceries' }]);
+    expect(result).toEqual([
+      { id: 'ct-1', scopeType: 'group', name: 'Groceries' },
+    ]);
   });
 
   it('leaves the name opaque (null) when decryption fails — no fabricated label', async () => {
@@ -104,10 +108,12 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
 
   it('resolves each distinct group-key version only once for a page of tags', async () => {
     const promise = service.getGroupCustomTags('g-1');
-    httpMock.expectOne(`${base}/groups/g-1/custom-tags`).flush([
-      row({ id: 'a', groupKeyVersionId: 'v-1' }),
-      row({ id: 'b', groupKeyVersionId: 'v-1' }),
-    ]);
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags`)
+      .flush([
+        row({ id: 'a', groupKeyVersionId: 'v-1' }),
+        row({ id: 'b', groupKeyVersionId: 'v-1' }),
+      ]);
     await promise;
     // Two tags, one shared version → one key resolution (no N+1).
     expect(session.ensureGroupKey).toHaveBeenCalledTimes(1);
@@ -117,11 +123,20 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
     const promise = service.getPersonalCustomTags();
     const req = httpMock.expectOne(`${base}/custom-tags`);
     expect(req.request.method).toBe('GET');
-    req.flush([row({ id: 'p-1', scopeType: 'personal', groupId: null, groupKeyVersionId: null })]);
+    req.flush([
+      row({
+        id: 'p-1',
+        scopeType: 'personal',
+        groupId: null,
+        groupKeyVersionId: null,
+      }),
+    ]);
     const result = await promise;
     expect(session.ensureCryptoContext).toHaveBeenCalled();
     expect(encryption.decrypt).toHaveBeenCalledWith('aXY=:Y2lwaGVy', masterKey);
-    expect(result).toEqual([{ id: 'p-1', scopeType: 'personal', name: 'Groceries' }]);
+    expect(result).toEqual([
+      { id: 'p-1', scopeType: 'personal', name: 'Groceries' },
+    ]);
   });
 
   it('returns [] and never throws on an HTTP error', async () => {
@@ -143,9 +158,22 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
     expect(encryption.encrypt).toHaveBeenCalledWith('My Grocery', masterKey);
     expect(req.request.body).toEqual({ encryptedName: 'IV=:CIPHER' });
     expect(JSON.stringify(req.request.body)).not.toContain('My Grocery');
-    req.flush({ id: 'p-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 1, groupId: null, groupKeyVersionId: null });
+    req.flush({
+      id: 'p-1',
+      scopeType: 'personal',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 1,
+      groupId: null,
+      groupKeyVersionId: null,
+    });
     const tag = await promise;
-    expect(tag).toMatchObject({ id: 'p-1', name: 'My Grocery', scopeType: 'personal', version: 1 });
+    expect(tag).toMatchObject({
+      id: 'p-1',
+      name: 'My Grocery',
+      scopeType: 'personal',
+      version: 1,
+    });
   });
 
   it('creates a GROUP tag: encrypts with the group key and sends encryptedName + groupKeyVersionId', async () => {
@@ -154,42 +182,110 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
     const req = httpMock.expectOne(`${base}/groups/g-1/custom-tags`);
     expect(session.ensureGroupKey).toHaveBeenCalledWith('g-1', 'write');
     expect(encryption.encrypt).toHaveBeenCalledWith('Team Lunch', groupKey);
-    expect(req.request.body).toEqual({ encryptedName: 'IV=:CIPHER', groupKeyVersionId: 'v-1' });
+    expect(req.request.body).toEqual({
+      encryptedName: 'IV=:CIPHER',
+      groupKeyVersionId: 'v-1',
+    });
     expect(JSON.stringify(req.request.body)).not.toContain('Team Lunch');
-    req.flush({ id: 'g-1t', scopeType: 'group', encryptedName: 'IV=:CIPHER', status: 'active', version: 1, groupId: 'g-1', groupKeyVersionId: 'v-1' });
-    await expect(promise).resolves.toMatchObject({ id: 'g-1t', name: 'Team Lunch', scopeType: 'group' });
+    req.flush({
+      id: 'g-1t',
+      scopeType: 'group',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 1,
+      groupId: 'g-1',
+      groupKeyVersionId: 'v-1',
+    });
+    await expect(promise).resolves.toMatchObject({
+      id: 'g-1t',
+      name: 'Team Lunch',
+      scopeType: 'group',
+    });
   });
 
   it('renames a personal tag: encrypts the NEW name and sends the optimistic version', async () => {
-    const tag = { id: 'p-1', name: 'Old', scopeType: 'personal' as const, status: 'active' as const, version: 3, groupId: null, groupKeyVersionId: null };
+    const tag = {
+      id: 'p-1',
+      name: 'Old',
+      scopeType: 'personal' as const,
+      status: 'active' as const,
+      version: 3,
+      groupId: null,
+      groupKeyVersionId: null,
+    };
     const promise = service.renameTag(tag, 'New Name');
     await drain();
     const req = httpMock.expectOne(`${base}/custom-tags/p-1`);
     expect(req.request.method).toBe('PATCH');
     expect(encryption.encrypt).toHaveBeenCalledWith('New Name', masterKey);
-    expect(req.request.body).toEqual({ encryptedName: 'IV=:CIPHER', version: 3 });
-    req.flush({ id: 'p-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 4, groupId: null, groupKeyVersionId: null });
-    await expect(promise).resolves.toMatchObject({ version: 4, name: 'New Name' });
+    expect(req.request.body).toEqual({
+      encryptedName: 'IV=:CIPHER',
+      version: 3,
+    });
+    req.flush({
+      id: 'p-1',
+      scopeType: 'personal',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 4,
+      groupId: null,
+      groupKeyVersionId: null,
+    });
+    await expect(promise).resolves.toMatchObject({
+      version: 4,
+      name: 'New Name',
+    });
   });
 
   it('renames a group tag: re-stamps the current group key version', async () => {
-    const tag = { id: 'g-1t', name: 'Old', scopeType: 'group' as const, status: 'active' as const, version: 2, groupId: 'g-1', groupKeyVersionId: 'v-0' };
+    const tag = {
+      id: 'g-1t',
+      name: 'Old',
+      scopeType: 'group' as const,
+      status: 'active' as const,
+      version: 2,
+      groupId: 'g-1',
+      groupKeyVersionId: 'v-0',
+    };
     const promise = service.renameTag(tag, 'Renamed');
     await drain();
     const req = httpMock.expectOne(`${base}/custom-tags/g-1t`);
     expect(session.ensureGroupKey).toHaveBeenCalledWith('g-1', 'write');
-    expect(req.request.body).toEqual({ encryptedName: 'IV=:CIPHER', version: 2, groupKeyVersionId: 'v-1' });
-    req.flush({ id: 'g-1t', scopeType: 'group', encryptedName: 'IV=:CIPHER', status: 'active', version: 3, groupId: 'g-1', groupKeyVersionId: 'v-1' });
+    expect(req.request.body).toEqual({
+      encryptedName: 'IV=:CIPHER',
+      version: 2,
+      groupKeyVersionId: 'v-1',
+    });
+    req.flush({
+      id: 'g-1t',
+      scopeType: 'group',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 3,
+      groupId: 'g-1',
+      groupKeyVersionId: 'v-1',
+    });
     await expect(promise).resolves.toMatchObject({ version: 3 });
   });
 
   it('surfaces a version conflict (412) from rename to the caller', async () => {
-    const tag = { id: 'p-1', name: 'Old', scopeType: 'personal' as const, status: 'active' as const, version: 1, groupId: null, groupKeyVersionId: null };
+    const tag = {
+      id: 'p-1',
+      name: 'Old',
+      scopeType: 'personal' as const,
+      status: 'active' as const,
+      version: 1,
+      groupId: null,
+      groupKeyVersionId: null,
+    };
     const promise = service.renameTag(tag, 'New');
     await drain();
     httpMock
       .expectOne(`${base}/custom-tags/p-1`)
-      .flush({ errorCode: 'CON_VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
+      .flush(
+        { errorCode: 'CON_VERSION_CONFLICT' },
+        { status: 412, statusText: 'Precondition Failed' },
+      );
     await expect(promise).rejects.toMatchObject({ status: 412 });
   });
 
@@ -205,20 +301,39 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
   it('managed list carries version + status and falls back to null name on decrypt failure', async () => {
     encryption.decrypt.mockRejectedValue(new Error('bad key'));
     const promise = service.getManagedPersonalTags();
-    httpMock
-      .expectOne(`${base}/custom-tags`)
-      .flush([{ id: 'p-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 7, groupId: null, groupKeyVersionId: null }]);
+    httpMock.expectOne(`${base}/custom-tags`).flush([
+      {
+        id: 'p-1',
+        scopeType: 'personal',
+        encryptedName: 'IV=:CIPHER',
+        status: 'active',
+        version: 7,
+        groupId: null,
+        groupKeyVersionId: null,
+      },
+    ]);
     const list = await promise;
-    expect(list[0]).toMatchObject({ id: 'p-1', name: null, version: 7, status: 'active' });
+    expect(list[0]).toMatchObject({
+      id: 'p-1',
+      name: null,
+      version: 7,
+      status: 'active',
+    });
   });
 
   it('never writes decrypted/plaintext names to browser storage during writes', async () => {
     const setSpy = jest.spyOn(Storage.prototype, 'setItem');
     const promise = service.createPersonalTag('Secret Tag');
     await drain();
-    httpMock
-      .expectOne(`${base}/custom-tags`)
-      .flush({ id: 'p-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 1, groupId: null, groupKeyVersionId: null });
+    httpMock.expectOne(`${base}/custom-tags`).flush({
+      id: 'p-1',
+      scopeType: 'personal',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 1,
+      groupId: null,
+      groupKeyVersionId: null,
+    });
     await promise;
     for (const call of setSpy.mock.calls) {
       expect(JSON.stringify(call)).not.toContain('Secret Tag');
@@ -239,27 +354,60 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
 
   it('lists DEPRECATED group tags via ?status=deprecated', async () => {
     const dep = service.getManagedGroupTags('g-1', 'deprecated');
-    httpMock.expectOne(`${base}/groups/g-1/custom-tags?status=deprecated`).flush([]);
+    httpMock
+      .expectOne(`${base}/groups/g-1/custom-tags?status=deprecated`)
+      .flush([]);
     await dep;
   });
 
   it('restore posts to /:id/restore with ONLY the optimistic version (no name material)', async () => {
-    const tag = { id: 't-1', name: 'Keep Me', scopeType: 'personal' as const, status: 'deprecated' as const, version: 2, groupId: null, groupKeyVersionId: null };
+    const tag = {
+      id: 't-1',
+      name: 'Keep Me',
+      scopeType: 'personal' as const,
+      status: 'deprecated' as const,
+      version: 2,
+      groupId: null,
+      groupKeyVersionId: null,
+    };
     const promise = service.restoreTag(tag);
     const req = httpMock.expectOne(`${base}/custom-tags/t-1/restore`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ version: 2 });
     expect(encryption.encrypt).not.toHaveBeenCalled(); // no re-encryption on restore
-    req.flush({ id: 't-1', scopeType: 'personal', encryptedName: 'IV=:CIPHER', status: 'active', version: 3, groupId: null, groupKeyVersionId: null });
-    await expect(promise).resolves.toMatchObject({ status: 'active', version: 3, name: 'Keep Me' });
+    req.flush({
+      id: 't-1',
+      scopeType: 'personal',
+      encryptedName: 'IV=:CIPHER',
+      status: 'active',
+      version: 3,
+      groupId: null,
+      groupKeyVersionId: null,
+    });
+    await expect(promise).resolves.toMatchObject({
+      status: 'active',
+      version: 3,
+      name: 'Keep Me',
+    });
   });
 
   it('surfaces a version conflict (412) from restore to the caller', async () => {
-    const tag = { id: 't-1', name: 'X', scopeType: 'personal' as const, status: 'deprecated' as const, version: 1, groupId: null, groupKeyVersionId: null };
+    const tag = {
+      id: 't-1',
+      name: 'X',
+      scopeType: 'personal' as const,
+      status: 'deprecated' as const,
+      version: 1,
+      groupId: null,
+      groupKeyVersionId: null,
+    };
     const promise = service.restoreTag(tag);
     httpMock
       .expectOne(`${base}/custom-tags/t-1/restore`)
-      .flush({ errorCode: 'CON_VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
+      .flush(
+        { errorCode: 'CON_VERSION_CONFLICT' },
+        { status: 412, statusText: 'Precondition Failed' },
+      );
     await expect(promise).rejects.toMatchObject({ status: 412 });
   });
 
@@ -285,12 +433,15 @@ describe('CustomTagService (TAG-BATCH-C3)', () => {
 
   it('PERSONAL scope: resolves via the PERSONAL endpoint/master key only', async () => {
     const promise = service.getCustomTagNameMap({});
-    httpMock
-      .expectOne(`${base}/custom-tags`)
-      .flush([row({ id: 'p', scopeType: 'personal', groupId: null, groupKeyVersionId: null })]);
-    httpMock
-      .expectOne(`${base}/custom-tags?status=deprecated`)
-      .flush([]);
+    httpMock.expectOne(`${base}/custom-tags`).flush([
+      row({
+        id: 'p',
+        scopeType: 'personal',
+        groupId: null,
+        groupKeyVersionId: null,
+      }),
+    ]);
+    httpMock.expectOne(`${base}/custom-tags?status=deprecated`).flush([]);
     httpMock.expectNone(`${base}/groups/g-1/custom-tags`);
     const map = await promise;
     expect(session.ensureCryptoContext).toHaveBeenCalled();

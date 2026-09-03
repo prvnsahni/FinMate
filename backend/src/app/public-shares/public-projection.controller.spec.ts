@@ -3,7 +3,10 @@ import { Reflector } from '@nestjs/core';
 import { NotFoundException } from '@nestjs/common';
 import { PublicProjectionController } from './public-projection.controller';
 import { PublicProjectionService } from './public-projection.service';
-import { THROTTLE_POLICY_KEY, THROTTLE_PROFILES } from '../throttler/throttle.constants';
+import {
+  THROTTLE_POLICY_KEY,
+  THROTTLE_PROFILES,
+} from '../throttler/throttle.constants';
 
 describe('PublicProjectionController (PUBLIC-1C)', () => {
   let controller: PublicProjectionController;
@@ -29,7 +32,10 @@ describe('PublicProjectionController (PUBLIC-1C)', () => {
   it('24. is ANONYMOUS — no guards are attached to the controller or route', () => {
     // NestJS stores @UseGuards under '__guards__'; a JWT-guarded controller would
     // have it. The public projection route must have none.
-    const classGuards = Reflect.getMetadata('__guards__', PublicProjectionController);
+    const classGuards = Reflect.getMetadata(
+      '__guards__',
+      PublicProjectionController,
+    );
     const routeGuards = Reflect.getMetadata(
       '__guards__',
       PublicProjectionController.prototype.getLedger,
@@ -39,7 +45,10 @@ describe('PublicProjectionController (PUBLIC-1C)', () => {
   });
 
   it('25. is rate-limited via the PUBLIC_SHARE throttle profile', () => {
-    const policy = new Reflector().get(THROTTLE_POLICY_KEY, PublicProjectionController);
+    const policy = new Reflector().get(
+      THROTTLE_POLICY_KEY,
+      PublicProjectionController,
+    );
     expect(policy).toBe(THROTTLE_PROFILES.PUBLIC_SHARE);
   });
 
@@ -54,7 +63,9 @@ describe('PublicProjectionController (PUBLIC-1C)', () => {
 
   it('propagates the generic 404 from the service unchanged', async () => {
     projection.getPublicLedger.mockRejectedValue(new NotFoundException());
-    await expect(controller.getLedger('bad', mockRes())).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getLedger('bad', mockRes())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   // ── PUBLIC-1G — revocable ledger must never be cached ────────────────────────
@@ -67,7 +78,9 @@ describe('PublicProjectionController (PUBLIC-1C)', () => {
   it('26. sets Cache-Control: no-store BEFORE the lookup, so the 404 path carries it too', async () => {
     projection.getPublicLedger.mockRejectedValue(new NotFoundException());
     const res = mockRes();
-    await expect(controller.getLedger('bad', res)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getLedger('bad', res)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     // Header was set before the throw → present on the generic-404 response too.
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });

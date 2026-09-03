@@ -35,7 +35,9 @@ describe('suggestCustomTags (TAG-BATCH-C4 pure engine)', () => {
     g.fetch = tripwire;
     g.XMLHttpRequest = tripwire;
     try {
-      expect(() => suggestCustomTags('milk', [tag('a', 'Milk')], [])).not.toThrow();
+      expect(() =>
+        suggestCustomTags('milk', [tag('a', 'Milk')], []),
+      ).not.toThrow();
       expect(tripwire).not.toHaveBeenCalled();
     } finally {
       g.fetch = originalFetch;
@@ -61,7 +63,10 @@ describe('suggestCustomTags (TAG-BATCH-C4 pure engine)', () => {
 
   it('suggests on keyword match (every tag-name word present in the label)', () => {
     const res = suggestCustomTags('weekly grocery haul', [tag('a', 'Grocery')]);
-    expect(res[0]).toMatchObject({ tagId: 'a', reason: 'Matched label keywords' });
+    expect(res[0]).toMatchObject({
+      tagId: 'a',
+      reason: 'Matched label keywords',
+    });
     expect(res[0].confidence).toBe(0.6);
   });
 
@@ -72,7 +77,10 @@ describe('suggestCustomTags (TAG-BATCH-C4 pure engine)', () => {
   it('ranks a remembered correction above name/keyword matches', () => {
     const tags = [tag('a', 'Milk'), tag('b', 'My Grocery')];
     const res = suggestCustomTags('milk', tags, ['b']);
-    expect(res[0]).toMatchObject({ tagId: 'b', reason: 'Matched a previous correction' });
+    expect(res[0]).toMatchObject({
+      tagId: 'b',
+      reason: 'Matched a previous correction',
+    });
     expect(res[0].confidence).toBe(0.95);
     // The exact-name match still appears, ranked lower.
     expect(res.find((r) => r.tagId === 'a')?.reason).toBe('Matched tag name');
@@ -99,6 +107,8 @@ describe('suggestCustomTags (TAG-BATCH-C4 pure engine)', () => {
   it('never invents canonical or sensitive tags — output is exactly the given custom tags', () => {
     // No canonical/sensitive taxonomy is reachable here; a "pharmacy" label with
     // no matching authorized custom tag yields nothing.
-    expect(suggestCustomTags('pharmacy medicine', [tag('a', 'Groceries')])).toEqual([]);
+    expect(
+      suggestCustomTags('pharmacy medicine', [tag('a', 'Groceries')]),
+    ).toEqual([]);
   });
 });

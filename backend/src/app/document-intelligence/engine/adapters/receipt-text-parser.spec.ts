@@ -1,6 +1,13 @@
 import { parseReceiptText } from './receipt-text-parser';
 
-const GROCERY = ['Example Market', 'Date: 2026-08-15', 'Milk 2 x 60 120', 'Bread 1 x 45 45', 'Rice 1 x 520 520', 'TOTAL INR 685'].join('\n');
+const GROCERY = [
+  'Example Market',
+  'Date: 2026-08-15',
+  'Milk 2 x 60 120',
+  'Bread 1 x 45 45',
+  'Rice 1 x 520 520',
+  'TOTAL INR 685',
+].join('\n');
 
 describe('parseReceiptText (pure heuristic, no fabrication)', () => {
   it('extracts merchant, date, currency, total and line items with EXTRACTED authority', () => {
@@ -30,6 +37,8 @@ describe('parseReceiptText (pure heuristic, no fabrication)', () => {
     const r = parseReceiptText('   \n  ');
     expect(r.header).toBeUndefined();
     expect(r.lineItems).toBeUndefined();
-    expect(r.unresolvedFields).toEqual(expect.arrayContaining(['header', 'lineItems']));
+    expect(r.unresolvedFields).toEqual(
+      expect.arrayContaining(['header', 'lineItems']),
+    );
   });
 });

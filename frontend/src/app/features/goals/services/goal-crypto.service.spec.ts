@@ -30,7 +30,10 @@ describe('GoalCryptoService (client born-E2EE)', () => {
       providers: [
         GoalCryptoService,
         ClientEncryptionService,
-        { provide: GroupKeyService, useValue: { getMyAsymmetricKeys: async () => keys } },
+        {
+          provide: GroupKeyService,
+          useValue: { getMyAsymmetricKeys: async () => keys },
+        },
       ],
     });
     // Generate a real RSA-OAEP wrapping pair via the service's own crypto resolver
@@ -42,7 +45,8 @@ describe('GoalCryptoService (client born-E2EE)', () => {
   });
 
   it('encrypts the title client-side and never emits the plaintext', async () => {
-    const { title, encryptedContentKey } = await svc.encryptTitle('My secret goal');
+    const { title, encryptedContentKey } =
+      await svc.encryptTitle('My secret goal');
     expect(title).not.toContain('My secret goal');
     expect(title).toContain(':'); // iv:ct AES-GCM format
     expect(encryptedContentKey).not.toContain('My secret goal');
@@ -50,7 +54,8 @@ describe('GoalCryptoService (client born-E2EE)', () => {
   });
 
   it('round-trips: the owner can decrypt what was encrypted', async () => {
-    const { title, encryptedContentKey } = await svc.encryptTitle('Trip to Japan');
+    const { title, encryptedContentKey } =
+      await svc.encryptTitle('Trip to Japan');
     const plain = await svc.decryptTitle(title, encryptedContentKey);
     expect(plain).toBe('Trip to Japan');
   });

@@ -5,7 +5,10 @@ import { parseReceiptText } from '../receipt-text-parser';
 import { BrowserOcrService } from './browser-ocr.service';
 
 /** Local OCR seam: recognize text from image bytes. Must never perform an external call. */
-export type ImageOcrFn = (bytes: Uint8Array, mimeType: string) => Promise<string>;
+export type ImageOcrFn = (
+  bytes: Uint8Array,
+  mimeType: string,
+) => Promise<string>;
 
 /** Minimal pdfjs surface the client extraction uses (keeps the bundler/loader pluggable). */
 export interface ClientPdfjs {
@@ -13,7 +16,9 @@ export interface ClientPdfjs {
 }
 export interface ClientPdfDoc {
   numPages: number;
-  getPage(n: number): Promise<{ getTextContent(): Promise<{ items: Array<{ str: string }> }> }>;
+  getPage(
+    n: number,
+  ): Promise<{ getTextContent(): Promise<{ items: Array<{ str: string }> }> }>;
 }
 export type PdfjsLoader = () => Promise<ClientPdfjs>;
 
@@ -29,7 +34,13 @@ const envelope = (
   sourceType: DocumentSourceType,
   warnings: string[],
   extra: Partial<DocumentExtractionResult> = {},
-): DocumentExtractionResult => ({ status, sourceType, warnings, candidatesOnly: true, ...extra });
+): DocumentExtractionResult => ({
+  status,
+  sourceType,
+  warnings,
+  candidatesOnly: true,
+  ...extra,
+});
 
 /**
  * DOC-4/DOC-3E client-side extraction. Both real paths run **in-browser** — no
@@ -53,7 +64,8 @@ export class DocumentExtractionClientService {
    * stateless (no injected deps), so it is created on demand; this keeps the service usable
    * via `new` (tests) without an Angular injection context, mirroring the pdfjs-loader seam.
    */
-  private ocr: ImageOcrFn = (bytes, mimeType) => new BrowserOcrService().recognize(bytes, mimeType);
+  private ocr: ImageOcrFn = (bytes, mimeType) =>
+    new BrowserOcrService().recognize(bytes, mimeType);
 
   /** Override the pdfjs loader (tests inject a fake; real ESM pdfjs can't load in Jest). */
   useLoader(loader: PdfjsLoader): this {
@@ -75,7 +87,9 @@ export class DocumentExtractionClientService {
       return this.extractImage(bytes, file.type);
     }
     if (sourceType !== 'pdf') {
-      return envelope('unsupported_document', 'unknown', ['Unsupported document type.']);
+      return envelope('unsupported_document', 'unknown', [
+        'Unsupported document type.',
+      ]);
     }
     return this.extractPdf(bytes);
   }
@@ -85,7 +99,10 @@ export class DocumentExtractionClientService {
    * device; a missing/failed local model yields `provider_unavailable` (fail-closed, no
    * network); empty OCR yields `no_text_detected`. Fabricates nothing.
    */
-  async extractImage(bytes: Uint8Array, mimeType: string): Promise<DocumentExtractionResult> {
+  async extractImage(
+    bytes: Uint8Array,
+    mimeType: string,
+  ): Promise<DocumentExtractionResult> {
     let text: string;
     try {
       text = await this.ocr(bytes, mimeType);
@@ -95,10 +112,13 @@ export class DocumentExtractionClientService {
       ]);
     }
     if (text.trim().length === 0) {
-      return envelope('no_text_detected', 'image', ['No text was detected in the image.']);
+      return envelope('no_text_detected', 'image', [
+        'No text was detected in the image.',
+      ]);
     }
     const parsed = parseReceiptText(text);
-    const complete = parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
+    const complete =
+      parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
     return envelope(complete ? 'ok' : 'partial_extraction', 'image', [], {
       ...(parsed.header ? { header: parsed.header } : {}),
       ...(parsed.lineItems ? { lineItems: parsed.lineItems } : {}),
@@ -112,13 +132,16 @@ export class DocumentExtractionClientService {
       const pdfjs = await this.loadPdfjs();
       doc = await pdfjs.getDocument({ data: bytes }).promise;
     } catch {
-      return envelope('document_corrupt', 'pdf', ['The PDF could not be read.']);
+      return envelope('document_corrupt', 'pdf', [
+        'The PDF could not be read.',
+      ]);
     }
 
     let text = '';
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
-      text += (await page.getTextContent()).items.map((i) => i.str).join('\n') + '\n';
+      text +=
+        (await page.getTextContent()).items.map((i) => i.str).join('\n') + '\n';
     }
 
     if (text.trim().length === 0) {
@@ -128,7 +151,8 @@ export class DocumentExtractionClientService {
     }
 
     const parsed = parseReceiptText(text);
-    const complete = parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
+    const complete =
+      parsed.header?.total !== undefined && (parsed.lineItems?.length ?? 0) > 0;
     return envelope(complete ? 'ok' : 'partial_extraction', 'pdf', [], {
       ...(parsed.header ? { header: parsed.header } : {}),
       ...(parsed.lineItems ? { lineItems: parsed.lineItems } : {}),

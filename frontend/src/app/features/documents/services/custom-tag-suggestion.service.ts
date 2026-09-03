@@ -42,7 +42,9 @@ export class CustomTagSuggestionService {
    * matched safely). Errors resolve to `[]` so the review surface degrades to
    * canonical-only. Group loads use only that group's tags (scope isolation).
    */
-  async loadAuthorizedTags(scope: SuggestionScope): Promise<AuthorizedCustomTag[]> {
+  async loadAuthorizedTags(
+    scope: SuggestionScope,
+  ): Promise<AuthorizedCustomTag[]> {
     if (scope.groupId) {
       const tags = await this.customTags.getGroupCustomTags(scope.groupId);
       return tags
@@ -57,7 +59,11 @@ export class CustomTagSuggestionService {
     const tags = await this.customTags.getPersonalCustomTags();
     return tags
       .filter((t) => !!t.name)
-      .map((t) => ({ id: t.id, name: t.name as string, scope: 'personal' as const }));
+      .map((t) => ({
+        id: t.id,
+        name: t.name as string,
+        scope: 'personal' as const,
+      }));
   }
 
   /**

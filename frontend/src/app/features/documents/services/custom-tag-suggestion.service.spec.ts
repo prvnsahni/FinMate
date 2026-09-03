@@ -31,7 +31,10 @@ describe('CustomTagSuggestionService (TAG-BATCH-C4)', () => {
   });
 
   it('currentScope reads the userId from auth state (null when signed out)', () => {
-    expect(service.currentScope()).toEqual({ userId: 'user-A', groupId: undefined });
+    expect(service.currentScope()).toEqual({
+      userId: 'user-A',
+      groupId: undefined,
+    });
     store.selectSnapshot.mockReturnValue(null);
     expect(service.currentScope()).toBeNull();
   });
@@ -50,7 +53,10 @@ describe('CustomTagSuggestionService (TAG-BATCH-C4)', () => {
     customTags.getGroupCustomTags.mockResolvedValue([
       { id: 'g1', scopeType: 'group', name: 'Team Lunch' },
     ]);
-    const tags = await service.loadAuthorizedTags({ userId: 'user-A', groupId: 'group-1' });
+    const tags = await service.loadAuthorizedTags({
+      userId: 'user-A',
+      groupId: 'group-1',
+    });
     expect(customTags.getGroupCustomTags).toHaveBeenCalledWith('group-1');
     expect(customTags.getGroupCustomTags).toHaveBeenCalledTimes(1);
     expect(tags).toEqual([
@@ -83,12 +89,18 @@ describe('CustomTagSuggestionService (TAG-BATCH-C4)', () => {
     // User B on the same device: no remembered correction → name match wins.
     const forB = service.suggest('milk', authorized, { userId: 'user-B' });
     expect(forB[0].tagId).toBe('a');
-    expect(forB.find((s) => s.reason === 'Matched a previous correction')).toBeUndefined();
+    expect(
+      forB.find((s) => s.reason === 'Matched a previous correction'),
+    ).toBeUndefined();
   });
 
   it('makes no backend call just to produce suggestions (suggest is pure)', () => {
     const scope = { userId: 'user-A' };
-    service.suggest('milk', [{ id: 'a', name: 'Milk', scope: 'personal' }], scope);
+    service.suggest(
+      'milk',
+      [{ id: 'a', name: 'Milk', scope: 'personal' }],
+      scope,
+    );
     expect(customTags.getPersonalCustomTags).not.toHaveBeenCalled();
     expect(customTags.getGroupCustomTags).not.toHaveBeenCalled();
   });

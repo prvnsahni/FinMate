@@ -71,7 +71,9 @@ export class CustomTagManagementComponent {
   readonly isGroup = computed(() => this.scope() === 'group');
   readonly canCreate = computed(() => {
     const name = this.newName().trim();
-    return name.length > 0 && name.length <= MAX_NAME_LENGTH && !this.creating();
+    return (
+      name.length > 0 && name.length <= MAX_NAME_LENGTH && !this.creating()
+    );
   });
   private token = 0;
 
@@ -237,7 +239,9 @@ export class CustomTagManagementComponent {
       this.notice.set('Tag restored. Find it under Active.');
     } catch (e) {
       if (e instanceof HttpErrorResponse && e.status === 412) {
-        this.notice.set('This tag was changed elsewhere. We refreshed the list — please try again.');
+        this.notice.set(
+          'This tag was changed elsewhere. We refreshed the list — please try again.',
+        );
         this.reload();
       } else {
         this.error.set(this.messageFor(e, 'restore'));
@@ -248,17 +252,33 @@ export class CustomTagManagementComponent {
   }
 
   /** Map an error to a safe, name-free user message. Never surfaces the name/ciphertext. */
-  private messageFor(e: unknown, action: 'load' | 'create' | 'rename' | 'deprecate' | 'restore'): string {
+  private messageFor(
+    e: unknown,
+    action: 'load' | 'create' | 'rename' | 'deprecate' | 'restore',
+  ): string {
     if (e instanceof HttpErrorResponse) {
-      if (e.status === 403) return "You don't have access to manage these tags.";
+      if (e.status === 403)
+        return "You don't have access to manage these tags.";
       if (e.status === 404) return 'That tag no longer exists.';
-      if (e.status === 412) return 'This tag was changed elsewhere. Please refresh and try again.';
-      if (e.status === 0) return 'Network error. Please check your connection and try again.';
+      if (e.status === 412)
+        return 'This tag was changed elsewhere. Please refresh and try again.';
+      if (e.status === 0)
+        return 'Network error. Please check your connection and try again.';
     }
-    if (e instanceof Error && (e.message === 'CUSTOM_TAG_NO_KEY' || e.message === 'CUSTOM_TAG_ENCRYPT_FAILED')) {
+    if (
+      e instanceof Error &&
+      (e.message === 'CUSTOM_TAG_NO_KEY' ||
+        e.message === 'CUSTOM_TAG_ENCRYPT_FAILED')
+    ) {
       return 'Could not secure the tag name on this device. Please try again.';
     }
-    const verb = { load: 'load', create: 'create', rename: 'rename', deprecate: 'deprecate', restore: 'restore' }[action];
+    const verb = {
+      load: 'load',
+      create: 'create',
+      rename: 'rename',
+      deprecate: 'deprecate',
+      restore: 'restore',
+    }[action];
     return `Couldn't ${verb} the tag. Please try again.`;
   }
 }

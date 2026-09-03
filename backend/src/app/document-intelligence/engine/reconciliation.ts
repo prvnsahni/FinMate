@@ -1,7 +1,11 @@
-import { ReconciliationStatus, ReconciliationSummary } from './document-extraction-engine.types';
+import {
+  ReconciliationStatus,
+  ReconciliationSummary,
+} from './document-extraction-engine.types';
 
 /** Deterministic 2-dp money rounding (app-consistent with the Goal Engine). */
-const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number): number =>
+  Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Pure total-vs-items reconciliation (readiness §A6). Computes the allocated total

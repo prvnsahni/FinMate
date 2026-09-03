@@ -65,7 +65,11 @@ function collectConfirmedTags(
       ) {
         continue;
       }
-      byTagId.set(tag.tagId, { tagId: tag.tagId, authority, source: tag.source });
+      byTagId.set(tag.tagId, {
+        tagId: tag.tagId,
+        authority,
+        source: tag.source,
+      });
     }
   }
   return [...byTagId.values()];

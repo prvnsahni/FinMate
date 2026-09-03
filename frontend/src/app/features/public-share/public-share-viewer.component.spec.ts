@@ -11,11 +11,30 @@ const LEDGER: PublicLedger = {
   groupName: 'Goa Trip',
   currency: 'INR',
   entries: [
-    { date: '2026-08-01', amount: 500, currency: 'INR', category: 'Food', transactionType: 'expense', payerLabel: 'Member 1' },
-    { date: '2026-08-02', amount: 200, currency: 'INR', category: 'Fuel', transactionType: 'refund', payerLabel: 'Member 2' },
+    {
+      date: '2026-08-01',
+      amount: 500,
+      currency: 'INR',
+      category: 'Food',
+      transactionType: 'expense',
+      payerLabel: 'Member 1',
+    },
+    {
+      date: '2026-08-02',
+      amount: 200,
+      currency: 'INR',
+      category: 'Fuel',
+      transactionType: 'refund',
+      payerLabel: 'Member 2',
+    },
   ],
   balanceSummary: [
-    { fromLabel: 'Member 2', toLabel: 'Member 1', amount: 300, currency: 'INR' },
+    {
+      fromLabel: 'Member 2',
+      toLabel: 'Member 1',
+      amount: 300,
+      currency: 'INR',
+    },
   ],
   generatedAt: '2026-08-23T00:00:00.000Z',
 };
@@ -31,7 +50,11 @@ describe('PublicShareViewerComponent (PUBLIC-1E)', () => {
         { provide: PublicShareService, useValue: service },
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: { get: (k: string) => (k === 'token' ? token : null) } } },
+          useValue: {
+            snapshot: {
+              paramMap: { get: (k: string) => (k === 'token' ? token : null) },
+            },
+          },
         },
       ],
     });
@@ -51,7 +74,7 @@ describe('PublicShareViewerComponent (PUBLIC-1E)', () => {
 
   it('renders the public ledger (group name, balances, entries, pseudonyms, refund)', () => {
     build('TOK123');
-    const html = (fixture.nativeElement as HTMLElement);
+    const html = fixture.nativeElement as HTMLElement;
     expect(html.querySelector('[data-testid="viewer-ledger"]')).toBeTruthy();
     const text = html.textContent ?? '';
     expect(text).toContain('Goa Trip');
@@ -65,7 +88,9 @@ describe('PublicShareViewerComponent (PUBLIC-1E)', () => {
 
   it('has NO edit/add/delete/settle controls (read-only)', () => {
     build('TOK123');
-    const buttons = (fixture.nativeElement as HTMLElement).querySelectorAll('button');
+    const buttons = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      'button',
+    );
     expect(buttons.length).toBe(0);
   });
 
@@ -78,8 +103,13 @@ describe('PublicShareViewerComponent (PUBLIC-1E)', () => {
       const comp = build('TOK123');
       expect(comp.state()).toBe('unavailable');
       const el = fixture.nativeElement as HTMLElement;
-      expect(el.querySelector('[data-testid="viewer-unavailable"]')).toBeTruthy();
-      const text = (el.querySelector('[data-testid="viewer-unavailable"]')?.textContent ?? '').trim();
+      expect(
+        el.querySelector('[data-testid="viewer-unavailable"]'),
+      ).toBeTruthy();
+      const text = (
+        el.querySelector('[data-testid="viewer-unavailable"]')?.textContent ??
+        ''
+      ).trim();
       // The token never leaks into the page.
       expect(text).not.toContain('TOK123');
       rendered.push(text);

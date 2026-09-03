@@ -31,7 +31,8 @@ export class StubClassificationEngine implements ClassificationEngine {
   }
 
   async classify(input: ClassificationInput): Promise<ClassificationResult> {
-    const invalid = !input || (input.itemLabel === undefined && input.category === undefined);
+    const invalid =
+      !input || (input.itemLabel === undefined && input.category === undefined);
     return {
       engine: {
         name: this.name,

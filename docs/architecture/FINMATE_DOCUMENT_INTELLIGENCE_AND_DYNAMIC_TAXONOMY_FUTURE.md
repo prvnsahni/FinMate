@@ -8,7 +8,7 @@
 
 **Labels used throughout (identical to the frozen stack):** **CURRENT** = exists in the repository today (evidence-backed) · **TARGET / FUTURE** = the document-intelligence, OCR, itemization, global dynamic taxonomy, classification-learning, statement-extraction, and population-learning concepts explored here — **none implemented** · **UNKNOWN / [DECISION]** = needs PRODUCT / ENGINEERING / COUNSEL.
 
-> **The one rule that makes this document worth writing:** FinMate should be able to grow *document intelligence* and a *shared, evolving taxonomy* **behind stable interfaces** — a `DocumentExtractionEngine` and a `ClassificationEngine`, mirroring the way the **Goal Engine** is a replaceable component behind a frozen contract — **without** loosening the financial-correctness boundary (FIN-002), the E2EE boundary, or the AI Privacy Firewall. Freeze the **interface/contract**, not the tag list or the vendor.
+> **The one rule that makes this document worth writing:** FinMate should be able to grow _document intelligence_ and a _shared, evolving taxonomy_ **behind stable interfaces** — a `DocumentExtractionEngine` and a `ClassificationEngine`, mirroring the way the **Goal Engine** is a replaceable component behind a frozen contract — **without** loosening the financial-correctness boundary (FIN-002), the E2EE boundary, or the AI Privacy Firewall. Freeze the **interface/contract**, not the tag list or the vendor.
 
 ---
 
@@ -24,15 +24,15 @@ Every capability below is **TARGET / FUTURE** unless a **CURRENT** row explicitl
 
 To keep TARGET honest, here is what exists **today**. Nothing beyond this table is claimed to exist.
 
-| Concern | CURRENT state | Evidence |
-|---|---|---|
-| Expense category | A **single flat** category string per expense: `category varchar(64)` (indexed with `group`). No hierarchy, no per-item categories. | `shared/data-models/src/lib/expense.entity.ts` (`category!: string`, `@Index(['group','category'])`) |
-| Attachments / receipts | Attachments and **receipt versioning** exist (`receipt_versions` with `action` created/replaced/deleted, `snapshot jsonb`, actor). A receipt can be attached to an expense. | `shared/data-models/src/lib/attachment.entity.ts`, `attachment-version.entity.ts`, `receipt-version.entity.ts` |
-| OCR / document extraction | **Does not exist.** No OCR, no text extraction, no image/PDF parsing, no receipt-to-items pipeline anywhere in `backend/src`, `frontend/src`, or `shared`. | repository grep — no `ocr`/`tesseract`/`textract`/document-intelligence code |
-| Taxonomy / tags | **Does not exist.** No taxonomy table, no tag entity, no per-item tags, no shared/global taxonomy, no synonyms/aliases, no candidate lifecycle. | repository — no taxonomy/tag entities |
-| Item-level detail | **Does not exist.** Expenses have a total (`amountTotal`), currency, payer/split/refund model — **no line items**. | `expense.entity.ts` |
-| AI | A single opt-in `POST /ai/proxy` forwarding a prompt with UUID redaction. The **projection firewall is TARGET, not built** (per AI Firewall doc). | `FINMATE_AI_DATA_ACCESS_PRIVACY_FIREWALL.md` §CURRENT vs TARGET |
-| Goal Engine | Deterministic `DeterministicGoalEngine` behind the frozen `GoalEngine` interface (BATCH-11, flag-gated). Numeric/enum input only. | `backend/src/app/goals/engine/*` |
+| Concern                   | CURRENT state                                                                                                                                                               | Evidence                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Expense category          | A **single flat** category string per expense: `category varchar(64)` (indexed with `group`). No hierarchy, no per-item categories.                                         | `shared/data-models/src/lib/expense.entity.ts` (`category!: string`, `@Index(['group','category'])`)           |
+| Attachments / receipts    | Attachments and **receipt versioning** exist (`receipt_versions` with `action` created/replaced/deleted, `snapshot jsonb`, actor). A receipt can be attached to an expense. | `shared/data-models/src/lib/attachment.entity.ts`, `attachment-version.entity.ts`, `receipt-version.entity.ts` |
+| OCR / document extraction | **Does not exist.** No OCR, no text extraction, no image/PDF parsing, no receipt-to-items pipeline anywhere in `backend/src`, `frontend/src`, or `shared`.                  | repository grep — no `ocr`/`tesseract`/`textract`/document-intelligence code                                   |
+| Taxonomy / tags           | **Does not exist.** No taxonomy table, no tag entity, no per-item tags, no shared/global taxonomy, no synonyms/aliases, no candidate lifecycle.                             | repository — no taxonomy/tag entities                                                                          |
+| Item-level detail         | **Does not exist.** Expenses have a total (`amountTotal`), currency, payer/split/refund model — **no line items**.                                                          | `expense.entity.ts`                                                                                            |
+| AI                        | A single opt-in `POST /ai/proxy` forwarding a prompt with UUID redaction. The **projection firewall is TARGET, not built** (per AI Firewall doc).                           | `FINMATE_AI_DATA_ACCESS_PRIVACY_FIREWALL.md` §CURRENT vs TARGET                                                |
+| Goal Engine               | Deterministic `DeterministicGoalEngine` behind the frozen `GoalEngine` interface (BATCH-11, flag-gated). Numeric/enum input only.                                           | `backend/src/app/goals/engine/*`                                                                               |
 
 **Do not** cite this document as evidence that OCR, dynamic taxonomy, global classification learning, or document intelligence exists. They do **not**.
 
@@ -47,12 +47,14 @@ To keep TARGET honest, here is what exists **today**. Nothing beyond this table 
 The user MUST be able to choose between two modes on any uploaded document:
 
 **A. TOTAL-ONLY MODE (default expectation)**
+
 - User records the main category and the total amount.
 - The system does **NOT** need to extract individual items.
 - The receipt/document may remain **supporting evidence** only (as receipts already do today).
 - **No forced itemization.**
 
 **B. ITEMIZED MODE (explicit opt-in per document)**
+
 - User **explicitly** asks FinMate to extract individual items.
 - OCR / document extraction runs.
 - Extracted items are presented for **user review**.
@@ -93,6 +95,7 @@ When extraction produces **missing items, duplicate items, taxes, discounts, rou
 ### §3.1 Hard financial boundary (restates and preserves FIN-002)
 
 The system **MUST NOT** let OCR / classification silently modify:
+
 - payer
 - amount (`amountTotal`)
 - split
@@ -101,7 +104,7 @@ The system **MUST NOT** let OCR / classification silently modify:
 - currency
 - financial balances
 
-This preserves **FIN-002** (*"same inputs → same balances as production"*) and the existing financial-correctness boundary. Extraction and classification are a **descriptive/metadata layer on top of** the financial record — never a mutation path into it. Any change to payer/amount/split/refund/settlement/currency remains a **user-driven financial action**, subject to the existing month-lock (FIN-013), spectator (FIN-014), and correctness rules.
+This preserves **FIN-002** (_"same inputs → same balances as production"_) and the existing financial-correctness boundary. Extraction and classification are a **descriptive/metadata layer on top of** the financial record — never a mutation path into it. Any change to payer/amount/split/refund/settlement/currency remains a **user-driven financial action**, subject to the existing month-lock (FIN-013), spectator (FIN-014), and correctness rules.
 
 ---
 
@@ -169,7 +172,7 @@ FinMate may infer (subordinate, correctable):
 
 The user can **correct** these classifications before finalization.
 
-> **Principle:** *"User supplies coarse intent; FinMate derives fine-grained structure."* Coarse user intent is authoritative; fine-grained structure is inferred and correctable.
+> **Principle:** _"User supplies coarse intent; FinMate derives fine-grained structure."_ Coarse user intent is authoritative; fine-grained structure is inferred and correctable.
 
 ---
 
@@ -189,6 +192,7 @@ Additional (flexible) tags:
 ```
 
 Keep **"category"**, **"taxonomy classification"**, and flexible **"tags"** conceptually **distinct** where useful:
+
 - **category** — the coarse, user-supplied intent (exists today, flat).
 - **taxonomy classification** — the structured, hierarchical, shared placement (domain/category/subcategory/itemType).
 - **tags** — flexible, possibly cross-cutting labels (essential, recurring, household).
@@ -222,6 +226,7 @@ Where appropriate, retain: **confidence** · **classifier/engine version** · **
 > **"Better classification across users does not mean silently training on private user data."**
 
 Do **NOT** assume that raw user receipts, OCR text, encrypted descriptions, or private documents may automatically become training data. Population learning/training MUST remain subject to:
+
 - the existing **privacy architecture** (E2EE, Zone-2, data classification)
 - **consent** requirements (external-AI consent AI-5 style, per-signal)
 - **counsel** decisions `[COUNSEL / COMPLIANCE VALIDATION REQUIRED]`
@@ -241,6 +246,7 @@ Future architecture may support two layers:
 - **PERSONAL** — user-specific corrections/preferences/classifications.
 
 Rules:
+
 - A **personal** classification MUST NOT automatically become **globally** visible.
 - A **global** taxonomy concept may eventually be **promoted from aggregate evidence only**, under approved privacy/governance rules (§9), never from a single user's private correction.
 
@@ -423,14 +429,15 @@ None of the above is resolved by this document.
 - ✅ **CURRENT vs TARGET distinguished** — §1 is the only CURRENT claim (evidence-backed); §2–§16 are TARGET/FUTURE, none implemented.
 
 **Contradictions found:** **None.** This document is consistent with the frozen stack and asserts nothing that contradicts it. Two intentional **consistency notes** (not contradictions):
-- SRS v1.0 already lists **statement import** as **V1 OPTIONAL "if dependencies safe"** — §16 defers to that scope and does not promote it.
-- Today's expense **`category` is a single flat field**; §4/§6/§7 describe a *future* hierarchical/multi-dimensional layer **on top of / beside** it, not a change to the current field.
 
-**One-line status:** *Future design / parked pending SRS v1.0 closure — no implementation authorised.*
+- SRS v1.0 already lists **statement import** as **V1 OPTIONAL "if dependencies safe"** — §16 defers to that scope and does not promote it.
+- Today's expense **`category` is a single flat field**; §4/§6/§7 describe a _future_ hierarchical/multi-dimensional layer **on top of / beside** it, not a change to the current field.
+
+**One-line status:** _Future design / parked pending SRS v1.0 closure — no implementation authorised._
 
 ---
 
-*End of document. This is a parking document. It authorises no code, schema, migration, API, model, training, or SRS change. Any future work requires the §20 formal impact review and, if adopted, a new dated SRS revision (R2+).*
+_End of document. This is a parking document. It authorises no code, schema, migration, API, model, training, or SRS change. Any future work requires the §20 formal impact review and, if adopted, a new dated SRS revision (R2+)._
 
 ---
 
@@ -446,11 +453,11 @@ None of the above is resolved by this document.
 
 **TARGET.** Support **both** scopes, kept strictly separate from the global taxonomy:
 
-| Scope | Visibility | Name storage |
-|---|---|---|
-| **GLOBAL_CANONICAL** | all users | server-readable (Zone-2), code-curated |
-| **PERSONAL** (`ownerUserId`) | owner only | **E2EE** (Zone-1a) |
-| **GROUP** (`groupId`) | members of that group only | **E2EE** (Zone-1a) |
+| Scope                        | Visibility                 | Name storage                           |
+| ---------------------------- | -------------------------- | -------------------------------------- |
+| **GLOBAL_CANONICAL**         | all users                  | server-readable (Zone-2), code-curated |
+| **PERSONAL** (`ownerUserId`) | owner only                 | **E2EE** (Zone-1a)                     |
+| **GROUP** (`groupId`)        | members of that group only | **E2EE** (Zone-1a)                     |
 
 A group tag MUST NOT resolve for another group; a personal tag MUST NOT resolve for another user (query-enforced exactly like expenses). Users MUST NOT directly create or promote a **global** tag.
 
@@ -494,14 +501,14 @@ GLOBAL / PERSONAL / GROUP tag definitions
 
 ### §C0.9 Learning policy — `[TARGET]` / `[COUNSEL]` / `[PARKED]`
 
-| Mechanism | Direction |
-|---|---|
-| A. deterministic alias mapping | **allowed / curated** |
-| B. personal user-correction memory | **potentially allowed, owner-scoped** |
-| C. aggregate cross-user statistics | **`[COUNSEL]` / privacy decision required** |
-| D. global taxonomy promotion | **product/admin governance + `[COUNSEL]` where applicable** |
-| E. population learning | **PARKED** |
-| F. ML / model training | **PARKED** |
+| Mechanism                          | Direction                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| A. deterministic alias mapping     | **allowed / curated**                                       |
+| B. personal user-correction memory | **potentially allowed, owner-scoped**                       |
+| C. aggregate cross-user statistics | **`[COUNSEL]` / privacy decision required**                 |
+| D. global taxonomy promotion       | **product/admin governance + `[COUNSEL]` where applicable** |
+| E. population learning             | **PARKED**                                                  |
+| F. ML / model training             | **PARKED**                                                  |
 
 **No cross-user learning implementation is authorised.**
 
@@ -516,7 +523,7 @@ GLOBAL / PERSONAL / GROUP tag definitions
 
 `C0 (this addendum — decisions)` → **`C1` custom-tag data model** (additive `custom_tag` table with E2EE name + scope; `tagScope` column on `expense_tags`; migration additive/reversible) → **`C2`** personal-then-group custom-tag CRUD (IDOR-scoped) → **`C3`** assignment/filter/analytics integration (unified `tagIds` resolver) → **`C4`** client-side classifier suggestion of custom tags → **`C5`** governance (request/candidate/promotion — gated on `[COUNSEL]`). **C1 requires a separate explicit authorisation and must not begin until the C0.2 E2EE-name decision is treated as fixed (it determines the schema).**
 
-**Status of this addendum:** *Approved architectural direction for future custom-tag work. Authorises no implementation. TAG-BATCH-C1 not started.*
+**Status of this addendum:** _Approved architectural direction for future custom-tag work. Authorises no implementation. TAG-BATCH-C1 not started._
 
 ---
 
@@ -536,7 +543,7 @@ GLOBAL / PERSONAL / GROUP tag definitions
 
 **Intentionally NOT implemented (C2+):** custom-tag create/list/rename/delete/merge APIs, assignment of custom tags, filters, analytics, export, classifier suggestions, OCR integration, taxonomy governance/promotion, and any UI.
 
-**Security reconciliation (verified, no STOP):** no server-side decryption; no plaintext custom-tag names; no keys/tokens stored (only a key-*version* reference); scope CHECK prevents cross-scope combos; no global taxonomy write path (canonical stays code-curated); no finance mutation (golden gate GREEN); no SEC-KI1/group-key rotation change; existing canonical `expense_tags` coexist safely.
+**Security reconciliation (verified, no STOP):** no server-side decryption; no plaintext custom-tag names; no keys/tokens stored (only a key-_version_ reference); scope CHECK prevents cross-scope combos; no global taxonomy write path (canonical stays code-curated); no finance mutation (golden gate GREEN); no SEC-KI1/group-key rotation change; existing canonical `expense_tags` coexist safely.
 
 **Verification:** data-models 4 suites/26; backend 77 suites/803 (finance golden gate GREEN); backend + frontend builds clean; lint 0 errors.
 
@@ -550,14 +557,14 @@ GLOBAL / PERSONAL / GROUP tag definitions
 
 **Final API surface** (all `@UseGuards(JwtAuthGuard)`; responses use the shared `SuccessResponse`):
 
-| Method & route | Scope | Authorization |
-| --- | --- | --- |
-| `POST /custom-tags` | personal | owner = authenticated user (route/JWT-derived) |
-| `GET /custom-tags` | personal | own active tags only |
-| `POST /groups/:groupId/custom-tags` | group | ACTIVE group membership |
-| `GET /groups/:groupId/custom-tags` | group | ACTIVE group membership |
-| `PATCH /custom-tags/:id` | both (by id) | owner (personal) / member (group) |
-| `DELETE /custom-tags/:id` | both (by id) | owner (personal) / member (group) — **safe deprecation** |
+| Method & route                      | Scope        | Authorization                                            |
+| ----------------------------------- | ------------ | -------------------------------------------------------- |
+| `POST /custom-tags`                 | personal     | owner = authenticated user (route/JWT-derived)           |
+| `GET /custom-tags`                  | personal     | own active tags only                                     |
+| `POST /groups/:groupId/custom-tags` | group        | ACTIVE group membership                                  |
+| `GET /groups/:groupId/custom-tags`  | group        | ACTIVE group membership                                  |
+| `PATCH /custom-tags/:id`            | both (by id) | owner (personal) / member (group)                        |
+| `DELETE /custom-tags/:id`           | both (by id) | owner (personal) / member (group) — **safe deprecation** |
 
 Rationale for the by-id update/deprecate routes handling both scopes: a single scoped-by-id endpoint safely authorizes either scope (no duplicate group/personal update routes), matching the existing "load then authorize" pattern.
 
@@ -575,7 +582,7 @@ Rationale for the by-id update/deprecate routes handling both scopes: a single s
 
 **Intentionally deferred (unchanged):** custom-tag **assignment** to expenses, filtering, analytics, export columns, assignment UX (C3); classifier/OCR suggestion, population learning (C4); governance/request/promotion and any management UI (C5).
 
-**Security reconciliation (verified, no STOP condition hit):** no server-side decryption/plaintext search; no key material stored (only a key-*version* reference); scope is route-derived (no scope injection); IDOR closed on personal + group by-id paths; non-member and cross-group access denied; malformed/missing ciphertext rejected at the DTO boundary; stale entity/key versions rejected via the existing conventions; no finance mutation; no group-key rotation / SEC-KI1 change; no new migration.
+**Security reconciliation (verified, no STOP condition hit):** no server-side decryption/plaintext search; no key material stored (only a key-_version_ reference); scope is route-derived (no scope injection); IDOR closed on personal + group by-id paths; non-member and cross-group access denied; malformed/missing ciphertext rejected at the DTO boundary; stale entity/key versions rejected via the existing conventions; no finance mutation; no group-key rotation / SEC-KI1 change; no new migration.
 
 **Verification:** targeted `custom-tags` suite green (authz/E2EE/lifecycle/scope/finance-structural/adversarial); backend build + lint clean; FIN-002 finance-golden gate GREEN; working tree contains only the intended C2 files.
 
@@ -599,7 +606,7 @@ Rationale for the by-id update/deprecate routes handling both scopes: a single s
 
 **Performance.** List tags load in the existing single bulk `expense_tags` query (no N+1). Custom-tag filter authorization is one `custom_tags` lookup (+ at most one membership lookup) per request, not per row/expense. Analytics stays one query for distribution and one for the whole trend range. The frontend resolves each distinct group-key version once per page and caches decrypted names, so a name is decrypted at most once.
 
-**Intentionally deferred (unchanged):** classifier/OCR suggestion of custom tags + population learning (C4); governance / request / global promotion and any tag-management UI redesign or bulk operations (C5). Export tag *columns* remain deferred (filtering only). Personal-ledger/dashboard custom-tag *name* display beyond the group-detail facet is not wired in C3 (the reusable `CustomTagService.getPersonalCustomTags` exists for a later surface); those surfaces show canonical names as before and opaque ids for personal customs, per the "leave it opaque rather than add a new path" rule.
+**Intentionally deferred (unchanged):** classifier/OCR suggestion of custom tags + population learning (C4); governance / request / global promotion and any tag-management UI redesign or bulk operations (C5). Export tag _columns_ remain deferred (filtering only). Personal-ledger/dashboard custom-tag _name_ display beyond the group-detail facet is not wired in C3 (the reusable `CustomTagService.getPersonalCustomTags` exists for a later surface); those surfaces show canonical names as before and opaque ids for personal customs, per the "leave it opaque rather than add a new path" rule.
 
 **Verification:** backend 78 suites / 851 (was 831 — +20 C3 tests: assignment authz, filter IDOR, response `tagScope`, analytics opaque-id, util custom matching); frontend 72 suites / 622 (incl. new `CustomTagService` spec); backend + frontend builds clean; backend + frontend lint 0 errors; FIN-002 finance-golden gate GREEN; no new migration; no package change.
 

@@ -96,7 +96,12 @@ export const RECEIPT_FIXTURES: ReceiptFixture[] = [
       date: '2026-08-15',
       currency: 'INR',
       lineItems: [
-        { description: 'Petrol', quantity: 10, unitPrice: 102.5, lineTotal: 1025 },
+        {
+          description: 'Petrol',
+          quantity: 10,
+          unitPrice: 102.5,
+          lineTotal: 1025,
+        },
       ],
     },
     printedTotal: 1025,
@@ -134,7 +139,8 @@ export const RECEIPT_FIXTURES: ReceiptFixture[] = [
       ],
     },
     printedTotal: 750,
-    notes: 'Image-only PDF → render→OCR path; expected output identical to fixture E.',
+    notes:
+      'Image-only PDF → render→OCR path; expected output identical to fixture E.',
   },
   {
     id: 'low-quality-rotated',
@@ -150,7 +156,8 @@ export const RECEIPT_FIXTURES: ReceiptFixture[] = [
       lineItems: [{ description: 'Milk', lineTotal: 120 }],
     },
     printedTotal: 685,
-    notes: 'Expect partial_extraction with low confidence; missing fields stay null.',
+    notes:
+      'Expect partial_extraction with low confidence; missing fields stay null.',
   },
   {
     id: 'ambiguous-characters',
@@ -167,7 +174,8 @@ export const RECEIPT_FIXTURES: ReceiptFixture[] = [
       ],
     },
     printedTotal: 685,
-    notes: 'sum(items)=640 vs printed 685 → UNDER_ALLOCATED (Δ 45). Do not invent an item.',
+    notes:
+      'sum(items)=640 vs printed 685 → UNDER_ALLOCATED (Δ 45). Do not invent an item.',
   },
   {
     id: 'sum-exceeds-total',
@@ -185,7 +193,8 @@ export const RECEIPT_FIXTURES: ReceiptFixture[] = [
       ],
     },
     printedTotal: 685,
-    notes: 'sum(items)=700 vs printed 685 → OVER_ALLOCATED (Δ -15). Do not reduce a price.',
+    notes:
+      'sum(items)=700 vs printed 685 → OVER_ALLOCATED (Δ -15). Do not reduce a price.',
   },
 ];
 

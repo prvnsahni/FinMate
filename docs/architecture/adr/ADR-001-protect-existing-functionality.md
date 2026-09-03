@@ -9,7 +9,7 @@
 - **Security impact:** Positive — prevents "security" being used to justify unscoped rewrites; forces named threats (priority order).
 - **Privacy impact:** Neutral/positive — additive privacy controls, no loss of existing guarantees.
 - **Performance impact:** Neutral.
-- **Backward-compatibility impact:** This ADR *is* the backward-compatibility gate.
+- **Backward-compatibility impact:** This ADR _is_ the backward-compatibility gate.
 - **Migration impact:** Every change must state current→target→migration→rollback; no clean-slate.
 - **User impact:** None negative; continuity preserved.
 - **Operational impact:** Slower but safer delivery; feature flags and phased rollout expected.

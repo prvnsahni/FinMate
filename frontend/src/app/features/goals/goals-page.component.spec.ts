@@ -36,9 +36,10 @@ describe('GoalsPageComponent', () => {
       projection: jest.fn().mockReturnValue(of({ status: 'ok' })),
     };
     crypto = {
-      encryptTitle: jest
-        .fn()
-        .mockResolvedValue({ title: 'CIPHERTEXT', encryptedContentKey: 'WRAPPED' }),
+      encryptTitle: jest.fn().mockResolvedValue({
+        title: 'CIPHERTEXT',
+        encryptedContentKey: 'WRAPPED',
+      }),
       decryptTitle: jest.fn().mockResolvedValue('decrypted'),
     };
     build();

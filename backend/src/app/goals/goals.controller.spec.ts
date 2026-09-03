@@ -50,6 +50,10 @@ describe('GoalsController (BATCH-11)', () => {
 
   it('wraps results in the SuccessResponse envelope', async () => {
     const out = await controller.list(req);
-    expect(out).toMatchObject({ success: true, message: expect.any(String), data: [] });
+    expect(out).toMatchObject({
+      success: true,
+      message: expect.any(String),
+      data: [],
+    });
   });
 });

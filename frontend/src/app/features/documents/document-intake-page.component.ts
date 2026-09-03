@@ -3,7 +3,10 @@ import { DocumentModeSelectorComponent } from './document-mode-selector.componen
 import { DocumentReviewComponent } from './document-review.component';
 import { DocumentExtractionClientService } from './services/document-extraction-client.service';
 import { DocumentProcessingMode } from './document-processing.model';
-import { ConfirmedDocumentDraft, DocumentExtractionResult } from './document-review.model';
+import {
+  ConfirmedDocumentDraft,
+  DocumentExtractionResult,
+} from './document-review.model';
 
 /**
  * DOC-4 document intake page (standalone — NOT wired into the finance-critical expense

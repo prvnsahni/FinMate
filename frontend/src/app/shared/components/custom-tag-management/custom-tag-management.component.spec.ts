@@ -70,7 +70,9 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   });
 
   it('loads GROUP tags scoped to the given groupId', async () => {
-    service.getManagedGroupTags.mockResolvedValue([tag({ scopeType: 'group', groupId: 'g-1' })]);
+    service.getManagedGroupTags.mockResolvedValue([
+      tag({ scopeType: 'group', groupId: 'g-1' }),
+    ]);
     make('group', 'g-1');
     await flush();
     expect(service.getManagedGroupTags).toHaveBeenCalledWith('g-1', 'active');
@@ -104,7 +106,9 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   it('create (personal) delegates to the service and prepends the new tag', async () => {
     const comp = make('personal');
     await flush();
-    service.createPersonalTag.mockResolvedValue(tag({ id: 'new', name: 'Fresh' }));
+    service.createPersonalTag.mockResolvedValue(
+      tag({ id: 'new', name: 'Fresh' }),
+    );
     comp.newName.set('Fresh');
     await comp.create();
     expect(service.createPersonalTag).toHaveBeenCalledWith('Fresh');
@@ -115,31 +119,45 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   it('create (group) uses the group service with groupId', async () => {
     const comp = make('group', 'g-1');
     await flush();
-    service.createGroupTag.mockResolvedValue(tag({ id: 'gnew', scopeType: 'group', groupId: 'g-1' }));
+    service.createGroupTag.mockResolvedValue(
+      tag({ id: 'gnew', scopeType: 'group', groupId: 'g-1' }),
+    );
     comp.newName.set('Team');
     await comp.create();
     expect(service.createGroupTag).toHaveBeenCalledWith('g-1', 'Team');
   });
 
   it('rename delegates to the service and replaces the row', async () => {
-    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 't-1', version: 1 })]);
+    service.getManagedPersonalTags.mockResolvedValue([
+      tag({ id: 't-1', version: 1 }),
+    ]);
     const comp = make('personal');
     await flush();
-    service.renameTag.mockResolvedValue(tag({ id: 't-1', name: 'Renamed', version: 2 }));
+    service.renameTag.mockResolvedValue(
+      tag({ id: 't-1', name: 'Renamed', version: 2 }),
+    );
     comp.startEdit(comp.tags()[0]);
     comp.editName.set('Renamed');
     await comp.saveEdit(comp.tags()[0]);
-    expect(service.renameTag).toHaveBeenCalledWith(expect.objectContaining({ id: 't-1' }), 'Renamed');
+    expect(service.renameTag).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 't-1' }),
+      'Renamed',
+    );
     expect(comp.tags()[0]).toMatchObject({ name: 'Renamed', version: 2 });
     expect(comp.editingId()).toBeNull();
   });
 
   it('surfaces a version conflict (412) and refreshes the list', async () => {
-    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 't-1', version: 1 })]);
+    service.getManagedPersonalTags.mockResolvedValue([
+      tag({ id: 't-1', version: 1 }),
+    ]);
     const comp = make('personal');
     await flush();
     service.renameTag.mockRejectedValue(
-      new HttpErrorResponse({ status: 412, error: { errorCode: 'CON_VERSION_CONFLICT' } }),
+      new HttpErrorResponse({
+        status: 412,
+        error: { errorCode: 'CON_VERSION_CONFLICT' },
+      }),
     );
     comp.startEdit(comp.tags()[0]);
     comp.editName.set('X');
@@ -160,7 +178,9 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   });
 
   it('shows a name-free error message on load failure (403)', async () => {
-    service.getManagedGroupTags.mockRejectedValue(new HttpErrorResponse({ status: 403 }));
+    service.getManagedGroupTags.mockRejectedValue(
+      new HttpErrorResponse({ status: 403 }),
+    );
     const comp = make('group', 'g-1');
     await flush();
     expect(comp.error()).toMatch(/access/i);
@@ -172,11 +192,15 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   it('switching to the Deprecated view loads deprecated tags (status filter)', async () => {
     const comp = make('personal');
     await flush();
-    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated' })]);
+    service.getManagedPersonalTags.mockResolvedValue([
+      tag({ id: 'd', status: 'deprecated' }),
+    ]);
     comp.setView('deprecated');
     fixture.detectChanges();
     await flush();
-    expect(service.getManagedPersonalTags).toHaveBeenLastCalledWith('deprecated');
+    expect(service.getManagedPersonalTags).toHaveBeenLastCalledWith(
+      'deprecated',
+    );
     expect(comp.isDeprecatedView()).toBe(true);
     expect(comp.tags().map((t) => t.id)).toEqual(['d']);
   });
@@ -188,45 +212,63 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     comp.setView('deprecated');
     fixture.detectChanges();
     await flush();
-    expect(service.getManagedGroupTags).toHaveBeenLastCalledWith('g-1', 'deprecated');
+    expect(service.getManagedGroupTags).toHaveBeenLastCalledWith(
+      'g-1',
+      'deprecated',
+    );
   });
 
   it('restore delegates to the service and drops the tag from the deprecated list', async () => {
-    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated', version: 2 })]);
+    service.getManagedPersonalTags.mockResolvedValue([
+      tag({ id: 'd', status: 'deprecated', version: 2 }),
+    ]);
     const comp = make('personal');
     comp.setView('deprecated');
     fixture.detectChanges();
     await flush();
-    service.restoreTag.mockResolvedValue(tag({ id: 'd', status: 'active', version: 3 }));
+    service.restoreTag.mockResolvedValue(
+      tag({ id: 'd', status: 'active', version: 3 }),
+    );
     await comp.restore(comp.tags()[0]);
-    expect(service.restoreTag).toHaveBeenCalledWith(expect.objectContaining({ id: 'd', version: 2 }));
+    expect(service.restoreTag).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'd', version: 2 }),
+    );
     expect(comp.tags().length).toBe(0);
     expect(comp.notice()).toMatch(/restored/i);
   });
 
   it('a restore version conflict (412) shows a notice and refreshes', async () => {
-    service.getManagedPersonalTags.mockResolvedValue([tag({ id: 'd', status: 'deprecated', version: 2 })]);
+    service.getManagedPersonalTags.mockResolvedValue([
+      tag({ id: 'd', status: 'deprecated', version: 2 }),
+    ]);
     const comp = make('personal');
     comp.setView('deprecated');
     fixture.detectChanges();
     await flush();
     const callsBefore = service.getManagedPersonalTags.mock.calls.length;
     service.restoreTag.mockRejectedValue(
-      new HttpErrorResponse({ status: 412, error: { errorCode: 'CON_VERSION_CONFLICT' } }),
+      new HttpErrorResponse({
+        status: 412,
+        error: { errorCode: 'CON_VERSION_CONFLICT' },
+      }),
     );
     await comp.restore(comp.tags()[0]);
     expect(comp.notice()).toMatch(/changed elsewhere/i);
-    expect(service.getManagedPersonalTags.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(service.getManagedPersonalTags.mock.calls.length).toBeGreaterThan(
+      callsBefore,
+    );
   });
 
   // ── TAG-BATCH-C5c — canManage gates management actions (usage unaffected) ────
 
   it('a non-managing member sees the list read-only (create/rename/remove hidden)', async () => {
-    service.getManagedGroupTags.mockResolvedValue([tag({ id: 'g', scopeType: 'group', groupId: 'g-1' })]);
+    service.getManagedGroupTags.mockResolvedValue([
+      tag({ id: 'g', scopeType: 'group', groupId: 'g-1' }),
+    ]);
     make('group', 'g-1', /* canManage */ false);
     await flush();
     fixture.detectChanges();
-    const html = (fixture.nativeElement as HTMLElement);
+    const html = fixture.nativeElement as HTMLElement;
     // The tag is still visible…
     expect(html.querySelector('[data-testid="tag-list"]')).toBeTruthy();
     // …but no management affordances are rendered.
@@ -252,7 +294,9 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
   });
 
   it('a manager (canManage true) keeps full management affordances', async () => {
-    service.getManagedGroupTags.mockResolvedValue([tag({ id: 'g', scopeType: 'group', groupId: 'g-1' })]);
+    service.getManagedGroupTags.mockResolvedValue([
+      tag({ id: 'g', scopeType: 'group', groupId: 'g-1' }),
+    ]);
     make('group', 'g-1', true);
     await flush();
     fixture.detectChanges();
@@ -267,7 +311,9 @@ describe('CustomTagManagementComponent (TAG-BATCH-C5a)', () => {
     service.getManagedPersonalTags.mockResolvedValue([tag({ name: 'Secret' })]);
     const comp = make('personal');
     await flush();
-    service.createPersonalTag.mockResolvedValue(tag({ id: 'n', name: 'AlsoSecret' }));
+    service.createPersonalTag.mockResolvedValue(
+      tag({ id: 'n', name: 'AlsoSecret' }),
+    );
     comp.newName.set('AlsoSecret');
     await comp.create();
     for (const call of setSpy.mock.calls) {

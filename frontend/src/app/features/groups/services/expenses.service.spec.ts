@@ -219,7 +219,14 @@ describe('ExpensesService', () => {
   describe('taxonomy + tag analytics (TAG-BATCH-B)', () => {
     it('getTaxonomy fetches the read-only canonical taxonomy', (done) => {
       const tags = [
-        { id: 'milk', canonicalName: 'Milk', normalizedKey: 'milk', parentId: 'dairy', status: 'active', version: 1 },
+        {
+          id: 'milk',
+          canonicalName: 'Milk',
+          normalizedKey: 'milk',
+          parentId: 'dairy',
+          status: 'active',
+          version: 1,
+        },
       ];
       service.getTaxonomy().subscribe((res) => {
         expect(res).toEqual(tags);
@@ -233,7 +240,10 @@ describe('ExpensesService', () => {
     it('getTagAnalytics honors the unified filter and hits the tags endpoint', (done) => {
       const points = [{ tagId: 'grocery', total: 60, currency: 'INR' }];
       service
-        .getTagAnalytics('group-1', { tagIds: ['grocery'], startDate: '2026-08-01' })
+        .getTagAnalytics('group-1', {
+          tagIds: ['grocery'],
+          startDate: '2026-08-01',
+        })
         .subscribe((res) => {
           expect(res).toEqual(points);
           done();
@@ -251,7 +261,10 @@ describe('ExpensesService', () => {
         { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
       ];
       service
-        .getTagTrend('group-1', { startDate: '2026-07-01', endDate: '2026-08-31' })
+        .getTagTrend('group-1', {
+          startDate: '2026-07-01',
+          endDate: '2026-08-31',
+        })
         .subscribe((res) => {
           expect(res).toEqual(points);
           done();

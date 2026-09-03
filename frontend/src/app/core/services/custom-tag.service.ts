@@ -147,7 +147,9 @@ export class CustomTagService {
 
     // Resolve each distinct key version once (most tags share the active one).
     const keyByVersion = new Map<string, CryptoKey | null>();
-    const keyFor = async (versionId: string | null): Promise<CryptoKey | null> => {
+    const keyFor = async (
+      versionId: string | null,
+    ): Promise<CryptoKey | null> => {
       const cacheKey = versionId ?? 'active';
       if (keyByVersion.has(cacheKey)) return keyByVersion.get(cacheKey) ?? null;
       let key: CryptoKey | null = null;
@@ -264,7 +266,9 @@ export class CustomTagService {
     );
     if (!rows.length) return [];
     const keyByVersion = new Map<string, CryptoKey | null>();
-    const keyFor = async (versionId: string | null): Promise<CryptoKey | null> => {
+    const keyFor = async (
+      versionId: string | null,
+    ): Promise<CryptoKey | null> => {
       const cacheKey = versionId ?? 'active';
       if (keyByVersion.has(cacheKey)) return keyByVersion.get(cacheKey) ?? null;
       let key: CryptoKey | null = null;
@@ -309,7 +313,10 @@ export class CustomTagService {
    * encrypted CLIENT-SIDE with the current group key; only `encryptedName` +
    * the resolved `groupKeyVersionId` leave the browser.
    */
-  async createGroupTag(groupId: string, name: string): Promise<ManagedCustomTag> {
+  async createGroupTag(
+    groupId: string,
+    name: string,
+  ): Promise<ManagedCustomTag> {
     const { key, versionId } = await this.groupWriteKey(groupId);
     const encryptedName = await this.encryption.encrypt(name.trim(), key);
     const row = await firstValueFrom(
@@ -328,7 +335,10 @@ export class CustomTagService {
    * the C2 optimistic lock; a stale value surfaces the server's
    * `CON_VERSION_CONFLICT` for the caller to handle.
    */
-  async renameTag(tag: ManagedCustomTag, newName: string): Promise<ManagedCustomTag> {
+  async renameTag(
+    tag: ManagedCustomTag,
+    newName: string,
+  ): Promise<ManagedCustomTag> {
     const trimmed = newName.trim();
     let encryptedName: string;
     let groupKeyVersionId: string | undefined;
@@ -343,11 +353,14 @@ export class CustomTagService {
       encryptedName = await this.encryption.encrypt(trimmed, key);
     }
     const row = await firstValueFrom(
-      this.http.patch<CustomTagApiRow>(`${this.baseUrl}/custom-tags/${tag.id}`, {
-        encryptedName,
-        version: tag.version,
-        ...(groupKeyVersionId ? { groupKeyVersionId } : {}),
-      }),
+      this.http.patch<CustomTagApiRow>(
+        `${this.baseUrl}/custom-tags/${tag.id}`,
+        {
+          encryptedName,
+          version: tag.version,
+          ...(groupKeyVersionId ? { groupKeyVersionId } : {}),
+        },
+      ),
     );
     this.nameCache.set(row.id, trimmed);
     return this.toManaged(row, key);

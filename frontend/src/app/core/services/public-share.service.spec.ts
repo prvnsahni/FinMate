@@ -29,7 +29,13 @@ describe('PublicShareService (PUBLIC-1E)', () => {
     const req = httpMock.expectOne(`${base}/groups/${G}/public-share`);
     expect(req.request.method).toBe('GET');
     expect(JSON.stringify(req.request.body)).not.toContain(TOKEN);
-    req.flush({ active: false, status: null, expiresAt: null, createdAt: null, revokedAt: null });
+    req.flush({
+      active: false,
+      status: null,
+      expiresAt: null,
+      createdAt: null,
+      revokedAt: null,
+    });
   });
 
   it('create → POST create endpoint (optional expiresAt only)', () => {
@@ -37,14 +43,28 @@ describe('PublicShareService (PUBLIC-1E)', () => {
     const req = httpMock.expectOne(`${base}/groups/${G}/public-share`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
-    req.flush({ token: TOKEN, status: 'active', expiresAt: null, createdAt: '2026-09-02', revokedAt: null });
+    req.flush({
+      token: TOKEN,
+      status: 'active',
+      expiresAt: null,
+      createdAt: '2026-09-02',
+      revokedAt: null,
+    });
   });
 
   it('regenerate → POST regenerate endpoint', () => {
     service.regenerate(G).subscribe();
-    const req = httpMock.expectOne(`${base}/groups/${G}/public-share/regenerate`);
+    const req = httpMock.expectOne(
+      `${base}/groups/${G}/public-share/regenerate`,
+    );
     expect(req.request.method).toBe('POST');
-    req.flush({ token: TOKEN, status: 'active', expiresAt: null, createdAt: '2026-09-02', revokedAt: null });
+    req.flush({
+      token: TOKEN,
+      status: 'active',
+      expiresAt: null,
+      createdAt: '2026-09-02',
+      revokedAt: null,
+    });
   });
 
   it('revoke → DELETE the share endpoint', () => {
@@ -58,7 +78,13 @@ describe('PublicShareService (PUBLIC-1E)', () => {
     service.getPublicLedger(TOKEN).subscribe();
     const req = httpMock.expectOne(`${base}/public/shares/${TOKEN}`);
     expect(req.request.method).toBe('GET');
-    req.flush({ groupName: 'Trip', currency: 'INR', entries: [], balanceSummary: [], generatedAt: 'x' });
+    req.flush({
+      groupName: 'Trip',
+      currency: 'INR',
+      entries: [],
+      balanceSummary: [],
+      generatedAt: 'x',
+    });
   });
 
   it('buildShareUrl uses the app origin + /share/:token (in memory only, never persisted)', () => {

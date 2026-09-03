@@ -72,7 +72,11 @@ export class NotificationsService {
     acted: boolean,
   ): Promise<void> {
     if (!this.enabled()) return;
-    await this.state.markState(userId, notificationId, acted ? 'acted' : 'seen');
+    await this.state.markState(
+      userId,
+      notificationId,
+      acted ? 'acted' : 'seen',
+    );
   }
 
   /** Update the user's 3-way control (no-op when OFF). */

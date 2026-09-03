@@ -13,8 +13,16 @@ const HASH = createHash('sha256').update(TOKEN).digest('hex');
 // Fixtures carry PII we must PROVE never leaks into the projection.
 const GROUP = { id: 'grp-secret-id', name: 'Goa Trip', currency: 'INR' };
 const members = [
-  { id: 'm2', joinedAt: new Date('2026-02-01'), user: { id: 'u2', displayName: 'Bob Real', email: 'bob@x.com' } },
-  { id: 'm1', joinedAt: new Date('2026-01-01'), user: { id: 'u1', displayName: 'Alice Real', email: 'alice@x.com' } },
+  {
+    id: 'm2',
+    joinedAt: new Date('2026-02-01'),
+    user: { id: 'u2', displayName: 'Bob Real', email: 'bob@x.com' },
+  },
+  {
+    id: 'm1',
+    joinedAt: new Date('2026-01-01'),
+    user: { id: 'u1', displayName: 'Alice Real', email: 'alice@x.com' },
+  },
 ];
 const activeShare = () =>
   ({
@@ -61,7 +69,12 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
             { groupMemberId: 'm2', currency: 'INR' },
           ],
           suggestedSettlements: [
-            { fromGroupMemberId: 'm2', toGroupMemberId: 'm1', amount: 500, currency: 'INR' },
+            {
+              fromGroupMemberId: 'm2',
+              toGroupMemberId: 'm1',
+              amount: 500,
+              currency: 'INR',
+            },
           ],
         },
       }),
@@ -111,7 +124,10 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
   });
 
   it('3. revoked token → generic 404', async () => {
-    shareRepo.findOne.mockResolvedValue({ ...activeShare(), status: 'revoked' });
+    shareRepo.findOne.mockResolvedValue({
+      ...activeShare(),
+      status: 'revoked',
+    });
     await expectUnavailable(service.getPublicLedger(TOKEN));
   });
 
@@ -129,7 +145,9 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
   });
 
   it('18. inactive creator (calculateGroupBalances throws) → generic 404, no impersonation', async () => {
-    settlements.calculateGroupBalances.mockRejectedValue(new Error('not a member'));
+    settlements.calculateGroupBalances.mockRejectedValue(
+      new Error('not a member'),
+    );
     await expectUnavailable(service.getPublicLedger(TOKEN));
     // Never retried with a different user.
     expect(settlements.calculateGroupBalances).toHaveBeenCalledTimes(1);
@@ -152,7 +170,15 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
     const ledger = await service.getPublicLedger(TOKEN);
     const json = JSON.stringify(ledger);
     // No ids of any kind.
-    for (const id of ['grp-secret-id', 'creator-user-id', 'm1', 'm2', 'u1', 'u2', 'share-id']) {
+    for (const id of [
+      'grp-secret-id',
+      'creator-user-id',
+      'm1',
+      'm2',
+      'u1',
+      'u2',
+      'share-id',
+    ]) {
       expect(json).not.toContain(id);
     }
     // No real names / emails.
@@ -164,15 +190,27 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
       expect(json).not.toContain(secret);
     }
     // Top-level + entry + balance shapes are exactly the allowlist.
-    expect(Object.keys(ledger).sort()).toEqual(
-      ['balanceSummary', 'currency', 'entries', 'generatedAt', 'groupName'],
-    );
-    expect(Object.keys(ledger.entries[0]).sort()).toEqual(
-      ['amount', 'category', 'currency', 'date', 'payerLabel', 'transactionType'],
-    );
-    expect(Object.keys(ledger.balanceSummary[0]).sort()).toEqual(
-      ['amount', 'currency', 'fromLabel', 'toLabel'],
-    );
+    expect(Object.keys(ledger).sort()).toEqual([
+      'balanceSummary',
+      'currency',
+      'entries',
+      'generatedAt',
+      'groupName',
+    ]);
+    expect(Object.keys(ledger.entries[0]).sort()).toEqual([
+      'amount',
+      'category',
+      'currency',
+      'date',
+      'payerLabel',
+      'transactionType',
+    ]);
+    expect(Object.keys(ledger.balanceSummary[0]).sort()).toEqual([
+      'amount',
+      'currency',
+      'fromLabel',
+      'toLabel',
+    ]);
   });
 
   // ── PSEUDONYMS ──────────────────────────────────────────────────────────────
@@ -201,7 +239,10 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
 
   it('22/23. balances come verbatim from calculateGroupBalances; nothing is computed or mutated', async () => {
     const ledger = await service.getPublicLedger(TOKEN);
-    expect(settlements.calculateGroupBalances).toHaveBeenCalledWith('creator-user-id', GROUP.id);
+    expect(settlements.calculateGroupBalances).toHaveBeenCalledWith(
+      'creator-user-id',
+      GROUP.id,
+    );
     // The amount/currency are exactly what the authoritative service returned.
     expect(ledger.balanceSummary[0].amount).toBe(500);
     expect(ledger.balanceSummary[0].currency).toBe('INR');
@@ -213,29 +254,43 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
     await service.getPublicLedger(TOKEN);
     // Balances + entries + members are all scoped to the resolved group id; there
     // is no client-supplied group id path.
-    expect(settlements.calculateGroupBalances).toHaveBeenCalledWith(expect.any(String), GROUP.id);
+    expect(settlements.calculateGroupBalances).toHaveBeenCalledWith(
+      expect.any(String),
+      GROUP.id,
+    );
     expect(memberRepo.find).toHaveBeenCalledWith(
       expect.objectContaining({ where: { group: { id: GROUP.id } } }),
     );
     expect(expenseRepo.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ group: { id: GROUP.id }, status: 'posted' }),
+        where: expect.objectContaining({
+          group: { id: GROUP.id },
+          status: 'posted',
+        }),
       }),
     );
   });
 
   it('holds no finance-mutation or crypto/decrypt capability', () => {
-    expect((service as unknown as Record<string, unknown>)['decrypt']).toBeUndefined();
-    expect((service as unknown as Record<string, unknown>)['calculateBalances']).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>)['decrypt'],
+    ).toBeUndefined();
+    expect(
+      (service as unknown as Record<string, unknown>)['calculateBalances'],
+    ).toBeUndefined();
     // Reuses the single injected authoritative calculator only.
-    const injected = Object.values(service as unknown as Record<string, unknown>);
+    const injected = Object.values(
+      service as unknown as Record<string, unknown>,
+    );
     expect(injected).toContain(settlements);
   });
 
   // ── PUBLIC-1D — adversarial token handling / fail-safe ───────────────────────
 
   it('empty token → generic 404 before ANY DB or finance access', async () => {
-    await expect(service.getPublicLedger('')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getPublicLedger('')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(shareRepo.findOne).not.toHaveBeenCalled();
     expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
   });
@@ -250,15 +305,22 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
       '{"$ne":null}',
       'AAAA-not-a-real-hash',
     ]) {
-      await expect(service.getPublicLedger(bad)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getPublicLedger(bad)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     }
     // A non-matching hash never reaches the authoritative calculator.
     expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
   });
 
   it('a REVOKED token is a cheap fail — the balance calculation is never invoked', async () => {
-    shareRepo.findOne.mockResolvedValue({ ...activeShare(), status: 'revoked' });
-    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    shareRepo.findOne.mockResolvedValue({
+      ...activeShare(),
+      status: 'revoked',
+    });
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
   });
 
@@ -267,13 +329,20 @@ describe('PublicProjectionService (PUBLIC-1C)', () => {
       ...activeShare(),
       expiresAt: new Date(Date.now() - 1000),
     });
-    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
   });
 
   it('a null creator (SET NULL after user deletion) → generic 404, never impersonates', async () => {
-    shareRepo.findOne.mockResolvedValue({ ...activeShare(), createdByUser: null });
-    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+    shareRepo.findOne.mockResolvedValue({
+      ...activeShare(),
+      createdByUser: null,
+    });
+    await expect(service.getPublicLedger(TOKEN)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     expect(settlements.calculateGroupBalances).not.toHaveBeenCalled();
   });
 });

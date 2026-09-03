@@ -15,28 +15,30 @@
 # 1. FinMate Goal Engine in 5 Minutes
 
 ### Simple explanation
-You tell FinMate a money goal ("save ₹200,000 for a trip by next June"). A small "goal helper" looks **only at numbers you already own** — how much you've saved, how fast you're adding to it — and gives you a **plain, honest** answer: *"At your current pace you'd reach it around August — about two months late. Adding ₹5,000/month would get you there on time."* It **explains itself**, never shames you, never promises certainty, and never gives investment advice. Later, a smarter version could learn from **anonymous, aggregated** patterns across many users — but that's a separate, consented, legally-reviewed step, and it plugs into the **same doorway** so nothing else has to change.
+
+You tell FinMate a money goal ("save ₹200,000 for a trip by next June"). A small "goal helper" looks **only at numbers you already own** — how much you've saved, how fast you're adding to it — and gives you a **plain, honest** answer: _"At your current pace you'd reach it around August — about two months late. Adding ₹5,000/month would get you there on time."_ It **explains itself**, never shames you, never promises certainty, and never gives investment advice. Later, a smarter version could learn from **anonymous, aggregated** patterns across many users — but that's a separate, consented, legally-reviewed step, and it plugs into the **same doorway** so nothing else has to change.
 
 ### Technical explanation
+
 The Goal Engine is a **replaceable component behind a stable contract**. The GOALS domain builds a **minimized numeric projection** (never free-text, keys, or raw rows), hands it to a `GoalEngine` implementation, and gets back a structured result (projection + confidence + explanation + provenance + failure state). **V1** is a deterministic, explainable projector. **V2/FUTURE** implementations (model-informed, population-informed) satisfy the identical interface and remain bound by the **AI Privacy Firewall**, the **Class-A/Class-B** boundaries, **INTELLIGENCE = signals-not-raw**, and the **IP policy**. **Runtime inference, evaluation, and training are three separate things** — runtime user data is **never** silently turned into training data.
 
 ---
 
 # 2. Product Intent (CURRENT scope framing)
 
-FinMate should eventually let a user: define a goal (target/date/priority where supported); understand whether it's achievable at the current pace; explore what-if scenarios; receive **explainable** suggestions; track actual progress; and improve the plan as new financial data arrives. Longer term, predictions may be informed by **aggregated historical outcomes** — which is exactly why the engine must be **replaceable behind an interface**, not designed around one model. *(This section restates intent; it decides nothing.)*
+FinMate should eventually let a user: define a goal (target/date/priority where supported); understand whether it's achievable at the current pace; explore what-if scenarios; receive **explainable** suggestions; track actual progress; and improve the plan as new financial data arrives. Longer term, predictions may be informed by **aggregated historical outcomes** — which is exactly why the engine must be **replaceable behind an interface**, not designed around one model. _(This section restates intent; it decides nothing.)_
 
 ---
 
 # 3. Current Goal Capability (CURRENT — repository-verified)
 
-| Item | State | Evidence |
-|---|---|---|
-| `goals` table / `Goal` entity | **CURRENT (PLACEHOLDER)** | `shared/data-models/src/lib/goal.entity.ts` — `ownerUser` (FK, NOT NULL), `title varchar(160)` **plaintext**, `targetAmount`/`savedAmount` decimal(12,2), `currency` char(3), `targetDate` date?, `status` (active/achieved/paused/cancelled), `@VersionColumn`, timestamps |
-| Goals controller / service / module | **ABSENT** | no `GoalsService`/`GoalsController`/module in `backend/src` (verified) |
-| Frontend | **PLACEHOLDER** | `features/dashboard/components/dashboard-goals` (no goals API) |
-| Goal Engine | **does not exist** | — |
-| `title` protection | plaintext today → **B-1: born-E2EE (V1)** | needs `varchar(160)`→`text` widening (BATCH-11) |
+| Item                                | State                                     | Evidence                                                                                                                                                                                                                                                                    |
+| ----------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `goals` table / `Goal` entity       | **CURRENT (PLACEHOLDER)**                 | `shared/data-models/src/lib/goal.entity.ts` — `ownerUser` (FK, NOT NULL), `title varchar(160)` **plaintext**, `targetAmount`/`savedAmount` decimal(12,2), `currency` char(3), `targetDate` date?, `status` (active/achieved/paused/cancelled), `@VersionColumn`, timestamps |
+| Goals controller / service / module | **ABSENT**                                | no `GoalsService`/`GoalsController`/module in `backend/src` (verified)                                                                                                                                                                                                      |
+| Frontend                            | **PLACEHOLDER**                           | `features/dashboard/components/dashboard-goals` (no goals API)                                                                                                                                                                                                              |
+| Goal Engine                         | **does not exist**                        | —                                                                                                                                                                                                                                                                           |
+| `title` protection                  | plaintext today → **B-1: born-E2EE (V1)** | needs `varchar(160)`→`text` widening (BATCH-11)                                                                                                                                                                                                                             |
 
 **So:** there is **no** write path, no API, no engine today. This document designs the **contract**; the engine itself is future work (roadmap **BATCH-11**, gated on the E2EE key model / BATCH-07 and the finance parity harness / BATCH-05).
 
@@ -45,19 +47,23 @@ FinMate should eventually let a user: define a goal (target/date/priority where 
 # 4. V1 Deterministic Engine (V1)
 
 ### Simple explanation
+
 V1 does honest arithmetic on your own numbers. No AI, no guessing about you personally.
 
 ### Technical explanation
+
 **Inputs V1 may use:** goal target amount, target date, current saved amount, contribution history **where authorized** (observed monthly rate / count / consistency, as numeric signals), recurring-contribution patterns **where available**, and **user-defined assumptions** (e.g. "I'll add ₹5,000/month"). Only **Zone-2 numeric/enum** data — **never** the E2EE goal title/free-text.
 
 **Core V1 computations (deterministic):**
+
 - `projectedCompletionDate` = date at which `savedAmount + rate × months ≥ targetAmount`.
 - `onTrack` = `projectedCompletionDate ≤ targetDate` (when a target date exists).
 - `requiredMonthlyContribution` = `(targetAmount − savedAmount) / monthsUntilTargetDate`.
 - `projectedShortfall` at `targetDate` when the pace is insufficient.
 
 **Explainability (mandatory):** every result carries the inputs used, the assumptions applied, the method (`deterministic`), and the engine version. Example phrasing:
-> *"At your current contribution rate (~₹4,000/month over the last 5 months), the projected completion date is around **August 2027** — about 2 months after your target. Adding ~₹1,300/month would reach it by your target date."*
+
+> _"At your current contribution rate (~₹4,000/month over the last 5 months), the projected completion date is around **August 2027** — about 2 months after your target. Adding ~₹1,300/month would reach it by your target date."_
 
 **Language rules (frozen product principles / UX):** plain and **explainable**; **no shame/guilt** ("AI predicts you will fail" is forbidden); **no financial-advice claims**; **no accuracy promises**; suggestions are optional and reversible; degrade gracefully when data is thin (§21).
 
@@ -66,9 +72,11 @@ V1 does honest arithmetic on your own numbers. No AI, no guessing about you pers
 # 5. Goal Engine Boundary (the stable contract)
 
 ### Simple explanation
+
 One doorway between the Goal feature and whatever brain is behind it.
 
 ### Technical explanation
+
 ```
 Goal Module (GOALS domain)
       ↓  builds minimized projection (numbers only)
@@ -82,12 +90,13 @@ Goal Module → API → Frontend
 **The Goal module MUST NOT depend on:** a particular ML framework, a specific model, OpenAI or any external AI provider, training infrastructure, or a specific algorithm. It depends **only** on the interface below.
 
 **Design sketch (illustrative TypeScript — NOT implemented):**
+
 ```ts
 type EngineKind = 'deterministic' | 'model' | 'population';
 
 interface GoalEngine {
-  readonly name: string;        // e.g. 'deterministic-v1'
-  readonly version: string;     // semver of THIS engine implementation
+  readonly name: string; // e.g. 'deterministic-v1'
+  readonly version: string; // semver of THIS engine implementation
   readonly kind: EngineKind;
   readonly contractVersion: string; // version of the input/output schema it speaks
 
@@ -96,12 +105,13 @@ interface GoalEngine {
 }
 
 interface EngineCapabilities {
-  supportedGoalTypes: string[];   // V1: ['savings']
+  supportedGoalTypes: string[]; // V1: ['savings']
   supportsScenarios: boolean;
-  minContributionMonths: number;  // [ENGINEERING PARAMETER]
-  usesPopulationData: boolean;    // V1: false
+  minContributionMonths: number; // [ENGINEERING PARAMETER]
+  usesPopulationData: boolean; // V1: false
 }
 ```
+
 `kind` lets the UI truthfully say whether a result is **deterministic** or **model-based** (explainability §10).
 
 ---
@@ -109,48 +119,53 @@ interface EngineCapabilities {
 # 6. Input Contract (`GoalProjectionInput`)
 
 ### Simple explanation
+
 The engine gets a tidy packet of **numbers you own** — never your locked words, keys, or database.
 
 ### Technical explanation (design sketch — NOT implemented)
+
 ```ts
 interface GoalProjectionInput {
   requestId: string;
-  generatedAt: string;              // ISO
+  generatedAt: string; // ISO
   contractVersion: string;
 
   goal: {
-    id: string;                     // opaque goal id (not a raw FK chain)
-    currency: string;               // ISO-4217
-    targetAmount: number;           // Zone-2
-    savedAmount: number;            // Zone-2
-    targetDate?: string;            // date
+    id: string; // opaque goal id (not a raw FK chain)
+    currency: string; // ISO-4217
+    targetAmount: number; // Zone-2
+    savedAmount: number; // Zone-2
+    targetDate?: string; // date
     status: 'active' | 'achieved' | 'paused' | 'cancelled';
-    priority?: number;              // V1 priority ordering (UX)
+    priority?: number; // V1 priority ordering (UX)
     // NOTE: NO title / free-text — the title is E2EE (Class A) and never leaves as plaintext.
   };
 
-  contribution?: {                  // derived numeric signals only
+  contribution?: {
+    // derived numeric signals only
     observedMonthlyRate?: number;
     observedCount?: number;
     windowMonths?: number;
-    consistency?: number;           // 0..1 (variance-derived)
+    consistency?: number; // 0..1 (variance-derived)
   };
 
-  assumptions?: {                   // explicit, user-defined
+  assumptions?: {
+    // explicit, user-defined
     userMonthlyContribution?: number;
     contributionStartDate?: string;
   };
 
-  scenario?: ScenarioInput;         // optional what-if (§8)
+  scenario?: ScenarioInput; // optional what-if (§8)
 
-  consentScope: string;             // which processing the user permitted (CON-3)
-  engineVersionRequested?: string;  // pin an engine version (optional)
+  consentScope: string; // which processing the user permitted (CON-3)
+  engineVersionRequested?: string; // pin an engine version (optional)
 
   // FUTURE optional extension points (absent in V1) — the engine ignores unknown fields:
-  portfolio?: PortfolioProjection;  // §15 (numeric asset value only)
-  populationContext?: never;        // NEVER supplied by the module; the engine derives its own
+  portfolio?: PortfolioProjection; // §15 (numeric asset value only)
+  populationContext?: never; // NEVER supplied by the module; the engine derives its own
 }
 ```
+
 **Invariants:** numeric/enum only; **no E2EE free-text, journal, contacts, auth data, encryption keys, raw dumps, or unnecessary PII**; built by the GOALS domain via a **FINANCE projection-pull contract** (ownership map: GOALS reads FINANCE via contract, not raw tables).
 
 ---
@@ -158,16 +173,9 @@ interface GoalProjectionInput {
 # 7. Output Contract (`GoalProjectionResult`)
 
 ### Technical explanation (design sketch — NOT implemented)
+
 ```ts
-type EngineStatus =
-  | 'ok'
-  | 'insufficient_data'
-  | 'insufficient_history'
-  | 'invalid_goal'
-  | 'unsupported_goal_type'
-  | 'stale_input'
-  | 'engine_unavailable'
-  | 'low_confidence';
+type EngineStatus = 'ok' | 'insufficient_data' | 'insufficient_history' | 'invalid_goal' | 'unsupported_goal_type' | 'stale_input' | 'engine_unavailable' | 'low_confidence';
 
 interface GoalProjectionResult {
   requestId: string;
@@ -179,38 +187,41 @@ interface GoalProjectionResult {
     projectedCompletionDate?: string;
     onTrack?: boolean;
     requiredMonthlyContribution?: number;
-    projectedShortfall?: number;      // at targetDate, if any
+    projectedShortfall?: number; // at targetDate, if any
   };
 
-  confidence?: {                       // NOT a guarantee/probability claim in V1
-    score: number;                     // 0..1
+  confidence?: {
+    // NOT a guarantee/probability claim in V1
+    score: number; // 0..1
     band: 'low' | 'medium' | 'high';
     basis: 'data_sufficiency' | 'calibrated_model';
-    calibrationVersion?: string;       // model engines only
+    calibrationVersion?: string; // model engines only
   };
 
   explanation: {
-    summary: string;                   // plain, no shame, no advice claim
+    summary: string; // plain, no shame, no advice claim
     method: 'deterministic' | 'model';
-    inputsUsed: string[];              // e.g. ['savedAmount','observedMonthlyRate','targetDate']
+    inputsUsed: string[]; // e.g. ['savedAmount','observedMonthlyRate','targetDate']
     assumptionsUsed: string[];
-    disclaimers: string[];             // "estimate, not a guarantee"
+    disclaimers: string[]; // "estimate, not a guarantee"
   };
 
   provenance: {
     sourceDomain: 'GOALS' | 'FINANCE';
-    signalIds: string[];               // opaque signal references, no raw FKs (ISO-2)
+    signalIds: string[]; // opaque signal references, no raw FKs (ISO-2)
     consentScope: string;
   };
 
-  scenarios?: ScenarioResult[];        // §8
+  scenarios?: ScenarioResult[]; // §8
 
-  evaluationMeta?: {                   // for FUTURE outcome measurement — NOT training
+  evaluationMeta?: {
+    // for FUTURE outcome measurement — NOT training
     predictionId: string;
-    horizonDate?: string;              // when this prediction becomes checkable
+    horizonDate?: string; // when this prediction becomes checkable
   };
 }
 ```
+
 **Response minimization:** the API exposes only presentation-safe fields; internal model parameters/algorithms are **never** returned (IP policy §18).
 
 ---
@@ -218,9 +229,11 @@ interface GoalProjectionResult {
 # 8. Scenario Contract (`ScenarioInput` / `ScenarioResult`)
 
 ### Simple explanation
+
 "What if I add ₹3,000 more a month?" — the engine answers without changing your real goal.
 
 ### Technical explanation (design sketch — NOT implemented)
+
 ```ts
 interface ScenarioInput {
   id: string;
@@ -235,9 +248,10 @@ interface ScenarioInput {
 interface ScenarioResult {
   id: string;
   projection: GoalProjectionResult['projection'];
-  explanation: string;                 // "Adding ₹3,000/month → on track by <date>"
+  explanation: string; // "Adding ₹3,000/month → on track by <date>"
 }
 ```
+
 V1 recomputes scenarios **deterministically** from the same arithmetic. Scenarios are **read-only what-ifs** — they never mutate goal state or financial records.
 
 ---
@@ -259,9 +273,11 @@ Every result carries enough structured metadata to explain **what inputs influen
 # 11. Runtime Inference
 
 ### Simple explanation
+
 Answering your question right now, from your own numbers.
 
 ### Technical explanation
+
 Runtime = a single `project(input)` call producing a `GoalProjectionResult` for immediate display. It is **stateless with respect to training** and reads only the minimized projection. A runtime call **does not** create a training record. If a runtime path ever needs an **external** provider (V2+), it passes the **AI Privacy Firewall** (numeric/enum projection, consent, ZDR) — never raw data (§17).
 
 ---
@@ -269,9 +285,11 @@ Runtime = a single `project(input)` call producing a `GoalProjectionResult` for 
 # 12. Future Population-Learning Architecture (FUTURE — boundary only)
 
 ### Simple explanation
+
 A future engine could get better by learning from **anonymous, aggregate** patterns across many users. We build the **doorway** for that now; we do **not** decide the room behind it.
 
 ### Technical explanation
+
 The `GoalEngine` interface is designed so a `PopulationInformedGoalEngine` can eventually consume **anonymized/approved aggregate** patterns such as: contribution frequency, contribution consistency, goal duration, target size, progress velocity, goal-completion outcomes, scenario outcomes. It satisfies the **same** `project()` contract and returns the **same** result shape (with `kind:'population'` and calibrated confidence).
 
 **This task does NOT decide — each remains an explicit open decision:**
@@ -293,14 +311,16 @@ The `GoalEngine` interface is designed so a `PopulationInformedGoalEngine` can e
 # 13. Evaluation / Training Separation (design, not implementation)
 
 ### Simple explanation
+
 Three different jobs, never mixed up: **answer now** (inference), **check later if the answer was right** (evaluation), **make a better brain from many checks** (training).
 
 ### Technical explanation
-| Concept | What it is | Data | Consent/legal |
-|---|---|---|---|
-| **Runtime inference** | one prediction for display | minimized projection | first-party display (CON-2) |
-| **Evaluation** | compare a stored prediction to the **actual** later outcome | `evaluationMeta` + observed outcome (numeric) | first-party, internal quality |
-| **Training candidate** | anonymized aggregate derived from many outcomes | aggregate signals only | **explicit consent + [COUNSEL] legal basis** |
+
+| Concept                | What it is                                                  | Data                                          | Consent/legal                                |
+| ---------------------- | ----------------------------------------------------------- | --------------------------------------------- | -------------------------------------------- |
+| **Runtime inference**  | one prediction for display                                  | minimized projection                          | first-party display (CON-2)                  |
+| **Evaluation**         | compare a stored prediction to the **actual** later outcome | `evaluationMeta` + observed outcome (numeric) | first-party, internal quality                |
+| **Training candidate** | anonymized aggregate derived from many outcomes             | aggregate signals only                        | **explicit consent + [COUNSEL] legal basis** |
 
 **Hard rule:** the system **never silently turns runtime user data into training data.** Creating a training candidate is a distinct, consented, gated step — not a side effect of inference or evaluation.
 
@@ -320,21 +340,30 @@ flowchart TD
   Improve -. same interface .-> Pred
   Pred -. NEVER auto-feeds .-x Train
 ```
-*Simple:* the loop can make the helper smarter over time, but the jump from "measuring outcomes" to "training a model" is a **gated, consented** step, never automatic. *Technical:* runtime→evaluation is internal quality; evaluation→training requires consent + legal basis (§12/§13).
+
+_Simple:_ the loop can make the helper smarter over time, but the jump from "measuring outcomes" to "training a model" is a **gated, consented** step, never automatic. _Technical:_ runtime→evaluation is internal quality; evaluation→training requires consent + legal basis (§12/§13).
 
 ---
 
 # 15. Future Portfolio / Asset Integration (FUTURE — boundary only)
 
 ### Simple explanation
+
 Later you might track assets/holdings; the goal helper could count their value toward a goal — but it will **never** tell you what to buy.
 
 ### Technical explanation
+
 A future **Portfolio/Asset module** connects to the Goal Engine as **another numeric projection source** — e.g. an optional `portfolio?: PortfolioProjection` input field (asset value / contribution numbers only) or a registered projection provider — **without the Goal module knowing the implementation**. The engine may **project goal progress** including a portfolio's numeric value, but:
+
 - **No portfolio/investment functionality is implemented in this task.**
 - **Investment-specific recommendations remain OUT of V1/V2** and remain **[PRODUCT DECISION REQUIRED]** (existing policy; AI firewall marks investment projections `[ENG-UNKNOWN]`).
+
 ```ts
-interface PortfolioProjection { totalValue: number; currency: string; expectedMonthlyContribution?: number; } // FUTURE, numeric only
+interface PortfolioProjection {
+  totalValue: number;
+  currency: string;
+  expectedMonthlyContribution?: number;
+} // FUTURE, numeric only
 ```
 
 ---
@@ -347,11 +376,11 @@ The engine receives a **minimized projection**, not database access. **Never** g
 
 # 17. AI Firewall Compatibility
 
-| Data | Rule (frozen firewall §4) | Goal Engine handling |
-|---|---|---|
-| Goal free-text (title) | **DENY** (internal & external AI) | never sent; E2EE Class-A, server never holds plaintext |
-| Goal progress numbers | **CONDITIONAL** (external-AI consent, numeric projection, ZDR) | only via minimized numeric projection + consent |
-| Investment info | DENY raw; projection **[ENG-UNKNOWN]** | out of scope; no recommendations |
+| Data                   | Rule (frozen firewall §4)                                      | Goal Engine handling                                   |
+| ---------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
+| Goal free-text (title) | **DENY** (internal & external AI)                              | never sent; E2EE Class-A, server never holds plaintext |
+| Goal progress numbers  | **CONDITIONAL** (external-AI consent, numeric projection, ZDR) | only via minimized numeric projection + consent        |
+| Investment info        | DENY raw; projection **[ENG-UNKNOWN]**                         | out of scope; no recommendations                       |
 
 **V1 is internal & deterministic → no external AI, no firewall egress.** Any V2/FUTURE step that touches an **external** model routes through the **single AI egress firewall** (AI-1): intent → numeric/enum projection → consent → ZDR provider → validated response. The engine is **never** a side-door around the firewall.
 
@@ -366,15 +395,15 @@ The engine receives a **minimized projection**, not database access. **Never** g
 
 # 19. Security / Threat Considerations
 
-| Threat | Mitigation in this design |
-|---|---|
-| Engine as a privacy backdoor | minimized projection only; no raw/E2EE/keys; firewall for any external step |
-| Cross-domain raw access | GOALS↔FINANCE via projection-pull contract; INTELLIGENCE no raw FK (ISO-2) |
-| Silent training on user data | inference/evaluation/training separated; training gated by consent + COUNSEL |
-| Prompt injection / model exfil (future external model) | firewall numeric-only projection; response validation (AI-3) |
-| IDOR / cross-user | engine input is per-user projection; results scoped to owner |
-| Fabricated predictions | explicit failure states; graceful degradation (§21) |
-| Shame/dark-pattern language | product principle: plain, non-shaming, optional, reversible |
+| Threat                                                 | Mitigation in this design                                                    |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Engine as a privacy backdoor                           | minimized projection only; no raw/E2EE/keys; firewall for any external step  |
+| Cross-domain raw access                                | GOALS↔FINANCE via projection-pull contract; INTELLIGENCE no raw FK (ISO-2)  |
+| Silent training on user data                           | inference/evaluation/training separated; training gated by consent + COUNSEL |
+| Prompt injection / model exfil (future external model) | firewall numeric-only projection; response validation (AI-3)                 |
+| IDOR / cross-user                                      | engine input is per-user projection; results scoped to owner                 |
+| Fabricated predictions                                 | explicit failure states; graceful degradation (§21)                          |
+| Shame/dark-pattern language                            | product principle: plain, non-shaming, optional, reversible                  |
 
 ---
 
@@ -417,19 +446,19 @@ The engine returns an explicit `status` rather than fabricating a prediction:
 
 # 23. Open Questions — PRODUCT / ENGINEERING / COUNSEL
 
-| # | Question | Type |
-|---|---|---|
-| GE-1 | Whether user data may ever be used for training | **PRODUCT + COUNSEL + consent** |
-| GE-2 | Training dataset composition / retention | ENGINEERING / COUNSEL |
-| GE-3 | Legal basis for population learning | **COUNSEL** |
-| GE-4 | Differential privacy / federated vs central | ENGINEERING |
-| GE-5 | Model provider (internal/external) | PRODUCT / VEN-1 |
-| GE-6 | Investment-recommendation policy | **PRODUCT DECISION REQUIRED** (existing) |
-| GE-7 | Confidence score→band cutoffs; min-data (`minContributionMonths`); freshness bound | ENGINEERING PARAMETER |
-| GE-8 | Supported goal types beyond `savings` (V1) | PRODUCT |
-| GE-9 | Goal priority ordering semantics | PRODUCT / UX (V1) |
-| GE-10 | Accuracy/calibration/drift thresholds | ENGINEERING PARAMETER |
-| GE-11 | Where evaluation/prediction records live (INTELLIGENCE Class-B?) and their retention | ENGINEERING / COUNSEL |
+| #     | Question                                                                             | Type                                     |
+| ----- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
+| GE-1  | Whether user data may ever be used for training                                      | **PRODUCT + COUNSEL + consent**          |
+| GE-2  | Training dataset composition / retention                                             | ENGINEERING / COUNSEL                    |
+| GE-3  | Legal basis for population learning                                                  | **COUNSEL**                              |
+| GE-4  | Differential privacy / federated vs central                                          | ENGINEERING                              |
+| GE-5  | Model provider (internal/external)                                                   | PRODUCT / VEN-1                          |
+| GE-6  | Investment-recommendation policy                                                     | **PRODUCT DECISION REQUIRED** (existing) |
+| GE-7  | Confidence score→band cutoffs; min-data (`minContributionMonths`); freshness bound   | ENGINEERING PARAMETER                    |
+| GE-8  | Supported goal types beyond `savings` (V1)                                           | PRODUCT                                  |
+| GE-9  | Goal priority ordering semantics                                                     | PRODUCT / UX (V1)                        |
+| GE-10 | Accuracy/calibration/drift thresholds                                                | ENGINEERING PARAMETER                    |
+| GE-11 | Where evaluation/prediction records live (INTELLIGENCE Class-B?) and their retention | ENGINEERING / COUNSEL                    |
 
 **None are decided here.**
 
@@ -438,6 +467,7 @@ The engine returns an explicit `status` rather than fabricating a prediction:
 # 24. Architecture Diagrams
 
 **GE-01 — Engine boundary (replaceable).**
+
 ```mermaid
 flowchart TB
   Goal["GOALS module"] -->|GoalProjectionInput (numbers only)| Iface["GoalEngine contract"]
@@ -451,6 +481,7 @@ flowchart TB
 ```
 
 **GE-02 — Data separation (5 concepts).**
+
 ```mermaid
 flowchart LR
   A["1 Goal state (owned; title E2EE)"] --> B["2 Engine input projection (numeric, minimized)"]
@@ -461,6 +492,7 @@ flowchart LR
 ```
 
 **GE-03 — External-step firewall (V2+).**
+
 ```mermaid
 flowchart LR
   In["Numeric projection"] --> FW["AI Privacy Firewall (intent→minimize→consent→ZDR→validate)"] --> Prov["Approved provider"]
@@ -494,4 +526,4 @@ flowchart LR
 - **Contradictions:** **none** found between the repository and frozen docs.
 - **Confirmation:** **NO code, schema, database, migration, API, ML model, training pipeline, package, external-AI provider, production, or user-data-collection change was made.** Documentation/contract design only.
 
-*End of Goal Engine Architecture & Contract. STOP — the engine is not implemented; no batch started.*
+_End of Goal Engine Architecture & Contract. STOP — the engine is not implemented; no batch started._

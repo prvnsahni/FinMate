@@ -94,7 +94,10 @@ export class DashboardHomeComponent {
         inferred: t.authority === 'INFERRED',
       }))
       .sort(
-        (a: { inferred: boolean; label: string }, b: { inferred: boolean; label: string }) =>
+        (
+          a: { inferred: boolean; label: string },
+          b: { inferred: boolean; label: string },
+        ) =>
           Number(a.inferred) - Number(b.inferred) ||
           a.label.localeCompare(b.label),
       );

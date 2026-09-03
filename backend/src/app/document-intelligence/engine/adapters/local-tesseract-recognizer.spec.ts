@@ -20,9 +20,9 @@ describe('LocalTesseractRecognizer (DOC-6, local-only)', () => {
     // Simulate "asset missing" by constructing with an explicit null directory. recognize()
     // must throw BEFORE it ever imports/loads tesseract.js or reaches for a CDN.
     const recognizer = new LocalTesseractRecognizer(null);
-    await expect(recognizer.recognize(Uint8Array.from([255, 216, 255]), 'image/jpeg')).rejects.toThrow(
-      /refusing a network fetch/i,
-    );
+    await expect(
+      recognizer.recognize(Uint8Array.from([255, 216, 255]), 'image/jpeg'),
+    ).rejects.toThrow(/refusing a network fetch/i);
   });
 
   it('resolves an OCR_TESSDATA_PATH override first when it contains the asset', () => {

@@ -33,7 +33,8 @@ export class RuleBasedClassificationEngine implements ClassificationEngine {
   }
 
   async classify(input: ClassificationInput): Promise<ClassificationResult> {
-    const invalid = !input || (input.itemLabel === undefined && input.category === undefined);
+    const invalid =
+      !input || (input.itemLabel === undefined && input.category === undefined);
     const base = {
       engine: {
         name: this.name,
@@ -46,7 +47,12 @@ export class RuleBasedClassificationEngine implements ClassificationEngine {
     };
 
     if (invalid) {
-      return { ...base, status: 'invalid_input', candidateTags: [], warnings: ['No label or category supplied.'] };
+      return {
+        ...base,
+        status: 'invalid_input',
+        candidateTags: [],
+        warnings: ['No label or category supplied.'],
+      };
     }
 
     const tags = classifyLabel(input.itemLabel, input.category).map((t) => ({

@@ -37,7 +37,11 @@ export class CustomTagCorrectionMemoryService {
    * Remember that, on this device, the user attached `customTagId` to `label`
    * within `scope`. No-op for an empty/blank label. Stores only the opaque id.
    */
-  record(scope: SuggestionScope, label: string | null | undefined, customTagId: string): void {
+  record(
+    scope: SuggestionScope,
+    label: string | null | undefined,
+    customTagId: string,
+  ): void {
     if (!normalizeTagKey(label ?? '') || !customTagId) return;
     const k = this.key(scope, label ?? '');
     const set = this.memory.get(k) ?? new Set<string>();

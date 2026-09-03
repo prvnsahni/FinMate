@@ -2763,7 +2763,10 @@ export class ExpensesService {
         currency: string;
       }>();
 
-    const groups = new Map<string, { tagId: string; total: number; currency: string }>();
+    const groups = new Map<
+      string,
+      { tagId: string; total: number; currency: string }
+    >();
     for (const row of rows) {
       const key = `${row.tagId} ${row.currency}`;
       const existing = groups.get(key) ?? {

@@ -24,7 +24,9 @@ export interface DocumentIntakeResult {
 }
 
 /** Map a stored MIME type to the normalized DOC-0 source type. */
-export function resolveSourceType(mimeType: string | undefined): DocumentSourceType {
+export function resolveSourceType(
+  mimeType: string | undefined,
+): DocumentSourceType {
   if (typeof mimeType !== 'string') return 'unknown';
   const m = mimeType.toLowerCase();
   if (m.startsWith('image/')) return 'image';
@@ -101,7 +103,9 @@ export class DocumentIntakeService {
 
     // ITEMIZED: invoke the extraction boundary with a minimized input. The stub
     // returns an explicit unavailable result; no items are fabricated.
-    const extraction = await this.engine.extract(buildExtractionInput(attachment));
+    const extraction = await this.engine.extract(
+      buildExtractionInput(attachment),
+    );
     return {
       mode,
       attachmentId,

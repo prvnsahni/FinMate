@@ -30,20 +30,31 @@ test('detects a dummy GitHub PAT and Stripe live key', () => {
 
 test('does NOT flag placeholder env values', () => {
   assert.deepEqual(findSecrets('JWT_SECRET=change_me_in_production'), []);
-  assert.deepEqual(findSecrets('ENCRYPTION_KEY=your-32-char-encryption-key-here'), []);
+  assert.deepEqual(
+    findSecrets('ENCRYPTION_KEY=your-32-char-encryption-key-here'),
+    [],
+  );
 });
 
 test('does NOT flag local dev-default database credentials', () => {
   assert.deepEqual(
-    findSecrets('postgresql://finmate_user:finmate_password@localhost:5432/finmate_dev'),
+    findSecrets(
+      'postgresql://finmate_user:finmate_password@localhost:5432/finmate_dev',
+    ),
     [],
   );
   assert.deepEqual(findSecrets('POSTGRES_PASSWORD: finmate_password'), []);
 });
 
 test('does NOT flag ordinary code / token-shaped identifiers', () => {
-  assert.deepEqual(findSecrets('const refreshToken = req.body.refreshToken;'), []);
-  assert.deepEqual(findSecrets('uuid = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";'), []);
+  assert.deepEqual(
+    findSecrets('const refreshToken = req.body.refreshToken;'),
+    [],
+  );
+  assert.deepEqual(
+    findSecrets('uuid = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";'),
+    [],
+  );
 });
 
 test('allowlist exempts inert paths but not arbitrary source', () => {

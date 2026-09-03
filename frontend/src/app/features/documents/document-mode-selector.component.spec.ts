@@ -6,8 +6,12 @@ describe('DocumentModeSelectorComponent', () => {
   let comp: DocumentModeSelectorComponent;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [DocumentModeSelectorComponent] });
-    comp = TestBed.createComponent(DocumentModeSelectorComponent).componentInstance;
+    TestBed.configureTestingModule({
+      imports: [DocumentModeSelectorComponent],
+    });
+    comp = TestBed.createComponent(
+      DocumentModeSelectorComponent,
+    ).componentInstance;
   });
 
   it('emits TOTAL_ONLY and does not show the unavailable notice', () => {

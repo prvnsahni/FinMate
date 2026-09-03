@@ -6,7 +6,9 @@ import {
 
 const engine = new StubClassificationEngine();
 
-const input = (over: Partial<ClassificationInput> = {}): ClassificationInput => ({
+const input = (
+  over: Partial<ClassificationInput> = {},
+): ClassificationInput => ({
   itemLabel: 'Amul Milk',
   category: 'Grocery',
   ...over,

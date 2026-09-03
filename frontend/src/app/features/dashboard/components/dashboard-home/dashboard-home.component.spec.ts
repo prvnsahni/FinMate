@@ -166,7 +166,9 @@ describe('DashboardHomeComponent', () => {
           category: 'Food & Drinks',
           expenseDate: new Date(),
           expenseType: 'PERSONAL',
-          tags: [{ tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' }],
+          tags: [
+            { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          ],
         },
       ];
       fixture.detectChanges();

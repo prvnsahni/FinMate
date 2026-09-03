@@ -1,4 +1,8 @@
-import { ExpenseSplit, ExpenseTag, getActiveCanonicalTag } from '@finmate/data-models';
+import {
+  ExpenseSplit,
+  ExpenseTag,
+  getActiveCanonicalTag,
+} from '@finmate/data-models';
 import { SelectQueryBuilder } from 'typeorm';
 
 /**

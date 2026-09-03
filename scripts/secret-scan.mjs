@@ -86,7 +86,10 @@ export function findSecrets(content) {
 }
 
 function listTrackedFiles() {
-  const out = execSync('git ls-files -z', { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const out = execSync('git ls-files -z', {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
   return out.split('\0').filter(Boolean);
 }
 
@@ -127,7 +130,9 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`SEC-W1 secret scan passed (${files.length} tracked files, 0 findings).`);
+  console.log(
+    `SEC-W1 secret scan passed (${files.length} tracked files, 0 findings).`,
+  );
 }
 
 // Only run the scanner when invoked directly, not when imported by tests.

@@ -1,9 +1,14 @@
 import { DocumentReviewService } from './document-review.service';
 import { DocumentExtractionResult } from '../document-review.model';
 
-const ef = <T>(value: T, authority: 'EXTRACTED' | 'USER_CORRECTED' = 'EXTRACTED') => ({ value, authority });
+const ef = <T>(
+  value: T,
+  authority: 'EXTRACTED' | 'USER_CORRECTED' = 'EXTRACTED',
+) => ({ value, authority });
 
-const result = (over: Partial<DocumentExtractionResult> = {}): DocumentExtractionResult => ({
+const result = (
+  over: Partial<DocumentExtractionResult> = {},
+): DocumentExtractionResult => ({
   status: 'ok',
   sourceType: 'pdf',
   candidatesOnly: true,
@@ -86,14 +91,22 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
     // OVER: add a 60 item → 700 vs 685 → -15
     const over2 = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', lineTotal: ef(120) }, { authority: 'EXTRACTED', lineTotal: ef(520) }, { authority: 'EXTRACTED', lineTotal: ef(60) }] }),
+      result({
+        lineItems: [
+          { authority: 'EXTRACTED', lineTotal: ef(120) },
+          { authority: 'EXTRACTED', lineTotal: ef(520) },
+          { authority: 'EXTRACTED', lineTotal: ef(60) },
+        ],
+      }),
     );
     const oc = svc.reconcile(over2);
     expect(oc.reconciliationStatus).toBe('OVER_ALLOCATED');
     expect(oc.unallocatedDifference).toBe(-15);
 
     // UNRECONCILED: no document total
-    const noTotal = svc.fromExtractionResult(result({ header: { merchant: ef('X') } }));
+    const noTotal = svc.fromExtractionResult(
+      result({ header: { merchant: ef('X') } }),
+    );
     expect(svc.reconcile(noTotal).reconciliationStatus).toBe('UNRECONCILED');
   });
 
@@ -121,13 +134,23 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     const m = svc.fromExtractionResult(result());
     const { draft } = svc.confirm(m);
     const blob = JSON.stringify(draft);
-    expect(blob).not.toMatch(/key|encrypt|token|bytes|password|encryptedOriginalName|encryptedFileKey|storageKey/i);
+    expect(blob).not.toMatch(
+      /key|encrypt|token|bytes|password|encryptedOriginalName|encryptedFileKey|storageKey/i,
+    );
   });
 
   // --- DOC-5 classification / tags ---
   it('suggests engine tags (INFERRED, rule_based) for known items via the shared taxonomy', () => {
     const m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('Milk'),
+            lineTotal: ef(120),
+          },
+        ],
+      }),
     );
     const tags = m.items[0].tags;
     expect(tags.some((t) => t.tagId === 'milk')).toBe(true);
@@ -140,7 +163,15 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
   it('a user correction adds a per-user tag (USER_CORRECTED, source user) — not global', () => {
     let m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('Milk'),
+            lineTotal: ef(120),
+          },
+        ],
+      }),
     );
     m = svc.addTag(m, m.items[0].id, 'household');
     const added = m.items[0].tags.find((t) => t.tagId === 'household');
@@ -150,7 +181,15 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
   it('dedupes tags and supports removal', () => {
     let m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('Milk'),
+            lineTotal: ef(120),
+          },
+        ],
+      }),
     );
     const before = m.items[0].tags.length;
     m = svc.addTag(m, m.items[0].id, 'grocery'); // already inferred → deduped
@@ -161,25 +200,55 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
   it('does not suggest sensitive medical/pharmacy tags', () => {
     const m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('pharmacy medicine'), lineTotal: ef(50) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('pharmacy medicine'),
+            lineTotal: ef(50),
+          },
+        ],
+      }),
     );
-    expect(m.items[0].tags.map((t) => t.canonicalName).join(' ')).not.toMatch(/medic|pharmac|health/i);
+    expect(m.items[0].tags.map((t) => t.canonicalName).join(' ')).not.toMatch(
+      /medic|pharmac|health/i,
+    );
   });
 
   it('on confirm, kept engine tags become USER_CONFIRMED; user tags stay USER_CORRECTED', () => {
     let m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('Milk'),
+            lineTotal: ef(120),
+          },
+        ],
+      }),
     );
     m = svc.addTag(m, m.items[0].id, 'household');
     const { model } = svc.confirm(m);
     const tags = model.items[0].tags;
-    expect(tags.find((t) => t.tagId === 'milk')?.authority).toBe('USER_CONFIRMED');
-    expect(tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
+    expect(tags.find((t) => t.tagId === 'milk')?.authority).toBe(
+      'USER_CONFIRMED',
+    );
+    expect(tags.find((t) => t.tagId === 'household')?.authority).toBe(
+      'USER_CORRECTED',
+    );
   });
 
   it('carries confirmed tags into the draft without changing finance values', () => {
     let m = svc.fromExtractionResult(
-      result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+      result({
+        lineItems: [
+          {
+            authority: 'EXTRACTED',
+            description: ef('Milk'),
+            lineTotal: ef(120),
+          },
+        ],
+      }),
     );
     m = svc.addTag(m, m.items[0].id, 'household');
     const { draft } = svc.confirm(m);
@@ -188,16 +257,30 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
     expect(draft.currency).toBe('INR');
     expect(draft.itemCount).toBe(1);
     expect(draft.items[0].lineTotal).toBe(120);
-    expect(draft.items[0].tags.find((t) => t.tagId === 'milk')?.authority).toBe('USER_CONFIRMED');
-    expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.authority).toBe('USER_CORRECTED');
-    expect(draft.items[0].tags.find((t) => t.tagId === 'household')?.source).toBe('user');
+    expect(draft.items[0].tags.find((t) => t.tagId === 'milk')?.authority).toBe(
+      'USER_CONFIRMED',
+    );
+    expect(
+      draft.items[0].tags.find((t) => t.tagId === 'household')?.authority,
+    ).toBe('USER_CORRECTED');
+    expect(
+      draft.items[0].tags.find((t) => t.tagId === 'household')?.source,
+    ).toBe('user');
   });
 
   // ── TAG-BATCH-C4 — custom-tag suggestions merged onto the review ─────────────
   describe('mergeCustomSuggestions (TAG-BATCH-C4)', () => {
     it('adds custom suggestions as INFERRED chips ALONGSIDE canonical tags (not replacing)', () => {
       const m = svc.fromExtractionResult(
-        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+        result({
+          lineItems: [
+            {
+              authority: 'EXTRACTED',
+              description: ef('Milk'),
+              lineTotal: ef(120),
+            },
+          ],
+        }),
       );
       const merged = svc.mergeCustomSuggestions(m, (label) =>
         label === 'Milk'
@@ -220,9 +303,19 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
     it('is idempotent — a suggestion already present is not duplicated', () => {
       let m = svc.fromExtractionResult(
-        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+        result({
+          lineItems: [
+            {
+              authority: 'EXTRACTED',
+              description: ef('Milk'),
+              lineTotal: ef(120),
+            },
+          ],
+        }),
       );
-      const suggest = () => [{ tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' }];
+      const suggest = () => [
+        { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
+      ];
       m = svc.mergeCustomSuggestions(m, suggest);
       m = svc.mergeCustomSuggestions(m, suggest);
       expect(m.items[0].tags.filter((t) => t.tagId === 'ct-1').length).toBe(1);
@@ -230,20 +323,40 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
     it('does NOT auto-assign — merged suggestions stay INFERRED until explicit confirm', () => {
       let m = svc.fromExtractionResult(
-        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+        result({
+          lineItems: [
+            {
+              authority: 'EXTRACTED',
+              description: ef('Milk'),
+              lineTotal: ef(120),
+            },
+          ],
+        }),
       );
       m = svc.mergeCustomSuggestions(m, () => [
         { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
       ]);
-      expect(m.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority).toBe('INFERRED');
+      expect(m.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority).toBe(
+        'INFERRED',
+      );
       // Only on explicit confirm does a kept custom suggestion become USER_CONFIRMED.
       const { model } = svc.confirm(m);
-      expect(model.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority).toBe('USER_CONFIRMED');
+      expect(
+        model.items[0].tags.find((t) => t.tagId === 'ct-1')?.authority,
+      ).toBe('USER_CONFIRMED');
     });
 
     it('a rejected (removed) custom suggestion never reaches the confirmed draft', () => {
       let m = svc.fromExtractionResult(
-        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+        result({
+          lineItems: [
+            {
+              authority: 'EXTRACTED',
+              description: ef('Milk'),
+              lineTotal: ef(120),
+            },
+          ],
+        }),
       );
       m = svc.mergeCustomSuggestions(m, () => [
         { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },
@@ -255,7 +368,15 @@ describe('DocumentReviewService (DOC-4 review/confirmation)', () => {
 
     it('never changes finance values when merging suggestions', () => {
       const m = svc.fromExtractionResult(
-        result({ lineItems: [{ authority: 'EXTRACTED', description: ef('Milk'), lineTotal: ef(120) }] }),
+        result({
+          lineItems: [
+            {
+              authority: 'EXTRACTED',
+              description: ef('Milk'),
+              lineTotal: ef(120),
+            },
+          ],
+        }),
       );
       const merged = svc.mergeCustomSuggestions(m, () => [
         { tagId: 'ct-1', name: 'My Grocery', reason: 'Matched tag name' },

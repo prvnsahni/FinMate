@@ -178,7 +178,11 @@ export class AuthController {
         }
         const rotated = await this.authService.refresh(cookieToken);
         const csrfToken = generateCsrfToken();
-        res.cookie(REFRESH_COOKIE, rotated.refreshToken, refreshCookieOptions());
+        res.cookie(
+          REFRESH_COOKIE,
+          rotated.refreshToken,
+          refreshCookieOptions(),
+        );
         res.cookie(CSRF_COOKIE, csrfToken, csrfCookieOptions());
         // TARGET web: do NOT return the refresh token in the body.
         return new SuccessResponse('Token refreshed successfully', {

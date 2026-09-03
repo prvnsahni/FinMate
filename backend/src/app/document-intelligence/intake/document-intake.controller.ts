@@ -35,7 +35,11 @@ export class DocumentIntakeController {
     @Body() dto: ProcessDocumentDto,
     @Req() req: RequestWithUser,
   ) {
-    const result = await this.intake.process(req.user.id, attachmentId, dto.mode);
+    const result = await this.intake.process(
+      req.user.id,
+      attachmentId,
+      dto.mode,
+    );
     return new SuccessResponse('Document intake processed', result);
   }
 }

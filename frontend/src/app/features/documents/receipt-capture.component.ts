@@ -3,7 +3,10 @@ import { DocumentModeSelectorComponent } from './document-mode-selector.componen
 import { DocumentReviewComponent } from './document-review.component';
 import { DocumentExtractionClientService } from './services/document-extraction-client.service';
 import { DocumentProcessingMode } from './document-processing.model';
-import { ConfirmedDocumentDraft, DocumentExtractionResult } from './document-review.model';
+import {
+  ConfirmedDocumentDraft,
+  DocumentExtractionResult,
+} from './document-review.model';
 
 /**
  * DOC-3F receipt-capture orchestrator (embeddable). Connects the already-built Document
@@ -60,7 +63,9 @@ export class ReceiptCaptureComponent {
       this.result.set(await this.extractor.extractFromFile(file));
     } catch {
       // Fail safe — never fabricate candidates, never mutate finance.
-      this.error.set('Could not read this document. You can switch to Total-only and enter the amount.');
+      this.error.set(
+        'Could not read this document. You can switch to Total-only and enter the amount.',
+      );
     } finally {
       this.loading.set(false);
     }

@@ -33,7 +33,9 @@ export function normalizeTagKey(input: string): string {
     .replace(/\s+/g, ' ');
 }
 
-const activeById = new Map(CANONICAL_TAXONOMY.filter((t) => t.status === 'active').map((t) => [t.id, t]));
+const activeById = new Map(
+  CANONICAL_TAXONOMY.filter((t) => t.status === 'active').map((t) => [t.id, t]),
+);
 
 /** Look up an ACTIVE canonical tag by its stable id ('deprecated'/unknown → undefined). */
 export function getActiveCanonicalTag(tagId: string): CanonicalTag | undefined {
@@ -67,7 +69,10 @@ export function expandActiveWithAncestors(tagId: string): CanonicalTag[] {
 }
 
 /** Collect a tag and all its active ancestors (milk → dairy → grocery → food). */
-function withAncestors(tag: CanonicalTag, acc: Map<string, CanonicalTag>): void {
+function withAncestors(
+  tag: CanonicalTag,
+  acc: Map<string, CanonicalTag>,
+): void {
   if (acc.has(tag.id) || tag.status !== 'active') return;
   acc.set(tag.id, tag);
   if (tag.parentId) {
@@ -90,14 +95,24 @@ function labelMatchesKey(words: Set<string>, key: string): boolean {
  * @param category the user-chosen coarse category (e.g. "Grocery"), server-readable.
  * @returns advisory INFERRED candidate tags (with ancestors), deduped, or [].
  */
-export function classifyLabel(label?: string, category?: string): CandidateTag[] {
-  const words = new Set([...normalizeTagKey(label ?? '').split(' '), ...normalizeTagKey(category ?? '').split(' ')].filter(Boolean));
+export function classifyLabel(
+  label?: string,
+  category?: string,
+): CandidateTag[] {
+  const words = new Set(
+    [
+      ...normalizeTagKey(label ?? '').split(' '),
+      ...normalizeTagKey(category ?? '').split(' '),
+    ].filter(Boolean),
+  );
   if (words.size === 0) return [];
 
   const matched = new Map<string, CanonicalTag>();
   for (const tag of CANONICAL_TAXONOMY) {
     if (tag.status !== 'active') continue;
-    const hit = labelMatchesKey(words, tag.normalizedKey) || tag.aliases.some((a) => labelMatchesKey(words, a));
+    const hit =
+      labelMatchesKey(words, tag.normalizedKey) ||
+      tag.aliases.some((a) => labelMatchesKey(words, a));
     if (hit) withAncestors(tag, matched);
   }
 

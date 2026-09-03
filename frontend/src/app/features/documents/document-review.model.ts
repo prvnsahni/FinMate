@@ -7,7 +7,11 @@ import { DocumentSourceType } from './document-processing.model';
  * hands a draft to the existing expense-creation flow.
  */
 
-export type ExtractionAuthority = 'EXTRACTED' | 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+export type ExtractionAuthority =
+  | 'EXTRACTED'
+  | 'INFERRED'
+  | 'USER_CORRECTED'
+  | 'USER_CONFIRMED';
 
 export type ExtractionStatus =
   | 'ok'
@@ -103,7 +107,11 @@ export interface ConfirmedDocumentDraftItem {
   tags: ReviewTag[];
 }
 
-export type ReviewHeaderField = 'merchant' | 'date' | 'currency' | 'documentTotal';
+export type ReviewHeaderField =
+  | 'merchant'
+  | 'date'
+  | 'currency'
+  | 'documentTotal';
 
 export interface ReviewModel {
   status: ExtractionStatus;

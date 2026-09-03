@@ -18,12 +18,19 @@
  * counsel-reviewed decision — not part of this contract.
  */
 
-import { ExtractionAuthority, FieldConfidence } from './document-extraction-engine.types';
+import {
+  ExtractionAuthority,
+  FieldConfidence,
+} from './document-extraction-engine.types';
 
 /** Bump on a breaking change to this contract. */
 export const CLASSIFICATION_CONTRACT_VERSION = '1.0.0';
 
-export type ClassificationEngineKind = 'stub' | 'rule_based' | 'population' | 'model';
+export type ClassificationEngineKind =
+  | 'stub'
+  | 'rule_based'
+  | 'population'
+  | 'model';
 
 export type ClassificationStatus = 'ok' | 'unsupported' | 'invalid_input';
 

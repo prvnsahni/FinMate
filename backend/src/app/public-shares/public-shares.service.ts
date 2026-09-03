@@ -131,7 +131,9 @@ export class PublicSharesService {
     return {
       token: raw,
       status: 'active',
-      expiresAt: share.expiresAt ? new Date(share.expiresAt).toISOString() : null,
+      expiresAt: share.expiresAt
+        ? new Date(share.expiresAt).toISOString()
+        : null,
       createdAt: share.createdAt,
       revokedAt: share.revokedAt ?? null,
     };
@@ -212,10 +214,7 @@ export class PublicSharesService {
    * Revoke the group's active share immediately. Idempotent: revoking when there
    * is no active share is a safe no-op (`revoked: false`).
    */
-  async revoke(
-    userId: string,
-    groupId: string,
-  ): Promise<{ revoked: boolean }> {
+  async revoke(userId: string, groupId: string): Promise<{ revoked: boolean }> {
     await this.assertOwnerOrAdmin(userId, groupId);
     return this.dataSource.transaction(async (manager) => {
       await this.lockGroup(manager, groupId);

@@ -216,12 +216,18 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
    * UUID is NEVER shown; an unknown non-UUID id (e.g. a deprecated canonical slug)
    * keeps its readable slug.
    */
-  private resolveTagLabel(tagId: string): { name: string; deprecated: boolean } {
+  private resolveTagLabel(tagId: string): {
+    name: string;
+    deprecated: boolean;
+  } {
     const canonical = this.canonicalNameById.get(tagId);
     if (canonical) return { name: canonical, deprecated: false };
     const custom = this.customTagNames?.get(tagId);
     if (custom) {
-      return { name: custom.name ?? CUSTOM_TAG_FALLBACK, deprecated: custom.deprecated };
+      return {
+        name: custom.name ?? CUSTOM_TAG_FALLBACK,
+        deprecated: custom.deprecated,
+      };
     }
     return {
       name: UUID_RE.test(tagId) ? CUSTOM_TAG_FALLBACK : tagId,
@@ -267,7 +273,9 @@ export class AnalyticsChartsComponent implements OnInit, OnChanges {
   tagTrendMonthLabel(month: string): string {
     const [y, m] = month.split('-').map(Number);
     if (!y || !m) return month;
-    return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short' });
+    return new Date(y, m - 1, 1).toLocaleDateString('en-US', {
+      month: 'short',
+    });
   }
 
   /**

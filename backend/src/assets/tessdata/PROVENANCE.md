@@ -6,17 +6,17 @@ runtime (see `image-extraction.adapter.ts` / `local-tesseract-recognizer.ts`).
 
 ## eng.traineddata
 
-| Field | Value |
-| ----- | ----- |
-| File | `eng.traineddata` |
-| Purpose | English OCR model (LSTM, "fast" integer weights) for `tesseract.js` |
-| Source repo | https://github.com/tesseract-ocr/tessdata_fast |
-| Pinned ref | tag `4.1.0` |
+| Field        | Value                                                                               |
+| ------------ | ----------------------------------------------------------------------------------- |
+| File         | `eng.traineddata`                                                                   |
+| Purpose      | English OCR model (LSTM, "fast" integer weights) for `tesseract.js`                 |
+| Source repo  | https://github.com/tesseract-ocr/tessdata_fast                                      |
+| Pinned ref   | tag `4.1.0`                                                                         |
 | Download URL | https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/eng.traineddata |
-| Size | 4,113,088 bytes (~3.9 MB) |
-| SHA-256 | `7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2` |
-| Verified | Byte-identical across two independent mirrors (GitHub raw + jsdelivr gh mirror) |
-| License | Apache License 2.0 (per the `tessdata_fast` repository) |
+| Size         | 4,113,088 bytes (~3.9 MB)                                                           |
+| SHA-256      | `7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2`                  |
+| Verified     | Byte-identical across two independent mirrors (GitHub raw + jsdelivr gh mirror)     |
+| License      | Apache License 2.0 (per the `tessdata_fast` repository)                             |
 
 The `tessdata_fast` models are published by the Tesseract OCR project under the
 **Apache-2.0** license, which is compatible with this repository's use. This file is an

@@ -19,5 +19,5 @@
 - **Related Ledger items:** TRN-1, VEN-1.
 - **Related Threat Model:** T-08 (provider), K (provider compromise).
 - **Related architecture docs:** AI Firewall (#5); IP Policy (#6); Processing Register.
-- **Simple explanation:** FinMate doesn't feed your data into training any AI, and it only sends anything to an outside AI after checking that provider is set to *not* train on it — not just because they said so.
+- **Simple explanation:** FinMate doesn't feed your data into training any AI, and it only sends anything to an outside AI after checking that provider is set to _not_ train on it — not just because they said so.
 - **Technical explanation:** No internal training on user data in V1; external egress only to verified no-train/ZDR configurations; future improvement datasets separately governed.

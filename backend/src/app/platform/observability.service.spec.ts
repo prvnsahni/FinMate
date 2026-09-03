@@ -8,7 +8,9 @@ describe('ObservabilityService (W-PLAT-02)', () => {
 
   beforeEach(() => {
     svc = new ObservabilityService();
-    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
     warnSpy = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);

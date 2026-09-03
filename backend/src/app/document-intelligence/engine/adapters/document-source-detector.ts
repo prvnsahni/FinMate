@@ -1,4 +1,7 @@
-import { DocumentExtractionInput, DocumentSourceType } from '../document-extraction-engine.types';
+import {
+  DocumentExtractionInput,
+  DocumentSourceType,
+} from '../document-extraction-engine.types';
 import { AdapterKind } from './extraction-adapter.types';
 
 /** Resolved adapter selection; `none` means no adapter can handle the input. */
@@ -17,7 +20,9 @@ export interface SourceSignals {
  * Map a MIME type to the normalized DOC-0 source type. Mirrors the DOC-1 intake
  * mapping (kept local so the engine layer has no dependency on the intake layer).
  */
-export function detectSourceType(mimeType: string | undefined): DocumentSourceType {
+export function detectSourceType(
+  mimeType: string | undefined,
+): DocumentSourceType {
   if (typeof mimeType !== 'string') return 'unknown';
   const m = mimeType.toLowerCase();
   if (m.startsWith('image/')) return 'image';

@@ -35,7 +35,9 @@ describe('RuleBasedClassificationEngine (DOC-5, shared taxonomy)', () => {
 
   it('does not derive sensitive medical/pharmacy tags', async () => {
     const r = await engine.classify({ itemLabel: 'pharmacy medicine' });
-    expect(r.candidateTags.map((t) => t.tag).join(' ')).not.toMatch(/medic|pharmac|health/i);
+    expect(r.candidateTags.map((t) => t.tag).join(' ')).not.toMatch(
+      /medic|pharmac|health/i,
+    );
   });
 
   it('uses no external provider', () => {
@@ -52,7 +54,9 @@ describe('RuleBasedClassificationEngine (DOC-5, shared taxonomy)', () => {
       rawAttachmentBytes: 'raw-bytes',
     } as never);
 
-    expect(JSON.stringify(r)).not.toMatch(/wrapped-secret-key|bearer-secret-token|raw-bytes/i);
+    expect(JSON.stringify(r)).not.toMatch(
+      /wrapped-secret-key|bearer-secret-token|raw-bytes/i,
+    );
     expect(r.candidateTags.some((t) => t.tag === 'Milk')).toBe(true);
   });
 });

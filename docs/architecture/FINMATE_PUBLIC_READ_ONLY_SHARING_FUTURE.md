@@ -27,19 +27,19 @@ flowchart TD
 This proposal was written after inspecting the current repository and frozen
 architecture. Facts below are **CURRENT** only where verified.
 
-| Area | CURRENT verified reality | PublicShare implication |
-|---|---|---|
-| Groups | `Group` has `name`, `description`, `visibility`, `currency`, `groupType`, `ownerUser`, `inviteToken`, `isArchived`, `version`; group endpoints are under `@UseGuards(JwtAuthGuard)` | Do not expose existing group endpoints publicly. Do not rely on `Group.visibility = public_readonly` as the sharing mechanism. |
-| Membership | `GroupMember.role` supports `owner`, `admin`, `member`, `viewer`, `spectator`; active membership gates group access | Creation/revocation should require owner/admin authorization. Ordinary members should not publish by default. |
-| Existing authz | group, expense, settlement, key, and document-intelligence routes are authenticated/guarded | PublicShare needs a separate unauthenticated read boundary, not disabled auth on current controllers. |
-| E2EE/key model | group keys are versioned Class-A material; `GET /groups/:id/keys/me?versionId=` returns caller-specific wrapped keys; server must not expose Class-A keys | Public visitors must never receive keys, wrapped keys, ciphertext requiring private group keys, or key metadata beyond safe policy/version fields. |
-| Finance calculations | `SettlementsService.calculateGroupBalances` computes balances and suggested settlements from posted expenses, payments, splits, confirmed settlements, and the shared debt simplifier; FIN-002 requires parity | PublicShare must consume authoritative finance results/read models and must never introduce a second settlement calculator. |
-| Data classification | amounts, categories, dates, splits, balances are Zone 2 server-readable but protected; titles/descriptions/private free-text are E2EE or target E2EE | PublicShare may include only explicit allowlist fields. Server-readable does not mean public. |
-| Document Intelligence | DOC intake/extraction/review work exists, but taxonomy/OCR expansion is separately gated; raw OCR/document content is sensitive | PublicShare must not expose OCR raw output, receipt contents, line items, classification metadata, or document-derived details except through a future explicit allowlist. |
-| Observability | `ObservabilityService` emits sanitized structured logs; analytics backend is not a product analytics platform | Safe product analytics may be proposed conceptually, separated from financial data. |
-| Feature flags | current registry includes flags such as `document.intelligence`; no `public.groupShare` flag exists | Recommend a future default-OFF flag; do not add it here. |
-| OpenAPI | no `public-shares` path exists in `openapi.yaml` | API paths in this document are TARGET/FUTURE examples only; OpenAPI remains unchanged. |
-| Frozen docs/ADRs | SRS v1.0, Decision Ledger, ADRs, Data Matrix, Security, Key Management, FIN-002/ADR-017 are frozen | This proposal must remain additive and future-scoped. |
+| Area                  | CURRENT verified reality                                                                                                                                                                                       | PublicShare implication                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Groups                | `Group` has `name`, `description`, `visibility`, `currency`, `groupType`, `ownerUser`, `inviteToken`, `isArchived`, `version`; group endpoints are under `@UseGuards(JwtAuthGuard)`                            | Do not expose existing group endpoints publicly. Do not rely on `Group.visibility = public_readonly` as the sharing mechanism.                                             |
+| Membership            | `GroupMember.role` supports `owner`, `admin`, `member`, `viewer`, `spectator`; active membership gates group access                                                                                            | Creation/revocation should require owner/admin authorization. Ordinary members should not publish by default.                                                              |
+| Existing authz        | group, expense, settlement, key, and document-intelligence routes are authenticated/guarded                                                                                                                    | PublicShare needs a separate unauthenticated read boundary, not disabled auth on current controllers.                                                                      |
+| E2EE/key model        | group keys are versioned Class-A material; `GET /groups/:id/keys/me?versionId=` returns caller-specific wrapped keys; server must not expose Class-A keys                                                      | Public visitors must never receive keys, wrapped keys, ciphertext requiring private group keys, or key metadata beyond safe policy/version fields.                         |
+| Finance calculations  | `SettlementsService.calculateGroupBalances` computes balances and suggested settlements from posted expenses, payments, splits, confirmed settlements, and the shared debt simplifier; FIN-002 requires parity | PublicShare must consume authoritative finance results/read models and must never introduce a second settlement calculator.                                                |
+| Data classification   | amounts, categories, dates, splits, balances are Zone 2 server-readable but protected; titles/descriptions/private free-text are E2EE or target E2EE                                                           | PublicShare may include only explicit allowlist fields. Server-readable does not mean public.                                                                              |
+| Document Intelligence | DOC intake/extraction/review work exists, but taxonomy/OCR expansion is separately gated; raw OCR/document content is sensitive                                                                                | PublicShare must not expose OCR raw output, receipt contents, line items, classification metadata, or document-derived details except through a future explicit allowlist. |
+| Observability         | `ObservabilityService` emits sanitized structured logs; analytics backend is not a product analytics platform                                                                                                  | Safe product analytics may be proposed conceptually, separated from financial data.                                                                                        |
+| Feature flags         | current registry includes flags such as `document.intelligence`; no `public.groupShare` flag exists                                                                                                            | Recommend a future default-OFF flag; do not add it here.                                                                                                                   |
+| OpenAPI               | no `public-shares` path exists in `openapi.yaml`                                                                                                                                                               | API paths in this document are TARGET/FUTURE examples only; OpenAPI remains unchanged.                                                                                     |
+| Frozen docs/ADRs      | SRS v1.0, Decision Ledger, ADRs, Data Matrix, Security, Key Management, FIN-002/ADR-017 are frozen                                                                                                             | This proposal must remain additive and future-scoped.                                                                                                                      |
 
 ## 2. Product Purpose (TARGET)
 
@@ -48,6 +48,7 @@ expense results with people who need the outcome but should not have to create
 an account.
 
 **TARGET product outcomes:**
+
 - Recipients can understand who owes whom without logging in.
 - A trip, household, event, or temporary expense settlement can be shared as a
   link.
@@ -84,6 +85,7 @@ scoped.
 boundary that publishes only a controlled read-only projection.
 
 **Why not a public group:**
+
 - A group contains private membership context, expenses, keys, history, invites,
   audit relationships, documents, and potentially E2EE ciphertext.
 - Public group access would pressure existing group endpoints to support
@@ -119,6 +121,7 @@ flowchart LR
 ```
 
 **TARGET components:**
+
 - `PublicShare`: share record and lifecycle boundary.
 - `PublicShareProjection`: versioned allowlisted projection policy.
 - `PublicShareView`: public visitor DTO, distinct from private `Group` DTO.
@@ -133,16 +136,16 @@ existing groups, expenses, settlements, keys, and document flows.
 Everything public must be opt-in by DTO and projection version. Fields below are
 **TARGET candidates**, not approvals to expose today.
 
-| Field | Status | Notes |
-|---|---|---|
-| group display name | TARGET allowlist candidate | `group.name` is plaintext-protected, but publication still requires explicit share enablement. |
-| member display names | TARGET allowlist candidate | Carefully controlled display labels only; no emails/phones/internal IDs. |
-| aggregate total spent | TARGET allowlist candidate | From authoritative finance read model. |
-| paid totals by display name | TARGET allowlist candidate | Aggregate only. |
-| simplified settlement obligations | TARGET allowlist candidate | From authoritative settlement suggestion/read model. |
-| settlement status | TARGET allowlist candidate | Only if deliberately included. |
-| limited dates | TARGET allowlist candidate | Examples: trip date range or settlement date range, if appropriate. |
-| expense/category summaries | FUTURE optional | Explicitly enabled per share policy/version; no raw notes/descriptions. |
+| Field                             | Status                     | Notes                                                                                          |
+| --------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
+| group display name                | TARGET allowlist candidate | `group.name` is plaintext-protected, but publication still requires explicit share enablement. |
+| member display names              | TARGET allowlist candidate | Carefully controlled display labels only; no emails/phones/internal IDs.                       |
+| aggregate total spent             | TARGET allowlist candidate | From authoritative finance read model.                                                         |
+| paid totals by display name       | TARGET allowlist candidate | Aggregate only.                                                                                |
+| simplified settlement obligations | TARGET allowlist candidate | From authoritative settlement suggestion/read model.                                           |
+| settlement status                 | TARGET allowlist candidate | Only if deliberately included.                                                                 |
+| limited dates                     | TARGET allowlist candidate | Examples: trip date range or settlement date range, if appropriate.                            |
+| expense/category summaries        | FUTURE optional            | Explicitly enabled per share policy/version; no raw notes/descriptions.                        |
 
 **[PRODUCT DECISION REQUIRED]** exact default display name format for contacts,
 pending members, departed users, and duplicate names.
@@ -178,6 +181,7 @@ The public visitor response must never include anything outside
 ## 7. Privacy Model
 
 **TARGET privacy requirements:**
+
 - default OFF
 - explicit owner/admin action required
 - revocable
@@ -191,6 +195,7 @@ The public visitor response must never include anything outside
 - capability-token based access
 
 **Revocation behavior (TARGET):**
+
 - Revoking the share must immediately stop future public access.
 - Revocation must not alter the private group, expenses, splits, balances, or
   settlements.
@@ -215,6 +220,7 @@ flowchart TD
 ```
 
 **Engineering guidance:**
+
 - Generate at least 128 bits of cryptographic randomness; 192-256 bits preferred
   as an **[ENGINEERING PARAMETER]**.
 - Store only a token hash/reference, not the raw token.
@@ -227,10 +233,10 @@ flowchart TD
 
 ## 9. Live vs Snapshot Sharing
 
-| Mode | Description | Pros | Risks |
-|---|---|---|---|
-| Live share | View always reflects current authoritative group settlement | Simple mental model for active trips; no stale numbers | Public view changes after forwarding; more cache complexity |
-| Snapshot share | View freezes the state at creation time | Stable evidence; safer for finalized events | Requires snapshot metadata/versioning; can diverge from current group |
+| Mode           | Description                                                 | Pros                                                   | Risks                                                                 |
+| -------------- | ----------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| Live share     | View always reflects current authoritative group settlement | Simple mental model for active trips; no stale numbers | Public view changes after forwarding; more cache complexity           |
+| Snapshot share | View freezes the state at creation time                     | Stable evidence; safer for finalized events            | Requires snapshot metadata/versioning; can diverge from current group |
 
 **V1 recommendation (TARGET):** start with **live share** using the authoritative
 finance read model, with clear "last updated" metadata. Mark this as a
@@ -252,6 +258,7 @@ sensitive as inviting or managing members.
 **Do not assume:** ordinary `member`, `viewer`, or `spectator` can publish.
 
 **[PRODUCT DECISION REQUIRED]:**
+
 - whether owners can restrict admins from publishing
 - whether a group policy can require owner-only publishing
 - whether all active members should be notified when a share is created
@@ -262,6 +269,7 @@ sensitive as inviting or managing members.
 PublicShare must not become an E2EE bypass.
 
 **TARGET invariants:**
+
 - The server exposes only approved public projection fields.
 - Public projection generation must not require decrypting Class-A private
   fields.
@@ -282,6 +290,7 @@ and extraction/review work, but OCR/taxonomy/statement import remains separate
 from this proposal.
 
 PublicShare must not accidentally expose:
+
 - OCR raw output
 - document text
 - receipt images or PDFs
@@ -303,6 +312,7 @@ confirmed settlements, refunds, household carry-forward, and the shared debt
 simplifier.
 
 **TARGET PublicShare rule:** PublicShare is read-only and must never modify:
+
 - expenses
 - payers
 - splits
@@ -325,6 +335,7 @@ calculator.
 ## 14. Safe Product Analytics
 
 **TARGET safe aggregate analytics candidates:**
+
 - share created
 - share revoked
 - share expired
@@ -335,6 +346,7 @@ calculator.
 - group created after share
 
 **Do not collect:**
+
 - visitor financial data
 - visitor behavioral profiles
 - per-recipient debt analysis
@@ -370,6 +382,7 @@ join, view receipts, or see private details from the shared group.
 ## 16. QR and Sharing Channels
 
 **FUTURE, not implemented here:**
+
 - copy link
 - QR code
 - messaging/social share sheet
@@ -381,25 +394,26 @@ weaken or replace token security requirements.
 
 ## 17. Threat Analysis
 
-| Threat | TARGET mitigation |
-|---|---|
-| Token guessing | high-entropy random token, rate limiting, no sequential IDs |
-| Token leakage | redact URLs/tokens from logs; user education; easy revoke/regenerate |
-| Screenshots/link forwarding | make sharing implications clear; allow expiry/revocation; cannot recall screenshots |
-| Scraping | throttle, bot/abuse controls, payload minimization, optional proof-of-work/CAPTCHA as future **[ENGINEERING PARAMETER]** |
-| Enumeration | no group IDs, no discoverable paths, uniform 404 for invalid/revoked/expired where appropriate |
-| Excessive request rates | per-token/IP/user-agent rate limits and anomaly alerts |
-| Stale/revoked links | `revokedAt`, `expiresAt`, cache controls, immediate policy check |
-| Accidental sensitive-field addition | stable `PublicShareView` DTO, projection versioning, allowlist tests |
-| Authorization bypass | separate controller/service, no reuse of private DTOs/endpoints |
-| Cache leakage | no-store/private cache guidance for sensitive public financial summaries |
-| Search indexing | `noindex`, no sitemap, robots guidance, token URLs not linked publicly |
-| Referrer leakage | use `Referrer-Policy: no-referrer` or strict policy **[ENGINEERING PARAMETER]** |
-| Analytics overreach | aggregate-only product analytics, no visitor financial profiling |
+| Threat                              | TARGET mitigation                                                                                                        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Token guessing                      | high-entropy random token, rate limiting, no sequential IDs                                                              |
+| Token leakage                       | redact URLs/tokens from logs; user education; easy revoke/regenerate                                                     |
+| Screenshots/link forwarding         | make sharing implications clear; allow expiry/revocation; cannot recall screenshots                                      |
+| Scraping                            | throttle, bot/abuse controls, payload minimization, optional proof-of-work/CAPTCHA as future **[ENGINEERING PARAMETER]** |
+| Enumeration                         | no group IDs, no discoverable paths, uniform 404 for invalid/revoked/expired where appropriate                           |
+| Excessive request rates             | per-token/IP/user-agent rate limits and anomaly alerts                                                                   |
+| Stale/revoked links                 | `revokedAt`, `expiresAt`, cache controls, immediate policy check                                                         |
+| Accidental sensitive-field addition | stable `PublicShareView` DTO, projection versioning, allowlist tests                                                     |
+| Authorization bypass                | separate controller/service, no reuse of private DTOs/endpoints                                                          |
+| Cache leakage                       | no-store/private cache guidance for sensitive public financial summaries                                                 |
+| Search indexing                     | `noindex`, no sitemap, robots guidance, token URLs not linked publicly                                                   |
+| Referrer leakage                    | use `Referrer-Policy: no-referrer` or strict policy **[ENGINEERING PARAMETER]**                                          |
+| Analytics overreach                 | aggregate-only product analytics, no visitor financial profiling                                                         |
 
 ## 18. Caching and Indexing
 
 **TARGET security guidance:**
+
 - Prefer `Cache-Control: no-store` for V1 unless a later performance/security
   review approves controlled caching.
 - Include `X-Robots-Tag: noindex, nofollow` or equivalent page metadata.
@@ -429,6 +443,7 @@ GET /share/:token
 ```
 
 **Boundary rules:**
+
 - `GET /groups/:id/public` is explicitly rejected.
 - Existing group/expense/settlement DTOs must not be reused.
 - Private endpoints remain authenticated.
@@ -441,20 +456,20 @@ No entity or migration is created by this document.
 
 Future `PublicShare` entity concept:
 
-| Field | Purpose |
-|---|---|
-| `id` | internal database ID, never public token |
-| `groupId` / group reference | private group source |
-| `tokenHash` / token reference | hash of capability token |
-| `createdByUserId` | publishing actor |
-| `createdAt` | lifecycle metadata |
-| `expiresAt` | optional expiry |
-| `revokedAt` | revocation timestamp |
-| `mode` | `live` or `snapshot` |
-| `projectionPolicyVersion` | stable allowlist version |
-| `snapshotMetadata` | if snapshot mode is introduced |
-| `lastProjectedAt` | live/snapshot freshness |
-| `createdReason` / label | optional admin-facing label, not public by default |
+| Field                         | Purpose                                            |
+| ----------------------------- | -------------------------------------------------- |
+| `id`                          | internal database ID, never public token           |
+| `groupId` / group reference   | private group source                               |
+| `tokenHash` / token reference | hash of capability token                           |
+| `createdByUserId`             | publishing actor                                   |
+| `createdAt`                   | lifecycle metadata                                 |
+| `expiresAt`                   | optional expiry                                    |
+| `revokedAt`                   | revocation timestamp                               |
+| `mode`                        | `live` or `snapshot`                               |
+| `projectionPolicyVersion`     | stable allowlist version                           |
+| `snapshotMetadata`            | if snapshot mode is introduced                     |
+| `lastProjectedAt`             | live/snapshot freshness                            |
+| `createdReason` / label       | optional admin-facing label, not public by default |
 
 **[ENGINEERING PARAMETER]:** whether projection data is computed on read, cached
 in a separate table, or materialized as snapshot JSON.
@@ -484,6 +499,7 @@ PublicShareProjection v1
 ```
 
 **Rules:**
+
 - New private fields must never become public by object spreading or DTO reuse.
 - Adding a public field requires a new projection version or an explicit
   versioned policy change.
@@ -496,6 +512,7 @@ PublicShareProjection v1
 Public visitors receive only a dedicated `PublicShareView` DTO.
 
 **Never reuse:**
+
 - private `Group` DTO
 - private expense DTO
 - settlement entity snapshots
@@ -504,6 +521,7 @@ Public visitors receive only a dedicated `PublicShareView` DTO.
 - key DTOs
 
 **TARGET DTO principles:**
+
 - display names, not IDs
 - summarized amounts, not raw ledger rows unless explicitly versioned
 - no nullable accidental relation objects
@@ -526,6 +544,7 @@ entry points should fail closed while the flag is OFF.
 ## 24. Future Enhancements (Parked)
 
 Parked, not implemented:
+
 - richer sharing controls
 - snapshot shares
 - expiry controls
@@ -541,6 +560,7 @@ Parked, not implemented:
 ## 25. Explicit Non-Goals
 
 This proposal does not include:
+
 - public editing
 - public joining
 - public expense creation
@@ -558,33 +578,33 @@ This proposal does not include:
 
 ## 26. Relationship With Current Architecture
 
-| Existing architecture item | Relationship |
-|---|---|
-| E2EE | Preserved. PublicShare exposes no keys/ciphertext/private free-text. |
-| REC-1 | Preserved. Sharing does not change recovery or key setup. |
-| SEC-KI1 | Preserved. Group key version serving remains private-member-only; public visitors never receive wrapped keys. |
-| FIN-002 | Preserved. PublicShare consumes authoritative finance results only. |
-| Goal Engine | Unchanged. No goal data or goal projection is introduced. |
-| Document Intelligence | Unchanged. No OCR/taxonomy/document fields exposed except future explicit allowlist. |
-| Existing group authorization | Preserved. Existing endpoints remain authenticated/member-scoped. |
-| Existing settlement calculations | Preserved. No second calculator. |
-| OpenAPI | Unchanged. Conceptual endpoints are FUTURE examples. |
-| Frozen SRS/Ledger/ADRs | Unchanged. This is a future proposal, not a frozen-doc revision. |
+| Existing architecture item       | Relationship                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| E2EE                             | Preserved. PublicShare exposes no keys/ciphertext/private free-text.                                          |
+| REC-1                            | Preserved. Sharing does not change recovery or key setup.                                                     |
+| SEC-KI1                          | Preserved. Group key version serving remains private-member-only; public visitors never receive wrapped keys. |
+| FIN-002                          | Preserved. PublicShare consumes authoritative finance results only.                                           |
+| Goal Engine                      | Unchanged. No goal data or goal projection is introduced.                                                     |
+| Document Intelligence            | Unchanged. No OCR/taxonomy/document fields exposed except future explicit allowlist.                          |
+| Existing group authorization     | Preserved. Existing endpoints remain authenticated/member-scoped.                                             |
+| Existing settlement calculations | Preserved. No second calculator.                                                                              |
+| OpenAPI                          | Unchanged. Conceptual endpoints are FUTURE examples.                                                          |
+| Frozen SRS/Ledger/ADRs           | Unchanged. This is a future proposal, not a frozen-doc revision.                                              |
 
 ## 27. Decision Register
 
-| Topic | Classification |
-|---|---|
-| PublicShare boundary instead of public group | TARGET recommendation |
-| Default OFF | TARGET requirement |
-| Owner/admin create/revoke | TARGET recommendation, **[PRODUCT DECISION REQUIRED]** for exact admin policy |
-| Live share V1 | TARGET recommendation, **[PRODUCT DECISION REQUIRED]** |
-| Token entropy length | **[ENGINEERING PARAMETER]** |
-| Expiry default | **[PRODUCT DECISION REQUIRED]** |
-| Public display names for non-users/contacts | **[PRODUCT DECISION REQUIRED]**, **[COUNSEL]** |
-| Analytics attribution | **[COUNSEL]**, **[ENGINEERING PARAMETER]** |
-| Cache headers/CDN behavior | **[ENGINEERING PARAMETER]** |
-| Category/document/taxonomy summaries | FUTURE, explicit allowlist only |
+| Topic                                        | Classification                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| PublicShare boundary instead of public group | TARGET recommendation                                                         |
+| Default OFF                                  | TARGET requirement                                                            |
+| Owner/admin create/revoke                    | TARGET recommendation, **[PRODUCT DECISION REQUIRED]** for exact admin policy |
+| Live share V1                                | TARGET recommendation, **[PRODUCT DECISION REQUIRED]**                        |
+| Token entropy length                         | **[ENGINEERING PARAMETER]**                                                   |
+| Expiry default                               | **[PRODUCT DECISION REQUIRED]**                                               |
+| Public display names for non-users/contacts  | **[PRODUCT DECISION REQUIRED]**, **[COUNSEL]**                                |
+| Analytics attribution                        | **[COUNSEL]**, **[ENGINEERING PARAMETER]**                                    |
+| Cache headers/CDN behavior                   | **[ENGINEERING PARAMETER]**                                                   |
+| Category/document/taxonomy summaries         | FUTURE, explicit allowlist only                                               |
 
 ## 28. Final Reconciliation
 

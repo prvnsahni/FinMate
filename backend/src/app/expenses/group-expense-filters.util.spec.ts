@@ -136,7 +136,9 @@ describe('applyExpenseDimensionFilters', () => {
       const qb = apply({ tagIds: ['milk', 'grocery'] });
       expect(qb.clauses.some((c) => c.startsWith('EXISTS'))).toBe(true);
       // IN (...) is match-ANY, consistent with the other multi-select dimensions.
-      expect(qb.lastSub?.conditions).toContain('gefTag.tagId IN (:...gefTagIds)');
+      expect(qb.lastSub?.conditions).toContain(
+        'gefTag.tagId IN (:...gefTagIds)',
+      );
       // Correlated to the outer expense — never multiplies rows.
       expect(qb.lastSub?.conditions).toContain('gefTag.expense = expense.id');
       expect(qb.params['gefTagIds']).toEqual(['milk', 'grocery']);
