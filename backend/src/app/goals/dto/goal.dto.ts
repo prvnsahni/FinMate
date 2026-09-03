@@ -10,6 +10,7 @@ import {
   Length,
   Min,
 } from 'class-validator';
+import { IsCiphertext } from '../../common/decorators/is-ciphertext.decorator';
 
 /**
  * Goals-v2 request DTOs. `title` is CLIENT CIPHERTEXT (born-E2EE) and
@@ -20,6 +21,9 @@ export class CreateGoalDto {
   /** E2EE ciphertext of the title — opaque to the server. */
   @IsString()
   @IsNotEmpty({ message: 'Encrypted title is required' })
+  @IsCiphertext({
+    message: 'Goal title could not be processed securely. Please try again.',
+  })
   title!: string;
 
   /** Owner's RSA-wrapped content key (required so every goal is born-E2EE). */
@@ -58,6 +62,9 @@ export class UpdateGoalDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @IsCiphertext({
+    message: 'Goal title could not be processed securely. Please try again.',
+  })
   title?: string;
 
   @IsOptional()
