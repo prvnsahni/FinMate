@@ -127,10 +127,32 @@
     "zone.js": "^0.16.2"
   },
   "optionalDependencies": {
+    "@esbuild/linux-x64": "0.27.3",
+    "@lmdb/lmdb-linux-x64": "3.5.1",
+    "@msgpackr-extract/msgpackr-extract-linux-x64": "3.0.4",
+    "@napi-rs/canvas-linux-x64-gnu": "1.0.6",
+    "@napi-rs/canvas-linux-x64-musl": "1.0.6",
+    "@napi-rs/nice-linux-x64-gnu": "1.1.1",
+    "@napi-rs/nice-linux-x64-musl": "1.1.1",
     "@nx/nx-darwin-arm64": "22.7.2",
     "@nx/nx-darwin-x64": "22.7.2",
     "@nx/nx-linux-x64-gnu": "22.7.2",
     "@nx/nx-linux-x64-musl": "22.7.2",
-    "@nx/nx-win32-x64-msvc": "22.7.2"
+    "@nx/nx-win32-x64-msvc": "22.7.2",
+    "@oxc-resolver/binding-linux-x64-gnu": "11.21.3",
+    "@oxc-resolver/binding-linux-x64-musl": "11.21.3",
+    "@parcel/watcher-linux-x64-glibc": "2.5.6",
+    "@parcel/watcher-linux-x64-musl": "2.5.6",
+    "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.4",
+    "@rolldown/binding-linux-x64-musl": "1.0.0-rc.4",
+    "@rollup/rollup-linux-x64-gnu": "4.62.2",
+    "@rollup/rollup-linux-x64-musl": "4.62.2",
+    "@rspack/binding-linux-x64-gnu": "1.6.8",
+    "@rspack/binding-linux-x64-musl": "1.6.8",
+    "@swc/core-linux-x64-gnu": "1.15.43",
+    "@swc/core-linux-x64-musl": "1.15.43",
+    "@unrs/resolver-binding-linux-x64-gnu": "1.12.2",
+    "@unrs/resolver-binding-linux-x64-musl": "1.12.2",
+    "sass-embedded-linux-x64": "1.100.0"
   }
 }
