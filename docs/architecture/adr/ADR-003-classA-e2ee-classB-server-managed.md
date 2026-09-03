@@ -1,0 +1,23 @@
+# ADR-003 — Class-A E2EE vs Class-B server-managed encryption
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (Class-A for expense/note free-text) / TARGET (Class-B, new Class-A domains) · **Date:** 2026-08-12
+- **Decision:** Two encryption classes. **Class A (E2EE):** user holds the key; server cannot decrypt (journal, notes, goal/P2P/settlement/group-desc free-text, photos, attachments). **Class B (server-managed):** per-user server/KMS key, gated decryption for approved server-side analysis (wellbeing mood metrics, intelligence derived data).
+- **Context:** Some features need privacy from the server; others need the server to compute on the data (e.g., mood↔spending correlation).
+- **Problem:** A single model can't be both "server cannot read" and "server must analyze."
+- **Alternatives considered:** (a) Everything E2EE — kills server-side analysis; (b) everything server-readable — weak privacy; (c) **two explicit classes**.
+- **Why selected:** (c) lets FinMate offer server-side wellbeing insights (Class B) while keeping journals/notes truly private (Class A) — no contradiction.
+- **Security impact:** Class A unreadable on DB/backup theft; Class B limited by isolation + gated access.
+- **Privacy impact:** Strongest for Class A; Class B is Art. 9-sensitive `[COUNSEL REQUIRED]` and DPIA-gated.
+- **Performance impact:** Class A decrypt is client-side; Class B adds gated server decrypt.
+- **Backward-compatibility impact:** Existing Class-A (expense/note) unchanged.
+- **Migration impact:** New Class-A fields via ADR-016; Class B is net-new.
+- **User impact:** Journals private; wellbeing analysis only with consent.
+- **Operational impact:** New server key store for Class B (ADR-006/007-adjacent).
+- **Rollback/reversal:** Class B feature-flag off; Class A unaffected.
+- **Dependencies:** ADR-004 (key type), ADR-006 (shred), ADR-002 (zones).
+- **Related SRS:** ENC-001, KEY-001/002, DATA-002/005, FUT-001.
+- **Related Ledger items:** K-1, K-2, K-3, A3.
+- **Related Threat Model:** T-08 (server key), T-10 (DB leak).
+- **Related architecture docs:** Key Management (#4); Security & Privacy Architecture (#3).
+- **Simple explanation:** Some things are locked so only _you_ have the key (journal). Some things FinMate can unlock under strict rules, because it needs to read them to help (mood analysis).
+- **Technical explanation:** Class A = client-held random keys, server stores ciphertext + wrapped keys only. Class B = per-user server-managed keys with consent/purpose-gated decryption; wellbeing/intelligence use Class B, never E2EE.

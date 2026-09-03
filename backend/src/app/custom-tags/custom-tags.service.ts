@@ -1,0 +1,421 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  PreconditionFailedException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  CustomTag,
+  Group,
+  GroupKeyVersion,
+  GroupMember,
+  User,
+} from '@finmate/data-models';
+import {
+  CreateGroupCustomTagDto,
+  CreatePersonalCustomTagDto,
+  RestoreCustomTagDto,
+  UpdateCustomTagDto,
+} from './dto';
+
+/**
+ * Server-safe projection of a custom tag. Deliberately excludes the related
+ * `ownerUser`/`createdByUser`/`group` entities (which carry sensitive account
+ * fields) — the only name material returned is the opaque `encryptedName` the
+ * client itself produced.
+ */
+export interface CustomTagResponse {
+  id: string;
+  scopeType: 'personal' | 'group';
+  encryptedName: string;
+  status: 'active' | 'deprecated';
+  version: number;
+  groupId: string | null;
+  groupKeyVersionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * TAG-BATCH-C2 — CRUD + authorization for personal and group custom-tag
+ * DEFINITIONS (the naming layer added in C1). Assignments continue to live in
+ * `expense_tags`; the global canonical taxonomy stays code-curated and is NOT
+ * reachable here.
+ *
+ * E2EE boundary (per C0/C1): the tag name is handled ONLY as the client's
+ * opaque `encryptedName` ciphertext. This service never decrypts, normalizes,
+ * hashes, searches, or logs it — de-duplication is a client concern. The server
+ * authorizes purely on ownership (personal) / active membership (group) + the
+ * opaque id.
+ */
+@Injectable()
+export class CustomTagsService {
+  constructor(
+    @InjectRepository(CustomTag)
+    private readonly customTagRepository: Repository<CustomTag>,
+    @InjectRepository(GroupMember)
+    private readonly groupMemberRepository: Repository<GroupMember>,
+    @InjectRepository(GroupKeyVersion)
+    private readonly groupKeyVersionRepository: Repository<GroupKeyVersion>,
+  ) {}
+
+  /** Map an entity to the server-safe projection (never leaks related accounts). */
+  private toResponse(tag: CustomTag): CustomTagResponse {
+    return {
+      id: tag.id,
+      scopeType: tag.scopeType,
+      encryptedName: tag.encryptedName,
+      status: tag.status,
+      version: tag.version,
+      groupId: tag.group?.id ?? null,
+      groupKeyVersionId: tag.groupKeyVersion?.id ?? null,
+      createdAt: tag.createdAt,
+      updatedAt: tag.updatedAt,
+    };
+  }
+
+  /** Throws unless the user is an ACTIVE member of the group (group-scope authz). */
+  private async assertActiveMembership(
+    userId: string,
+    groupId: string,
+  ): Promise<GroupMember> {
+    const membership = await this.groupMemberRepository.findOne({
+      where: {
+        group: { id: groupId },
+        user: { id: userId },
+        joinStatus: 'active',
+      },
+    });
+    if (!membership) {
+      throw new ForbiddenException('You do not have access to this group');
+    }
+    return membership;
+  }
+
+  /**
+   * TAG-BATCH-C5c — governance gate for GROUP custom tags. A group custom tag is
+   * shared group vocabulary, so its GOVERNANCE (create/rename/deprecate/restore)
+   * follows the same owner/admin convention as every other group-shared-state
+   * mutation (settings, invites, roles, keys, contributions). Plain members and
+   * viewers keep full USAGE (see/assign/filter/review — unchanged) but cannot
+   * manage the definition set. Personal tags are unaffected (owner-only).
+   *
+   * A non-member never reaches here — `loadAuthorizedTag`/`assertActiveMembership`
+   * already 404/deny them; a member who merely lacks the role gets a 403 (they
+   * are authorized to SEE the tag, just not govern it — no existence disclosure).
+   */
+  private assertGroupGovernance(membership: GroupMember): void {
+    if (membership.role !== 'owner' && membership.role !== 'admin') {
+      throw new ForbiddenException({
+        errorCode: 'RES_FORBIDDEN',
+        message: 'Only group owners and admins can manage group tags',
+      });
+    }
+  }
+
+  /**
+   * Resolves the group-key version to stamp on a group tag. A declared id must
+   * belong to the group and not be REVOKED; otherwise the group's current
+   * ACTIVE version is used. Mirrors the expense/recurring key-version discipline
+   * and invents no new group-key flow.
+   */
+  private async resolveGroupKeyVersion(
+    groupId: string,
+    declaredVersionId: string | undefined,
+  ): Promise<GroupKeyVersion> {
+    if (declaredVersionId) {
+      const declared = await this.groupKeyVersionRepository.findOne({
+        where: { id: declaredVersionId, group: { id: groupId } },
+      });
+      if (!declared || declared.status === 'REVOKED') {
+        throw new BadRequestException({
+          errorCode: 'VAL_INVALID_INPUT',
+          message:
+            'groupKeyVersionId must reference a usable key version of the selected group',
+        });
+      }
+      return declared;
+    }
+
+    const active = await this.groupKeyVersionRepository.findOne({
+      where: { group: { id: groupId }, status: 'ACTIVE' },
+      order: { version: 'DESC' },
+    });
+    if (!active) {
+      throw new BadRequestException({
+        errorCode: 'VAL_INVALID_INPUT',
+        message: 'The group has no active key version for tag encryption',
+      });
+    }
+    return active;
+  }
+
+  // ─── PERSONAL ──────────────────────────────────────────────────────────────
+
+  /**
+   * Creates a personal custom tag owned by the authenticated user. Scope and
+   * owner are server-derived, never taken from the body.
+   * @param userId authenticated user id
+   * @param dto opaque encrypted name only
+   */
+  async createPersonal(
+    userId: string,
+    dto: CreatePersonalCustomTagDto,
+  ): Promise<CustomTagResponse> {
+    const tag = this.customTagRepository.create({
+      scopeType: 'personal',
+      ownerUser: { id: userId } as User,
+      createdByUser: { id: userId } as User,
+      encryptedName: dto.encryptedName,
+      status: 'active',
+    });
+    const saved = await this.customTagRepository.save(tag);
+    return this.toResponse(saved);
+  }
+
+  /**
+   * Lists the authenticated user's own personal custom tags for the given
+   * lifecycle `status` (default `active`; `deprecated` powers the C5b restore
+   * view). Never returns another user's tags or the canonical taxonomy.
+   * @param userId authenticated user id
+   * @param status lifecycle filter — `active` (default) or `deprecated`
+   */
+  async listPersonal(
+    userId: string,
+    status: 'active' | 'deprecated' = 'active',
+  ): Promise<CustomTagResponse[]> {
+    const tags = await this.customTagRepository.find({
+      where: {
+        scopeType: 'personal',
+        status,
+        ownerUser: { id: userId },
+      },
+      order: { createdAt: 'DESC' },
+    });
+    return tags.map((t) => this.toResponse(t));
+  }
+
+  // ─── GROUP ───────────────────────────────────────────────────────────────
+
+  /**
+   * Creates a group custom tag. Requires ACTIVE membership; the scope and group
+   * come from the route. Records the resolved group-key version for SEC-KI1
+   * version discipline.
+   * @param userId authenticated user id
+   * @param groupId target group id
+   * @param dto opaque encrypted name + optional groupKeyVersionId
+   */
+  async createGroup(
+    userId: string,
+    groupId: string,
+    dto: CreateGroupCustomTagDto,
+  ): Promise<CustomTagResponse> {
+    // C5c — creating shared group vocabulary is a governance op (owner/admin);
+    // a non-member is denied by assertActiveMembership first.
+    const membership = await this.assertActiveMembership(userId, groupId);
+    this.assertGroupGovernance(membership);
+    const groupKeyVersion = await this.resolveGroupKeyVersion(
+      groupId,
+      dto.groupKeyVersionId,
+    );
+
+    const tag = this.customTagRepository.create({
+      scopeType: 'group',
+      group: { id: groupId } as Group,
+      groupKeyVersion,
+      createdByUser: { id: userId } as User,
+      encryptedName: dto.encryptedName,
+      status: 'active',
+    });
+    const saved = await this.customTagRepository.save(tag);
+    return this.toResponse(saved);
+  }
+
+  /**
+   * Lists a group's custom tags for the given lifecycle `status` (default
+   * `active`; `deprecated` powers the C5b restore view). Requires ACTIVE
+   * membership.
+   * @param userId authenticated user id
+   * @param groupId target group id
+   * @param status lifecycle filter — `active` (default) or `deprecated`
+   */
+  async listGroup(
+    userId: string,
+    groupId: string,
+    status: 'active' | 'deprecated' = 'active',
+  ): Promise<CustomTagResponse[]> {
+    await this.assertActiveMembership(userId, groupId);
+    const tags = await this.customTagRepository.find({
+      where: {
+        scopeType: 'group',
+        status,
+        group: { id: groupId },
+      },
+      order: { createdAt: 'DESC' },
+      relations: ['group', 'groupKeyVersion'],
+    });
+    return tags.map((t) => this.toResponse(t));
+  }
+
+  // ─── UPDATE / DEPRECATE (by id, both scopes) ───────────────────────────────
+
+  /**
+   * Loads a tag by id and authorizes the caller for it. To prevent existence
+   * disclosure via id enumeration (IDOR), any authorization failure on the
+   * by-id path surfaces as `NotFoundException` — a non-owner/non-member cannot
+   * distinguish "does not exist" from "not yours".
+   */
+  private async loadAuthorizedTag(
+    userId: string,
+    id: string,
+  ): Promise<{ tag: CustomTag; membership: GroupMember | null }> {
+    const tag = await this.customTagRepository.findOne({
+      where: { id },
+      relations: ['ownerUser', 'group', 'groupKeyVersion'],
+    });
+    if (!tag) {
+      throw new NotFoundException('Custom tag not found');
+    }
+
+    if (tag.scopeType === 'personal') {
+      if (tag.ownerUser?.id !== userId) {
+        throw new NotFoundException('Custom tag not found');
+      }
+      return { tag, membership: null };
+    }
+
+    const groupId = tag.group?.id;
+    const membership = groupId
+      ? await this.groupMemberRepository.findOne({
+          where: {
+            group: { id: groupId },
+            user: { id: userId },
+            joinStatus: 'active',
+          },
+        })
+      : null;
+    if (!membership) {
+      throw new NotFoundException('Custom tag not found');
+    }
+    // Membership returned so governance callers can enforce the owner/admin gate
+    // (C5c) with no second query; non-members were already 404'd above (IDOR).
+    return { tag, membership };
+  }
+
+  /**
+   * Renames a custom tag (personal or group) by replacing its opaque encrypted
+   * payload. The server never inspects the name. Optimistic-lock protected via
+   * `version` (`CON_VERSION_CONFLICT`).
+   * @param userId authenticated user id
+   * @param id custom tag id
+   * @param dto new encrypted name, last-seen version, optional groupKeyVersionId
+   */
+  async rename(
+    userId: string,
+    id: string,
+    dto: UpdateCustomTagDto,
+  ): Promise<CustomTagResponse> {
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — renaming a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
+
+    // TAG-BATCH-C5b — a deprecated tag cannot be renamed; the caller must restore
+    // it first. This keeps a deprecated definition frozen while its historical
+    // assignments stay resolvable under the name they were confirmed with.
+    if (tag.status === 'deprecated') {
+      throw new ConflictException({
+        errorCode: 'CUSTOM_TAG_DEPRECATED',
+        message: 'Restore this tag before renaming it.',
+      });
+    }
+
+    if (tag.version !== dto.version) {
+      throw new PreconditionFailedException({
+        errorCode: 'CON_VERSION_CONFLICT',
+        message:
+          'Version conflict: the resource has been modified by another request',
+      });
+    }
+
+    tag.encryptedName = dto.encryptedName;
+
+    // Group rename may carry a fresh key-version stamp (e.g. re-encrypted after
+    // a rotation). Reuse the existing version discipline; personal tags ignore it.
+    if (tag.scopeType === 'group' && dto.groupKeyVersionId && tag.group) {
+      tag.groupKeyVersion = await this.resolveGroupKeyVersion(
+        tag.group.id,
+        dto.groupKeyVersionId,
+      );
+    }
+
+    const saved = await this.customTagRepository.save(tag);
+    return this.toResponse(saved);
+  }
+
+  /**
+   * Deprecates a custom tag: it disappears from the ACTIVE lists but is NOT
+   * physically removed, so historical `expense_tags` assignments stay
+   * resolvable and no financial record is touched. Idempotent.
+   * @param userId authenticated user id
+   * @param id custom tag id
+   */
+  async deprecate(userId: string, id: string): Promise<CustomTagResponse> {
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — deprecating a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
+    if (tag.status !== 'deprecated') {
+      tag.status = 'deprecated';
+      const saved = await this.customTagRepository.save(tag);
+      return this.toResponse(saved);
+    }
+    return this.toResponse(tag);
+  }
+
+  /**
+   * TAG-BATCH-C5b — restores a deprecated custom tag (`deprecated → active`) so it
+   * is offered again. Same authorization as rename/deprecate (personal → owner;
+   * group → active member; IDOR → 404). Optimistic-lock protected via `version`
+   * (`CON_VERSION_CONFLICT`) exactly like rename. It touches ONLY `status`: the
+   * opaque `encryptedName`, `groupKeyVersion`, and every historical `expense_tags`
+   * assignment are left exactly as they were (no name decryption, no finance).
+   * Idempotent: restoring an already-active tag is a no-op that returns it.
+   * @param userId authenticated user id
+   * @param id custom tag id
+   * @param dto last-seen optimistic version
+   */
+  async restore(
+    userId: string,
+    id: string,
+    dto: RestoreCustomTagDto,
+  ): Promise<CustomTagResponse> {
+    const { tag, membership } = await this.loadAuthorizedTag(userId, id);
+    // C5c — restoring a shared group definition is owner/admin governance.
+    if (tag.scopeType === 'group' && membership) {
+      this.assertGroupGovernance(membership);
+    }
+
+    if (tag.version !== dto.version) {
+      throw new PreconditionFailedException({
+        errorCode: 'CON_VERSION_CONFLICT',
+        message:
+          'Version conflict: the resource has been modified by another request',
+      });
+    }
+
+    if (tag.status === 'deprecated') {
+      tag.status = 'active';
+      const saved = await this.customTagRepository.save(tag);
+      return this.toResponse(saved);
+    }
+    // Already active — idempotent no-op (no save, no version bump).
+    return this.toResponse(tag);
+  }
+}

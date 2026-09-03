@@ -53,6 +53,9 @@ import {
 import { CryptoRecoveryPanelComponent } from '../../../../shared/components/crypto-recovery-panel/crypto-recovery-panel.component';
 import { CryptoRecoveryQueueService } from '../../../../core/services/crypto-recovery-queue.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ReceiptCaptureComponent } from '../../../documents/receipt-capture.component';
+import { mapDraftToExpensePrefill } from '../../../documents/expense-draft-prefill';
+import { ConfirmedDocumentDraft } from '../../../documents/document-review.model';
 
 /**
  * One row of the edit-mode "Changes" summary. `key` matches the form control
@@ -86,6 +89,38 @@ interface ExpenseSnapshot {
   attachmentKeys: string[];
 }
 
+/**
+ * Additive create-mode pre-fill (DOC-3E). A document-review `ConfirmedDocumentDraft` is
+ * mapped to this by `mapDraftToExpensePrefill` and passed via the `prefill` input to seed
+ * ONLY these non-finance-calculation fields. It never sets payer, split, refund, or
+ * settlement — the user still chooses those and must explicitly submit. Ignored in edit mode.
+ */
+/**
+ * TAG-BATCH-A — a confirmed DOC-5 taxonomy tag carried from a document draft into
+ * create-mode. Descriptive metadata only (never a finance field); the stable
+ * `tagId` references the shared canonical taxonomy. Server materializes ancestors
+ * and de-dups on persist.
+ */
+export interface ExpensePrefillTag {
+  tagId: string;
+  authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+  source: 'rule_based' | 'user';
+}
+
+export interface ExpenseDraftPrefill {
+  title?: string | null;
+  amountTotal?: number | null;
+  currency?: string | null;
+  category?: string | null;
+  expenseDate?: string | null;
+  /**
+   * Confirmed DOC-5 tags from the receipt draft (TAG-BATCH-A). Advisory Zone-2
+   * metadata; carried through to the create payload only, never on edit, and
+   * never a finance value.
+   */
+  tags?: ExpensePrefillTag[];
+}
+
 @Component({
   selector: 'app-create-expense-modal',
   standalone: true,
@@ -97,6 +132,7 @@ interface ExpenseSnapshot {
     CryptoRecoveryPanelComponent,
     CurrencyPipe,
     DatePipe,
+    ReceiptCaptureComponent,
   ],
   templateUrl: './create-expense-modal.component.html',
 })
@@ -130,6 +166,20 @@ export class CreateExpenseModalComponent implements OnChanges {
   @Input() members: GroupMember[] = [];
   @Input() expense: GroupExpense | null = null; // To support edit mode
   @Input() defaultCategory: string = CATEGORY_OPTIONS[0].value;
+  /**
+   * Optional create-mode pre-fill from a confirmed document/receipt draft (DOC-3E).
+   * Seeds only non-finance-calculation fields (title/amount/currency/category/date);
+   * never payer/split/refund/settlement. Ignored in edit mode. The user still submits.
+   */
+  @Input() prefill: ExpenseDraftPrefill | null = null;
+
+  /**
+   * TAG-BATCH-A — confirmed DOC-5 tags seeded from a receipt draft, sent with the
+   * create payload only. Advisory Zone-2 metadata; never affects payer/split/
+   * amount. Stays empty for manual creation and total-only receipts, and is never
+   * sent on edit.
+   */
+  private prefillTags: ExpensePrefillTag[] = [];
 
   @Output() expenseCreated = new EventEmitter<void>();
   @Output() closeModalEvent = new EventEmitter<void>();
@@ -235,6 +285,65 @@ export class CreateExpenseModalComponent implements OnChanges {
 
   private markChanged(): void {
     this.changeTick.update((n) => n + 1);
+  }
+
+  // --- DOC-3F: receipt-capture launcher (additive, create-mode, flag-gated) ----------
+  /** Mirrors the backend `document.intelligence` flag; default OFF (hides the entry point). */
+  readonly docIntelEnabled = environment.documentIntelligence === true;
+  /** Whether the in-modal receipt-capture overlay is open. */
+  readonly showReceiptCapture = signal(false);
+
+  /** Open receipt capture. Create-mode + flag only; scope (group/personal) is already this modal's. */
+  openReceiptCapture(): void {
+    if (this.isEditMode || !this.docIntelEnabled) return;
+    this.showReceiptCapture.set(true);
+  }
+
+  /**
+   * A receipt draft was explicitly confirmed. Map ONLY the safe header fields and seed the
+   * form via the existing create-mode pre-fill — never payer/split/refund/settlement, never
+   * an expense. The user still reviews and explicitly submits through the normal flow.
+   */
+  onReceiptConfirmed(draft: ConfirmedDocumentDraft): void {
+    if (this.isEditMode) return;
+    this.prefill = mapDraftToExpensePrefill(draft);
+    this.applyPrefill(this.prefill);
+    this.showReceiptCapture.set(false);
+  }
+
+  /** Total-only / cancelled — no extraction result is applied; return to the normal flow. */
+  closeReceiptCapture(): void {
+    this.showReceiptCapture.set(false);
+  }
+
+  /**
+   * Seed create-mode form fields from a confirmed document draft (DOC-3E). Patches ONLY the
+   * provided, non-empty non-finance-calculation fields — payer, split, refund, and
+   * settlement are never touched, so the user's explicit choices and submit still govern.
+   */
+  private applyPrefill(prefill: ExpenseDraftPrefill): void {
+    const patch: Partial<{
+      title: string;
+      amountTotal: number | null;
+      currency: string;
+      category: string;
+      expenseDate: string;
+    }> = {};
+    if (prefill.title != null && prefill.title !== '')
+      patch.title = prefill.title;
+    if (prefill.amountTotal != null) patch.amountTotal = prefill.amountTotal;
+    if (prefill.currency != null && prefill.currency !== '')
+      patch.currency = prefill.currency;
+    if (prefill.category != null && prefill.category !== '')
+      patch.category = prefill.category;
+    if (prefill.expenseDate != null && prefill.expenseDate !== '')
+      patch.expenseDate = prefill.expenseDate;
+    this.expenseForm.patchValue(patch);
+    // TAG-BATCH-A: retain the confirmed tags to attach on the explicit submit
+    // (create only). Never a form/finance field — carried alongside, not into,
+    // the expense values.
+    this.prefillTags = prefill.tags ?? [];
+    this.markChanged();
   }
 
   get isEditMode(): boolean {
@@ -813,6 +922,12 @@ export class CreateExpenseModalComponent implements OnChanges {
 
     if (!this.expense && changes['defaultCategory'] && this.defaultCategory) {
       this.expenseForm.patchValue({ category: this.defaultCategory });
+    }
+
+    // DOC-3E: additive create-mode pre-fill from a confirmed receipt draft. Seeds only
+    // non-finance-calculation fields; never payer/split/refund/settlement. Edit mode ignores it.
+    if (!this.expense && changes['prefill'] && this.prefill) {
+      this.applyPrefill(this.prefill);
     }
 
     if (changes['expense'] && this.expense) {
@@ -1477,6 +1592,12 @@ export class CreateExpenseModalComponent implements OnChanges {
             ...existingAttachments,
             ...encryptedAttachments,
           ],
+          // TAG-BATCH-A: attach confirmed DOC-5 tags on CREATE only. Never on
+          // edit (`this.expense` set) — an edit must not reclassify. Plaintext
+          // Zone-2 metadata: passes through encryptPayload() unencrypted.
+          ...(!this.expense && this.prefillTags.length
+            ? { tags: this.prefillTags }
+            : {}),
         };
 
         // ExpensesService.createExpense()/updateExpense() do their own,

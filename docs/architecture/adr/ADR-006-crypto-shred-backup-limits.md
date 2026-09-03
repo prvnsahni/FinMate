@@ -1,0 +1,23 @@
+# ADR-006 — Crypto-shredding and backup limitations
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** Deletion destroys the relevant key (crypto-shred) **and** revokes sessions + clears device caches + writes tombstones. Crypto-shred is **not** described as instantaneous while backups exist: wrapped keys persist in backups/PITR and may be cached on devices, so true erasure completes only after device-cache clear **and** backup rotation. Erasure SLA is parameterized (RET-1).
+- **Context:** Users expect deletion; regulators expect erasure; backups legitimately retain data for a window.
+- **Problem:** Claiming "instant permanent deletion" is false while recoverable backups/caches exist.
+- **Alternatives considered:** (a) Claim instant deletion (untrue); (b) surgically edit backups (fragile/expensive); (c) **key-destruction + rolling backup retention + tombstone replay**.
+- **Why selected:** (c) is honest and achievable: destroying keys renders data unreadable, and a documented retention window + tombstone replay guarantees erased data does not resurrect.
+- **Security impact:** Real revocation + defense-in-depth; no over-claim.
+- **Privacy impact:** Honest Art. 17 erasure model; SLA `[COUNSEL/ENGINEERING PARAMETER]`.
+- **Performance impact:** Negligible.
+- **Backward-compatibility impact:** Additive.
+- **Migration impact:** Requires tombstone mechanism + replay-after-restore.
+- **User impact:** Clear messaging that deletion completes within the retention window.
+- **Operational impact:** Backup retention policy + restore-replay must exist.
+- **Rollback/reversal:** n/a.
+- **Dependencies:** ADR-004 (destroyable keys), ADR-019 (deletion cascade).
+- **Related SRS:** KEY-006, DEL-002/003, RET-1.
+- **Related Ledger items:** K-4, DEL-2, RET-1.
+- **Related Threat Model:** T-23 (backup resurrection).
+- **Related architecture docs:** Key Management (#4); Security & Privacy Architecture (#3).
+- **Simple explanation:** Throwing away the key makes locked data unreadable. But old backups may still hold a copy for a while, so deletion truly finishes once those backups roll over — it isn't instant.
+- **Technical explanation:** Crypto-shred = destroy key + revoke sessions + clear caches + tombstone; erasure completes after backup/PITR rotation; tombstones replayed after any restore so erased data cannot resurrect.

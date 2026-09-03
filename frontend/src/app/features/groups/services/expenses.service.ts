@@ -28,6 +28,33 @@ export interface GroupAnalyticsQuery {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** Canonical tag ids — matches ANY (TAG-BATCH-B). */
+  tagIds?: string[];
+}
+
+/** TAG-BATCH-B — one canonical tag's spending total (parallel to CategoryAnalyticsPoint). */
+export interface TagAnalyticsPoint {
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
+/** TAG-BATCH-B2 — one (month, tag) spending point for the monthly tag trend. */
+export interface TagTrendPoint {
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
+/** TAG-BATCH-B — safe read-only canonical taxonomy row from GET /taxonomy. */
+export interface CanonicalTaxonomyTag {
+  id: string;
+  canonicalName: string;
+  normalizedKey: string;
+  parentId?: string;
+  status: 'active' | 'deprecated' | 'candidate' | 'reviewed';
+  version: number;
 }
 
 /** Minimal shape of a duplicate-check match — only what the warning dialog
@@ -157,6 +184,8 @@ export class ExpensesService {
       transactionType?: 'expense' | 'refund';
       minAmount?: number;
       maxAmount?: number;
+      /** Canonical tag ids — matches ANY (TAG-BATCH-B). */
+      tagIds?: string[];
       sortBy?: 'date' | 'amount';
       sortOrder?: 'asc' | 'desc';
     } = {},
@@ -183,6 +212,9 @@ export class ExpensesService {
     }
     if (options.paidByIds?.length) {
       params = params.set('paidByIds', options.paidByIds.join(','));
+    }
+    if (options.tagIds?.length) {
+      params = params.set('tagIds', options.tagIds.join(','));
     }
     if (options.transactionType) {
       params = params.set('transactionType', options.transactionType);
@@ -294,6 +326,9 @@ export class ExpensesService {
     if (query?.paidByIds?.length) {
       params = params.set('paidByIds', query.paidByIds.join(','));
     }
+    if (query?.tagIds?.length) {
+      params = params.set('tagIds', query.tagIds.join(','));
+    }
     if (query?.transactionType) {
       params = params.set('transactionType', query.transactionType);
     }
@@ -331,6 +366,46 @@ export class ExpensesService {
       .get<
         CategoryAnalyticsPoint[]
       >(`${this.baseUrl}/expenses/analytics/categories`, { params: this.buildAnalyticsParams(groupId, query) })
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  }
+
+  /**
+   * TAG-BATCH-B — fetch canonical tag spending distribution, honoring the unified
+   * group filter. Read-only reporting; never mutates finance.
+   */
+  getTagAnalytics(
+    groupId?: string,
+    query?: GroupAnalyticsQuery,
+  ): Observable<TagAnalyticsPoint[]> {
+    return this.http
+      .get<
+        TagAnalyticsPoint[]
+      >(`${this.baseUrl}/expenses/analytics/tags`, { params: this.buildAnalyticsParams(groupId, query) })
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  }
+
+  /**
+   * TAG-BATCH-B2 — monthly canonical tag spending trend, honoring the unified
+   * group filter. Read-only reporting; never mutates finance.
+   */
+  getTagTrend(
+    groupId?: string,
+    query?: GroupAnalyticsQuery,
+  ): Observable<TagTrendPoint[]> {
+    return this.http
+      .get<
+        TagTrendPoint[]
+      >(`${this.baseUrl}/expenses/analytics/tags-trend`, { params: this.buildAnalyticsParams(groupId, query) })
+      .pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  }
+
+  /**
+   * TAG-BATCH-B — fetch the read-only shared canonical taxonomy (active tags only)
+   * for the tag filter facet. Safe reference metadata; contains no user/E2EE data.
+   */
+  getTaxonomy(): Observable<CanonicalTaxonomyTag[]> {
+    return this.http
+      .get<CanonicalTaxonomyTag[]>(`${this.baseUrl}/taxonomy`)
       .pipe(shareReplay({ bufferSize: 1, refCount: true }));
   }
 

@@ -19,6 +19,26 @@
           {
             "glob": "**/*",
             "input": "frontend/public"
+          },
+          {
+            "glob": "worker.min.js",
+            "input": "node_modules/tesseract.js/dist",
+            "output": "assets/tesseract"
+          },
+          {
+            "glob": "*.wasm",
+            "input": "node_modules/tesseract.js-core",
+            "output": "assets/tesseract"
+          },
+          {
+            "glob": "*.wasm.js",
+            "input": "node_modules/tesseract.js-core",
+            "output": "assets/tesseract"
+          },
+          {
+            "glob": "eng.traineddata",
+            "input": "backend/src/assets/tessdata",
+            "output": "assets/tessdata"
           }
         ],
         "styles": ["frontend/src/styles.scss"]

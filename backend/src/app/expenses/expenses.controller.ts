@@ -27,6 +27,7 @@ import {
   ExpensesCrudService,
 } from './services';
 import { SuccessResponse } from '../common/response.util';
+import { RecoveryStatusService } from '../recovery/recovery-status.service';
 
 /** Normalize a raw `transactionType` query value; `both`/anything else → undefined (no filter). */
 function normalizeTxType(value?: string): 'expense' | 'refund' | undefined {
@@ -62,6 +63,7 @@ export class ExpensesController {
     private readonly expensesCrudService: ExpensesCrudService,
     private readonly expensesAnalyticsService: ExpensesAnalyticsService,
     private readonly expenseExportQueryService: ExpenseExportQueryService,
+    private readonly recovery: RecoveryStatusService,
   ) {}
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
@@ -71,6 +73,12 @@ export class ExpensesController {
     @Body() dto: CreateExpenseDto,
     @Req() req: Request & { user: { id: string } },
   ) {
+    // REC-1: a direct_shared expense writes per-entry wrapped content keys
+    // (Class-A key material). Require recovery only in that case — personal and
+    // group expenses establish no new recoverable key material and are unaffected.
+    if (dto.wrappedContentKeys && dto.wrappedContentKeys.length > 0) {
+      await this.recovery.assertConfigured(req.user.id);
+    }
     const result = await this.expensesCrudService.createExpense(
       req.user.id,
       dto,
@@ -93,6 +101,7 @@ export class ExpensesController {
     @Query('transactionType') transactionType?: string,
     @Query('minAmount') minAmount?: string,
     @Query('maxAmount') maxAmount?: string,
+    @Query('tagIds') tagIds?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
     @Req() req?: Request & { user: { id: string } },
@@ -116,6 +125,7 @@ export class ExpensesController {
       transactionType: normalizeTxType(transactionType),
       minAmount: numParam(minAmount),
       maxAmount: numParam(maxAmount),
+      tagIds: csvParam(tagIds),
       sortBy:
         sortBy === 'amount' ? 'amount' : sortBy === 'date' ? 'date' : undefined,
       sortOrder: normalizeSortOrder(sortOrder),
@@ -244,6 +254,7 @@ export class ExpensesController {
     @Query('transactionType') transactionType: string | undefined,
     @Query('minAmount') minAmount: string | undefined,
     @Query('maxAmount') maxAmount: string | undefined,
+    @Query('tagIds') tagIds: string | undefined,
     @Req() req: Request & { user: { id: string } },
   ) {
     const result = await this.expensesAnalyticsService.getCategoryDistribution({
@@ -257,9 +268,85 @@ export class ExpensesController {
       transactionType: normalizeTxType(transactionType),
       minAmount: numParam(minAmount),
       maxAmount: numParam(maxAmount),
+      tagIds: csvParam(tagIds),
     });
     return new SuccessResponse(
       'Category distribution analytics retrieved successfully',
+      result,
+    );
+  }
+
+  /**
+   * TAG-BATCH-B — canonical tag spending distribution, optionally date/dimension
+   * filtered (a date range yields the "monthly tag spending" report). READ-ONLY:
+   * aggregates existing expense amounts and never modifies any finance value.
+   */
+  @Get('analytics/tags')
+  async tagDistribution(
+    @Query('groupId') groupId: string | undefined,
+    @Query('startDate') startDate: string | undefined,
+    @Query('endDate') endDate: string | undefined,
+    @Query('categories') categories: string | undefined,
+    @Query('memberIds') memberIds: string | undefined,
+    @Query('paidByIds') paidByIds: string | undefined,
+    @Query('transactionType') transactionType: string | undefined,
+    @Query('minAmount') minAmount: string | undefined,
+    @Query('maxAmount') maxAmount: string | undefined,
+    @Query('tagIds') tagIds: string | undefined,
+    @Req() req: Request & { user: { id: string } },
+  ) {
+    const result = await this.expensesAnalyticsService.getTagDistribution({
+      userId: req.user.id,
+      groupId,
+      startDate,
+      endDate,
+      categories: csvParam(categories),
+      memberIds: csvParam(memberIds),
+      paidByIds: csvParam(paidByIds),
+      transactionType: normalizeTxType(transactionType),
+      minAmount: numParam(minAmount),
+      maxAmount: numParam(maxAmount),
+      tagIds: csvParam(tagIds),
+    });
+    return new SuccessResponse(
+      'Tag distribution analytics retrieved successfully',
+      result,
+    );
+  }
+
+  /**
+   * TAG-BATCH-B2 — monthly canonical tag spending trend for the requested date
+   * range + scope + filters. READ-ONLY; one query grouped by month in the service.
+   */
+  @Get('analytics/tags-trend')
+  async tagTrend(
+    @Query('groupId') groupId: string | undefined,
+    @Query('startDate') startDate: string | undefined,
+    @Query('endDate') endDate: string | undefined,
+    @Query('categories') categories: string | undefined,
+    @Query('memberIds') memberIds: string | undefined,
+    @Query('paidByIds') paidByIds: string | undefined,
+    @Query('transactionType') transactionType: string | undefined,
+    @Query('minAmount') minAmount: string | undefined,
+    @Query('maxAmount') maxAmount: string | undefined,
+    @Query('tagIds') tagIds: string | undefined,
+    @Req() req: Request & { user: { id: string } },
+  ) {
+    const result = await this.expensesAnalyticsService.getTagTrend({
+      userId: req.user.id,
+      groupId,
+      startDate,
+      endDate,
+      categories: csvParam(categories),
+      memberIds: csvParam(memberIds),
+      paidByIds: csvParam(paidByIds),
+      transactionType: normalizeTxType(transactionType),
+      minAmount: numParam(minAmount),
+      maxAmount: numParam(maxAmount),
+      tagIds: csvParam(tagIds),
+    });
+    return new SuccessResponse(
+      'Tag trend analytics retrieved successfully',
       result,
     );
   }

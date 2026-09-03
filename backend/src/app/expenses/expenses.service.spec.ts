@@ -10,11 +10,13 @@ import {
   Attachment,
   AttachmentVersion,
   AuditLog,
+  CustomTag,
   EncryptedExpenseKey,
   Expense,
   ExpenseSplit,
   ExpensePayment,
   ExpenseSplitVersion,
+  ExpenseTag,
   ExpenseVersion,
   Group,
   GroupKeyVersion,
@@ -46,6 +48,12 @@ describe('ExpensesService', () => {
   let attachmentVersionRepository: jest.Mocked<Repository<AttachmentVersion>>;
   let receiptVersionRepository: jest.Mocked<Repository<ReceiptVersion>>;
   let entityManagerMock: { create: jest.Mock; save: jest.Mock };
+  let expenseTagRepositoryMock: {
+    create: jest.Mock;
+    save: jest.Mock;
+    find: jest.Mock;
+  };
+  let customTagRepositoryMock: { find: jest.Mock; findOne: jest.Mock };
 
   // Freeze the clock so the month-lock edit window (ExpenseEditPolicyService)
   // is deterministic. The fixtures below use fixed dates written against a
@@ -166,6 +174,18 @@ describe('ExpensesService', () => {
       create: jest.fn((data) => data),
     };
 
+    const mockExpenseTagRepository = {
+      save: jest.fn(async (data) => data),
+      create: jest.fn((data) => data),
+      find: jest.fn().mockResolvedValue([]),
+    };
+
+    // TAG-BATCH-C3 — custom-tag definition repo (assignment/filter authorization).
+    const mockCustomTagRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
     const mockExpensePaymentRepository = {
       softDelete: jest.fn(async () => ({ affected: 0 })),
       create: jest.fn((data) => data),
@@ -179,6 +199,8 @@ describe('ExpensesService', () => {
         if (entity === Expense) return mockExpenseRepository;
         if (entity === ExpenseSplit) return mockSplitRepository;
         if (entity === ExpensePayment) return mockExpensePaymentRepository;
+        if (entity === ExpenseTag) return mockExpenseTagRepository;
+        if (entity === CustomTag) return mockCustomTagRepository;
         if (entity === Group) return mockGroupRepository;
         if (entity === GroupMember) return mockGroupMemberRepository;
         if (entity === User) return mockUserRepository;
@@ -225,6 +247,14 @@ describe('ExpensesService', () => {
         {
           provide: getRepositoryToken(ExpenseSplit),
           useValue: mockSplitRepository,
+        },
+        {
+          provide: getRepositoryToken(ExpenseTag),
+          useValue: mockExpenseTagRepository,
+        },
+        {
+          provide: getRepositoryToken(CustomTag),
+          useValue: mockCustomTagRepository,
         },
         {
           provide: getRepositoryToken(ExpensePayment),
@@ -288,6 +318,8 @@ describe('ExpensesService', () => {
     );
     receiptVersionRepository = module.get(getRepositoryToken(ReceiptVersion));
     entityManagerMock = mockEntityManager;
+    expenseTagRepositoryMock = mockExpenseTagRepository;
+    customTagRepositoryMock = mockCustomTagRepository;
   });
 
   it('should be defined', () => {
@@ -2316,6 +2348,50 @@ describe('ExpensesService', () => {
       expect((result.data[0] as any).groupId).toBeNull();
     });
 
+    it('attaches advisory tags to dashboard items in one query (B2, no N+1)', async () => {
+      const personalExp = {
+        id: 'p-1',
+        title: 'enc:Groceries',
+        amountTotal: 200,
+        category: 'Food & Drinks',
+        expenseDate: '2026-07-01',
+        currency: 'USD',
+        status: 'posted',
+        encryptionScope: 'personal',
+        group: null,
+        paidByUser: { id: 'user-1' },
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(makeQb([personalExp]));
+      splitRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(makeQb([]));
+      expenseTagRepositoryMock.find.mockResolvedValue([
+        {
+          expense: { id: 'p-1' },
+          tagId: 'milk',
+          authority: 'USER_CONFIRMED',
+          source: 'user',
+        },
+        {
+          expense: { id: 'p-1' },
+          tagId: 'grocery',
+          authority: 'INFERRED',
+          source: 'rule_based',
+        },
+      ]);
+
+      const result = await service.listMyExpenses('user-1', 1, 20);
+
+      expect((result.data[0] as any).tags).toEqual([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+      // A single bulk tag query for the whole page — never one per row.
+      expect(expenseTagRepositoryMock.find).toHaveBeenCalledTimes(1);
+    });
+
     it('returns group shares with expenseType GROUP_SHARE and myShare = amountOwed', async () => {
       expenseRepository.createQueryBuilder = jest
         .fn()
@@ -2693,6 +2769,811 @@ describe('ExpensesService', () => {
       expect(result).toEqual([
         { category: 'Utilities', amount: 600, currency: 'INR' },
       ]);
+    });
+  });
+
+  // ── TAG-BATCH-A — confirmed expense tag persistence ──────────────────────────
+  describe('confirmed expense tag persistence (TAG-BATCH-A)', () => {
+    const groupMember = {
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+      user: { id: 'caller-id' },
+    } as any;
+
+    const baseGroupDto = {
+      title: 'cipher:title',
+      amountTotal: 100,
+      currency: 'USD',
+      category: 'Food',
+      paidByUserId: 'caller-id',
+      groupId: 'group-id',
+      expenseDate: '2026-07-10',
+      groupKeyVersionId: 'v1-id',
+      splits: [
+        { participantUserId: 'caller-id', splitType: 'equal', shareValue: 1 },
+      ],
+    };
+
+    /** Prime the proven group create happy-path (mirrors the G-ROT create test). */
+    const primeHappyPath = () => {
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(groupMember);
+      groupMemberRepository.find.mockResolvedValue([groupMember]);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'USD',
+        isArchived: false,
+      } as any);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'v1-id',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+      expenseRepository.save.mockImplementation(async (data: any) => ({
+        ...data,
+        id: 'exp-1',
+      }));
+      expenseRepository.findOne.mockResolvedValue({
+        id: 'exp-1',
+        title: 'cipher:title',
+        amountTotal: 100,
+        currency: 'USD',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByGroupMember: { id: 'membership-id', user: { id: 'caller-id' } },
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'v1-id', version: 1 },
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+    };
+
+    it('persists NO tag when the payload has none (total-only / manual create)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', { ...baseGroupDto } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('includes persisted tags (id + provenance) in the mapped response (B1)', async () => {
+      primeHappyPath();
+      // The read path (mapExpenseResponse) resolves tags via the injected repo.
+      expenseTagRepositoryMock.find.mockResolvedValue([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+
+      const res = await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' }],
+      } as any);
+
+      // Ids + provenance only — no confidence, no finance, no E2EE plaintext.
+      expect(res['tags']).toEqual([
+        { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+        { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+      ]);
+    });
+
+    it('persists confirmed tags with materialized ancestors and provenance', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          {
+            tagId: 'milk',
+            authority: 'USER_CONFIRMED',
+            source: 'user',
+            confidence: 0.9,
+          },
+        ],
+      } as any);
+
+      expect(expenseTagRepositoryMock.save).toHaveBeenCalledTimes(1);
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      const byId = new Map(savedRows.map((r) => [r.tagId, r]));
+      // milk → dairy → grocery → food all persisted (queryable at every level).
+      expect([...byId.keys()].sort()).toEqual([
+        'dairy',
+        'food',
+        'grocery',
+        'milk',
+      ]);
+      expect(byId.get('milk')).toMatchObject({
+        authority: 'USER_CONFIRMED',
+        source: 'user',
+        confidence: 0.9,
+        taxonomyVersion: 1,
+        createdByUser: { id: 'caller-id' },
+        expense: expect.objectContaining({ id: 'exp-1' }),
+      });
+      // Derived ancestors are INFERRED/rule_based.
+      expect(byId.get('food')).toMatchObject({
+        authority: 'INFERRED',
+        source: 'rule_based',
+      });
+    });
+
+    it('keeps USER_CONFIRMED over a later inferred ancestor (no silent downgrade)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'grocery', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'milk', authority: 'INFERRED', source: 'rule_based' },
+        ],
+      } as any);
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      const grocery = savedRows.find((r) => r.tagId === 'grocery');
+      expect(grocery.authority).toBe('USER_CONFIRMED');
+    });
+
+    it('drops deprecated/unknown tags and persists nothing when none are valid', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'misc', authority: 'USER_CONFIRMED' },
+          { tagId: 'does-not-exist', authority: 'INFERRED' },
+        ],
+      } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('never lets tags alter the expense financial fields', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'INFERRED' }],
+      } as any);
+      const createdExpense = (expenseRepository.create as jest.Mock).mock
+        .calls[0][0];
+      expect(createdExpense).toEqual(
+        expect.objectContaining({ amountTotal: 100, currency: 'USD' }),
+      );
+      expect(createdExpense).not.toHaveProperty('tags');
+      expect(createdExpense).not.toHaveProperty('tagId');
+    });
+
+    it('attaches tags only to the caller-owned expense (no cross-user assignment)', async () => {
+      primeHappyPath();
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'milk', authority: 'INFERRED' }],
+      } as any);
+      const createdExpense = (expenseRepository.create as jest.Mock).mock
+        .calls[0][0];
+      expect(createdExpense.ownerUser).toEqual({ id: 'caller-id' });
+      const savedRows = expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+      expect(savedRows.every((r) => r.createdByUser?.id === 'caller-id')).toBe(
+        true,
+      );
+      expect(savedRows.every((r) => r.expense?.id === 'exp-1')).toBe(true);
+    });
+
+    it('does not create tag assignments on an ordinary edit', async () => {
+      const expense = {
+        id: 'exp-1',
+        version: 1,
+        title: 'cipher:old',
+        description: null,
+        amountTotal: 100,
+        currency: 'USD',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByUser: { id: 'caller-id' },
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'v1-id', version: 1 },
+      } as any;
+      expenseRepository.findOne.mockResolvedValue(expense);
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(groupMember);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'USD',
+        isArchived: false,
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'v1-id',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+
+      await service.updateExpense('caller-id', 'exp-1', {
+        version: 1,
+        title: 'cipher:new',
+      } as any);
+
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── TAG-BATCH-C3 — custom-tag integration (assignment, filter, response) ─────
+  describe('custom-tag integration (TAG-BATCH-C3)', () => {
+    const groupMember = {
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+      user: { id: 'caller-id' },
+    } as any;
+
+    const baseGroupDto = {
+      title: 'cipher:title',
+      amountTotal: 100,
+      currency: 'USD',
+      category: 'Food',
+      paidByUserId: 'caller-id',
+      groupId: 'group-id',
+      expenseDate: '2026-07-10',
+      groupKeyVersionId: 'v1-id',
+      splits: [
+        { participantUserId: 'caller-id', splitType: 'equal', shareValue: 1 },
+      ],
+    };
+
+    const primeGroup = () => {
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(groupMember);
+      groupMemberRepository.find.mockResolvedValue([groupMember]);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'USD',
+        isArchived: false,
+      } as any);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'v1-id',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+      expenseRepository.save.mockImplementation(async (data: any) => ({
+        ...data,
+        id: 'exp-1',
+      }));
+      expenseRepository.findOne.mockResolvedValue({
+        id: 'exp-1',
+        title: 'cipher:title',
+        amountTotal: 100,
+        currency: 'USD',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByGroupMember: { id: 'membership-id', user: { id: 'caller-id' } },
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'v1-id', version: 1 },
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+    };
+
+    const savedTagRows = () =>
+      expenseTagRepositoryMock.save.mock.calls[0][0] as any[];
+
+    const makeQb = (rows: any[]) => ({
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(rows),
+    });
+
+    // ── ASSIGNMENT ──────────────────────────────────────────────────────────
+
+    it('assigns a GROUP custom tag on its own group expense (scope=group, taxonomyVersion 0)', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-g1',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'group-id' },
+          ownerUser: null,
+        },
+      ]);
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'ct-g1', authority: 'USER_CONFIRMED', source: 'user' }],
+      } as any);
+      const row = savedTagRows().find((r) => r.tagId === 'ct-g1');
+      expect(row).toMatchObject({
+        tagId: 'ct-g1',
+        tagScope: 'group',
+        authority: 'USER_CONFIRMED',
+        source: 'user',
+        taxonomyVersion: 0,
+        createdByUser: { id: 'caller-id' },
+      });
+    });
+
+    it('assigns a MIX of canonical + group custom tags in one create', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-g1',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'group-id' },
+          ownerUser: null,
+        },
+      ]);
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'ct-g1', authority: 'USER_CONFIRMED', source: 'user' },
+        ],
+      } as any);
+      const ids = savedTagRows().map((r) => r.tagId);
+      // canonical milk family + the custom tag, all in the one unified table.
+      expect(ids).toEqual(expect.arrayContaining(['milk', 'grocery', 'ct-g1']));
+      const custom = savedTagRows().find((r) => r.tagId === 'ct-g1');
+      expect(custom.tagScope).toBe('group');
+      const canonical = savedTagRows().find((r) => r.tagId === 'milk');
+      expect(canonical.tagScope).toBe('global');
+    });
+
+    it('drops a GROUP custom tag that belongs to ANOTHER group (no cross-group assignment)', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-other',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'other-group' },
+          ownerUser: null,
+        },
+      ]);
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'ct-other', authority: 'USER_CONFIRMED', source: 'user' },
+        ],
+      } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('drops a PERSONAL custom tag on a GROUP expense (cross-scope rejected)', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-p1',
+          scopeType: 'personal',
+          status: 'active',
+          ownerUser: { id: 'caller-id' },
+          group: null,
+        },
+      ]);
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'ct-p1', authority: 'USER_CONFIRMED', source: 'user' }],
+      } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('drops an unknown/deprecated custom id (find returns nothing → not assigned)', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([]); // status='active' filter yields none
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [
+          { tagId: 'ct-gone', authority: 'USER_CONFIRMED', source: 'user' },
+        ],
+      } as any);
+      expect(expenseTagRepositoryMock.save).not.toHaveBeenCalled();
+    });
+
+    it('never lets a custom tag alter the expense financial fields', async () => {
+      primeGroup();
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-g1',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'group-id' },
+          ownerUser: null,
+        },
+      ]);
+      await service.createExpense('caller-id', {
+        ...baseGroupDto,
+        tags: [{ tagId: 'ct-g1', authority: 'USER_CONFIRMED', source: 'user' }],
+      } as any);
+      const createdExpense = (expenseRepository.create as jest.Mock).mock
+        .calls[0][0];
+      expect(createdExpense).toEqual(
+        expect.objectContaining({ amountTotal: 100, currency: 'USD' }),
+      );
+      expect(createdExpense).not.toHaveProperty('tagId');
+      expect(createdExpense).not.toHaveProperty('tagScope');
+    });
+
+    // ── ASSIGNMENT AUTHORIZATION (resolveAssignableCustomTags, direct) ────────
+
+    const fakeManager = {
+      getRepository: () => customTagRepositoryMock,
+    } as any;
+    const assign = (inputs: any[], creatorId: string, groupId?: string) =>
+      (service as any).resolveAssignableCustomTags(
+        fakeManager,
+        inputs,
+        creatorId,
+        groupId,
+      ) as Promise<any[]>;
+
+    it('assigns a PERSONAL custom tag on a personal expense when owned by the creator', async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-p1',
+          scopeType: 'personal',
+          status: 'active',
+          ownerUser: { id: 'A' },
+          group: null,
+        },
+      ]);
+      const out = await assign(
+        [{ tagId: 'ct-p1', authority: 'USER_CONFIRMED', source: 'user' }],
+        'A',
+        undefined,
+      );
+      expect(out).toEqual([
+        {
+          tagId: 'ct-p1',
+          tagScope: 'personal',
+          authority: 'USER_CONFIRMED',
+          source: 'user',
+          confidence: null,
+        },
+      ]);
+    });
+
+    it('DROPS a personal custom tag owned by ANOTHER user (no silent cross-user assign)', async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-p1',
+          scopeType: 'personal',
+          status: 'active',
+          ownerUser: { id: 'B' },
+          group: null,
+        },
+      ]);
+      const out = await assign(
+        [{ tagId: 'ct-p1', authority: 'USER_CONFIRMED', source: 'user' }],
+        'A',
+        undefined,
+      );
+      expect(out).toEqual([]);
+    });
+
+    // ── RESPONSE ────────────────────────────────────────────────────────────
+
+    it('returns tagScope with each tag and NEVER a plaintext custom-tag name', async () => {
+      // Read path only: prime a personal-ledger read with a mixed tag set.
+      const personalExp = {
+        id: 'p-1',
+        title: 'cipher:title',
+        amountTotal: 10,
+        currency: 'INR',
+        category: 'Food',
+        expenseDate: '2026-07-10',
+        status: 'posted',
+        encryptionScope: 'personal',
+        group: null,
+        paidByUser: { id: 'user-1' },
+        ownerUser: { id: 'user-1' },
+      } as any;
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(makeQb([personalExp]));
+      splitRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(makeQb([]));
+      expenseTagRepositoryMock.find.mockResolvedValue([
+        {
+          expense: { id: 'p-1' },
+          tagId: 'grocery',
+          tagScope: 'global',
+          authority: 'INFERRED',
+          source: 'rule_based',
+        },
+        {
+          expense: { id: 'p-1' },
+          tagId: 'ct-p1',
+          tagScope: 'personal',
+          authority: 'USER_CONFIRMED',
+          source: 'user',
+        },
+      ]);
+
+      const result = await service.listMyExpenses('user-1', 1, 20);
+      const tags = (result.data[0] as any).tags;
+      expect(tags).toEqual([
+        {
+          tagId: 'grocery',
+          tagScope: 'global',
+          authority: 'INFERRED',
+          source: 'rule_based',
+        },
+        {
+          tagId: 'ct-p1',
+          tagScope: 'personal',
+          authority: 'USER_CONFIRMED',
+          source: 'user',
+        },
+      ]);
+      // No `encryptedName`, `name`, or any plaintext label leaks into the response.
+      const serialized = JSON.stringify(tags);
+      expect(serialized).not.toContain('encryptedName');
+      expect(serialized).not.toContain('name');
+    });
+
+    // ── FILTER AUTHORIZATION / IDOR (resolveAccessibleCustomTagIds) ───────────
+
+    const resolve = (userId: string, ids?: string[], groupId?: string) =>
+      (service as any).resolveAccessibleCustomTagIds(
+        userId,
+        ids,
+        groupId,
+      ) as Promise<string[]>;
+
+    it('authorizes filtering by the caller OWN personal custom tag', async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-p1',
+          scopeType: 'personal',
+          status: 'active',
+          ownerUser: { id: 'A' },
+          group: null,
+        },
+      ]);
+      await expect(resolve('A', ['ct-p1'])).resolves.toEqual(['ct-p1']);
+    });
+
+    it("DROPS filtering by ANOTHER user's personal custom tag (IDOR)", async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-p1',
+          scopeType: 'personal',
+          status: 'active',
+          ownerUser: { id: 'B' },
+          group: null,
+        },
+      ]);
+      await expect(resolve('A', ['ct-p1'])).resolves.toEqual([]);
+    });
+
+    it('authorizes a GROUP custom tag only when the caller is an active member', async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-g1',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'G' },
+          ownerUser: null,
+        },
+      ]);
+      groupMemberRepository.find.mockResolvedValue([
+        { group: { id: 'G' } },
+      ] as any);
+      await expect(resolve('A', ['ct-g1'])).resolves.toEqual(['ct-g1']);
+    });
+
+    it('DROPS a GROUP custom tag when the caller is NOT a member (IDOR / cross-group)', async () => {
+      customTagRepositoryMock.find.mockResolvedValue([
+        {
+          id: 'ct-g1',
+          scopeType: 'group',
+          status: 'active',
+          group: { id: 'G' },
+          ownerUser: null,
+        },
+      ]);
+      groupMemberRepository.find.mockResolvedValue([] as any);
+      await expect(resolve('A', ['ct-g1'])).resolves.toEqual([]);
+    });
+
+    it('ignores canonical ids (they take the canonical filter path, no custom lookup)', async () => {
+      await expect(resolve('A', ['milk', 'grocery'])).resolves.toEqual([]);
+      expect(customTagRepositoryMock.find).not.toHaveBeenCalled();
+    });
+
+    it('returns [] for an empty/absent tag selection', async () => {
+      await expect(resolve('A', undefined)).resolves.toEqual([]);
+      await expect(resolve('A', [])).resolves.toEqual([]);
+    });
+
+    // ── ANALYTICS (opaque custom ids flow through; names never decrypted) ─────
+
+    it('surfaces custom tag ids in the tag distribution WITHOUT any name', async () => {
+      const rows = [
+        {
+          tagId: 'grocery',
+          amountTotal: '50',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'ct-p1',
+          amountTotal: '30',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+      ];
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(qb as any);
+
+      const result = await service.getTagDistribution({ userId: 'user-1' });
+      // The opaque custom id appears with its amount; no name is ever produced.
+      expect(result).toContainEqual({
+        tagId: 'ct-p1',
+        total: 30,
+        currency: 'INR',
+      });
+      expect(JSON.stringify(result)).not.toContain('encryptedName');
+    });
+  });
+
+  // ── TAG-BATCH-B — tag spending distribution (read-only analytics) ────────────
+  describe('getTagDistribution (TAG-BATCH-B)', () => {
+    it('aggregates refund-signed amounts by tag and never writes finance', async () => {
+      const rows = [
+        {
+          tagId: 'milk',
+          amountTotal: '50',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'grocery',
+          amountTotal: '50',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'grocery',
+          amountTotal: '30',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'grocery',
+          amountTotal: '20',
+          transactionType: 'refund',
+          currency: 'INR',
+        },
+      ];
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(qb as any);
+
+      const result = await service.getTagDistribution({ userId: 'user-1' });
+
+      // grocery: 50 + 30 − 20 (refund) = 60; milk: 50. Sorted total desc.
+      expect(result).toEqual([
+        { tagId: 'grocery', total: 60, currency: 'INR' },
+        { tagId: 'milk', total: 50, currency: 'INR' },
+      ]);
+      // READ-ONLY: no finance write ever happens.
+      expect(expenseRepository.save).not.toHaveBeenCalled();
+      expect(splitRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── TAG-BATCH-B2 — monthly tag trend (read-only, one query, JS month grouping) ─
+  describe('getTagTrend (TAG-BATCH-B2)', () => {
+    it('groups refund-signed amounts by (month, tag) from a single query', async () => {
+      const rows = [
+        {
+          tagId: 'grocery',
+          expenseDate: '2026-07-05',
+          amountTotal: '7200',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'grocery',
+          expenseDate: '2026-08-10',
+          amountTotal: '8420',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'grocery',
+          expenseDate: '2026-08-15',
+          amountTotal: '20',
+          transactionType: 'refund',
+          currency: 'INR',
+        },
+        {
+          tagId: 'food',
+          expenseDate: '2026-08-01',
+          amountTotal: '9870',
+          transactionType: 'expense',
+          currency: 'INR',
+        },
+        {
+          tagId: 'food',
+          expenseDate: '2026-08-02',
+          amountTotal: '50',
+          transactionType: 'expense',
+          currency: 'USD',
+        },
+      ];
+      const getRawMany = jest.fn().mockResolvedValue(rows);
+      const qb = {
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getRawMany,
+      };
+      expenseRepository.createQueryBuilder = jest
+        .fn()
+        .mockReturnValue(qb as any);
+
+      const result = await service.getTagTrend({ userId: 'user-1' });
+
+      // ONE query for the whole range (never one per month).
+      expect(getRawMany).toHaveBeenCalledTimes(1);
+      // Month keys are YYYY-MM; Aug grocery = 8420 − 20 refund = 8400.
+      expect(result).toContainEqual({
+        month: '2026-07',
+        tagId: 'grocery',
+        total: 7200,
+        currency: 'INR',
+      });
+      expect(result).toContainEqual({
+        month: '2026-08',
+        tagId: 'grocery',
+        total: 8400,
+        currency: 'INR',
+      });
+      expect(result).toContainEqual({
+        month: '2026-08',
+        tagId: 'food',
+        total: 9870,
+        currency: 'INR',
+      });
+      // Distinct currency is preserved (not merged into INR).
+      expect(result).toContainEqual({
+        month: '2026-08',
+        tagId: 'food',
+        total: 50,
+        currency: 'USD',
+      });
+      // Sorted by month ascending.
+      expect(result[0].month <= result[result.length - 1].month).toBe(true);
+      // READ-ONLY.
+      expect(expenseRepository.save).not.toHaveBeenCalled();
     });
   });
 });

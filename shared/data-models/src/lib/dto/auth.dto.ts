@@ -39,9 +39,14 @@ export class LoginDto {
 }
 
 export class RefreshTokenDto {
+  // Optional so the cookie transport (BATCH-06) can carry the refresh token in a
+  // host-only HttpOnly cookie instead of the body. Presence is enforced in the
+  // controller: the legacy path still requires a body token (400 otherwise), and
+  // the cookie path reads it from the cookie. Backward-compatible loosening —
+  // existing clients keep sending it in the body.
   @IsString()
-  @IsNotEmpty({ message: 'Refresh token is required' })
-  refreshToken!: string;
+  @IsOptional()
+  refreshToken?: string;
 }
 
 export class Verify2FaDto {

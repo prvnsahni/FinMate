@@ -21,6 +21,11 @@ import { DashboardAnalyticsComponent } from '../../components/dashboard-analytic
 import { DashboardGoalsComponent } from '../../components/dashboard-goals/dashboard-goals.component';
 import { DashboardSettingsComponent } from '../../components/dashboard-settings/dashboard-settings.component';
 import { DashboardProfileComponent } from '../../components/dashboard-profile/dashboard-profile.component';
+import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
+import {
+  CustomTagService,
+  CustomTagNameEntry,
+} from '../../../../core/services/custom-tag.service';
 import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
 
 @Component({
@@ -36,6 +41,7 @@ import { CATEGORY_OPTIONS } from '../../../../core/constants/app.constants';
     DashboardGoalsComponent,
     DashboardSettingsComponent,
     DashboardProfileComponent,
+    CustomTagManagementComponent,
   ],
   templateUrl: './dashboard.component.html',
 })
@@ -67,6 +73,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private aiService = inject(AiService);
   private router = inject(Router);
+  private customTagService = inject(CustomTagService);
 
   get activeTab(): string {
     return this.expensesUiStore.activeTab();
@@ -91,9 +98,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
   personalExpenses: GroupExpense[] = [];
   myExpenses: any[] = []; // personal + group shares
   totalMyExpenses = 0;
+  /**
+   * TAG-BATCH-B2 — active canonical tag id → display name, loaded once from the
+   * shared /taxonomy endpoint (same cached mechanism as the group ledger). Passed
+   * to dashboard-home so tag chips resolve names without any per-row lookup.
+   */
+  tagNameMap = new Map<string, string>();
+  // TAG-C6-DISPLAY — canonical names + the personal custom-tag map, merged into
+  // `tagNameMap` (active names for row chips) and exposed as `customTagNames`
+  // (full, incl. deprecated) for the analytics charts. One personal decrypt pass.
+  private canonicalTagNames = new Map<string, string>();
+  customTagNames = new Map<string, CustomTagNameEntry>();
   /** 1-based page of the unified /expenses/me list currently loaded. */
   expensesPage = 1;
   private readonly expensesPageSize = 50;
+  /**
+   * Monotonic id for /expenses/me fetches (refresh + load-more share it). A
+   * response is applied only when it is still the latest request, so a late/
+   * out-of-order reply can never overwrite fresher data or append onto a list
+   * that was just reloaded — the request-sequence equivalent of switchMap.
+   */
+  private myExpensesSeq = 0;
   /** True while infinite scroll is appending a subsequent page. */
   isLoadingMoreExpenses = false;
   expenseViewFilter: 'all' | 'personal' | 'group_share' = 'all';
@@ -154,6 +179,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.aiOptIn = localStorage.getItem('finmate_ai_opt_in') === 'true';
     this.fetchStaticData();
     this.refreshExpenseData();
+    this.loadTaxonomy();
 
     const sub = this.expensesUiStore.expenseCreated$.subscribe(() => {
       this.refreshExpenseData();
@@ -170,16 +196,70 @@ export class DashboardComponent implements OnInit, OnDestroy {
    * Call after any expense create / edit / delete so that stats stay current
    * without reloading profile, groups, or invitations (which did not change).
    */
+  /**
+   * Load the read-only shared canonical taxonomy once for dashboard tag chips.
+   * Best-effort: a failure leaves the map empty (chips simply don't render). No
+   * user/E2EE data — static reference metadata, active tags only.
+   */
+  private loadTaxonomy(): void {
+    const sub = this.expensesService.getTaxonomy().subscribe({
+      next: (tags) => {
+        const map = new Map<string, string>();
+        for (const t of tags) map.set(t.id, t.canonicalName);
+        this.canonicalTagNames = map;
+        this.rebuildTagNameMap();
+      },
+      error: () => {
+        // Leave the map empty on failure — never block the dashboard.
+      },
+    });
+    this.destroy$.add(sub);
+
+    // TAG-C6-DISPLAY (F3) — resolve the caller's PERSONAL custom-tag names ONCE
+    // (master key, client-side, cached) via the single reusable path, so personal
+    // custom tags label on dashboard rows + analytics instead of showing UUIDs.
+    // Best-effort: a failure just leaves canonical-only labels.
+    void this.customTagService
+      .getCustomTagNameMap({})
+      .then((map) => {
+        this.customTagNames = map;
+        this.rebuildTagNameMap();
+      })
+      .catch(() => {
+        // Never block the dashboard on custom-tag resolution.
+      });
+  }
+
+  /**
+   * TAG-C6-DISPLAY — merge canonical + ACTIVE named personal custom tags into the
+   * row-chip name map (a NEW map ref so `dashboard-home` re-renders). Undecryptable
+   * / deprecated tags are omitted from row chips (safe drop, never a UUID); the
+   * full `customTagNames` still labels them in analytics.
+   */
+  private rebuildTagNameMap(): void {
+    const merged = new Map(this.canonicalTagNames);
+    for (const [id, entry] of this.customTagNames) {
+      if (!entry.deprecated && entry.name) merged.set(id, entry.name);
+    }
+    this.tagNameMap = merged;
+  }
+
   refreshExpenseData() {
     this.isLoading = true;
 
-    // 1. Fetch personal + group-share expenses (unified list). Resets to the
-    //    first page; infinite scroll appends further pages via loadMoreMyExpenses.
-    this.expensesPage = 1;
+    // 1. Fetch personal + group-share expenses (unified list). Reloads the whole
+    //    window the user has already scrolled through (pages 1..expensesPage in
+    //    one request) rather than collapsing to page 1 — so a create/edit/delete
+    //    keeps the user's loaded context (the newest row lands at the top). On
+    //    first load expensesPage is 1, so this is a single first page.
+    const loadedPages = Math.max(1, this.expensesPage);
+    const seq = ++this.myExpensesSeq;
     this.expensesService
-      .getMyExpenses({ page: 1, limit: this.expensesPageSize })
+      .getMyExpenses({ page: 1, limit: this.expensesPageSize * loadedPages })
       .subscribe({
         next: (res) => {
+          // A newer fetch superseded this one — drop the stale response.
+          if (seq !== this.myExpensesSeq) return;
           const items = this.extractExpenseItems(res);
           this.myExpenses = items;
           this.totalMyExpenses = this.extractExpenseTotal(res, items.length);
@@ -191,7 +271,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           // the totalBalance getter — no longer a running sum of expenses here.
           this.isLoading = false;
         },
-        error: () => (this.isLoading = false),
+        error: () => {
+          if (seq !== this.myExpensesSeq) return;
+          this.isLoading = false;
+        },
       });
 
     // 2. Combined monthly total (personal + group shares)
@@ -371,10 +454,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!this.hasMoreMyExpenses) return;
     this.isLoadingMoreExpenses = true;
     const nextPage = this.expensesPage + 1;
+    const seq = ++this.myExpensesSeq;
     this.expensesService
       .getMyExpenses({ page: nextPage, limit: this.expensesPageSize })
       .subscribe({
         next: (res) => {
+          // A newer fetch (e.g. a mutation reload) superseded this page — dropping
+          // it avoids appending stale rows onto a freshly reloaded list.
+          if (seq !== this.myExpensesSeq) return;
           const items = this.extractExpenseItems(res);
           this.myExpenses = [...this.myExpenses, ...items];
           this.totalMyExpenses = this.extractExpenseTotal(
@@ -387,7 +474,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.expensesPage = nextPage;
           this.isLoadingMoreExpenses = false;
         },
-        error: () => (this.isLoadingMoreExpenses = false),
+        error: () => {
+          if (seq !== this.myExpensesSeq) return;
+          this.isLoadingMoreExpenses = false;
+        },
       });
   }
 

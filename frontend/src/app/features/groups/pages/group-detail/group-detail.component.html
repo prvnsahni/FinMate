@@ -742,6 +742,27 @@
                   }
                 </div>
 
+                <!-- Tags (multi-select) — TAG-BATCH-B -->
+                @if (tagPillOptions().length) {
+                  <div>
+                    <p class="text-label">Tags</p>
+                    <app-dropdown
+                      [ngModel]="filterStore.draft().tagIds ?? []"
+                      (ngModelChange)="onDraftTagsChange($event)"
+                      [options]="tagPillOptions()"
+                      placeholder="All Tags"
+                      size="md"
+                      [multiple]="true"
+                    ></app-dropdown>
+                    <!-- STEP 6: explain the (existing) match-ANY tag semantics. -->
+                    <p class="text-[11px] text-muted mt-1">
+                      Selecting multiple tags matches expenses with
+                      <strong>any</strong> of them. Other filters still combine
+                      with “and”.
+                    </p>
+                  </div>
+                }
+
                 <!-- Transaction Type -->
                 <div>
                   <p class="text-label">Transaction Type</p>
@@ -917,7 +938,7 @@
                     ></path>
                   </svg>
                   <span>{{
-                    isExporting() ? 'Exporting…' : 'Export Excel'
+                    isExporting() ? 'Exporting…' : 'Export ' + exportPeriodLabel()
                   }}</span>
                 </button>
               }
@@ -1270,6 +1291,39 @@
                               </span>
                             }
                           </p>
+                          <!-- TAG-BATCH-B1: advisory canonical tags. Click to filter.
+                               Inferred tags are shown more subtly than user-confirmed. -->
+                          @if (rowTagChips(expense).length) {
+                            <div
+                              class="flex flex-wrap items-center gap-1 mt-1"
+                              data-testid="expense-tag-chips"
+                            >
+                              @for (tag of rowTagChips(expense); track tag.tagId) {
+                                <button
+                                  type="button"
+                                  (click)="applyTagFromChip(tag.tagId); $event.stopPropagation()"
+                                  [attr.aria-label]="'Filter by tag ' + tag.label"
+                                  [class]="
+                                    'inline-flex items-center min-h-[22px] px-1.5 py-0.5 rounded text-[10px] font-medium capitalize cursor-pointer transition ' +
+                                    (tag.inferred
+                                      ? 'border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400'
+                                      : 'bg-surface text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700')
+                                  "
+                                >
+                                  {{ tag.label }}
+                                </button>
+                              }
+                              @if (rowTagOverflowCount(expense) > 0) {
+                                <span
+                                  class="inline-flex items-center min-h-[22px] px-1.5 py-0.5 rounded text-[10px] font-medium text-muted"
+                                  [attr.aria-label]="
+                                    rowTagOverflowCount(expense) + ' more tags'
+                                  "
+                                  >+{{ rowTagOverflowCount(expense) }}</span
+                                >
+                              }
+                            </div>
+                          }
                         </div>
                       </div>
 
@@ -1573,6 +1627,8 @@
               [groupId]="group()!.id"
               [currency]="group()!.currency"
               [filter]="analyticsFilter()"
+              [customTagNames]="customTagNames()"
+              (tagSelected)="onAnalyticsTagSelected($event)"
             ></app-analytics-charts>
           </div>
         }
@@ -1803,6 +1859,24 @@
                 </div>
               </form>
             </div>
+
+            <!-- TAG-BATCH-C5a — group custom-tag management (E2EE names; any active
+                 member per existing C2 policy; group-role policy is C5-c). -->
+            <div class="border-t border-border/5 pt-8">
+              <app-custom-tag-management
+                scope="group"
+                [groupId]="group()?.id ?? null"
+                [canManage]="isOwnerOrAdmin()"
+              ></app-custom-tag-management>
+            </div>
+
+            <!-- PUBLIC-1E — public share controls: owner/admin only AND only when
+                 the publicGroupShare flag is ON (default OFF → not exposed). -->
+            @if (publicShareEnabled && isOwnerOrAdmin() && group()?.id) {
+              <div class="border-t border-border/5 pt-8">
+                <app-public-share-panel [groupId]="group()!.id"></app-public-share-panel>
+              </div>
+            }
 
             <!-- Monthly Household Contribution Settings -->
             @if (group()!.groupType === 'household') {
@@ -2784,7 +2858,7 @@
     >
       <h3 class="text-lg font-bold text-secondary mb-1">Export Ledger</h3>
       <p class="text-xs text-muted mb-5">
-        Choose the period to export. Defaults to this month.
+        Choose the period to export. Defaults to the period you're viewing.
       </p>
 
       <!-- Range mode toggle -->
@@ -2799,7 +2873,7 @@
               : 'flex-1 text-muted px-3 py-1.5 rounded-lg hover:text-secondary transition-colors'
           "
         >
-          This Month
+          {{ exportPeriodLabel() }}
         </button>
         <button
           type="button"

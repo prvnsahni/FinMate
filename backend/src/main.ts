@@ -3,6 +3,11 @@ import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app/app.module';
 import { HttpExceptionFilter } from './app/filters/http-exception.filter';
+import {
+  isSwaggerEnabled,
+  buildCspDirectives,
+  parseTrustProxy,
+} from './app/common/security-config.util';
 import helmet from 'helmet';
 import compression from 'compression';
 
@@ -16,16 +21,14 @@ async function bootstrap() {
   // sent uncompressed (overhead exceeds benefit at that size).
   app.use(compression({ threshold: 1024 }));
 
-  // Security headers with CSP configured to allow Swagger UI
+  // SEC-W5: Swagger is gated (below); its UI needs inline scripts/styles, so the
+  // looser CSP is used only when Swagger is mounted. Production (Swagger off, API
+  // JSON only — the SPA is a separate host) gets a strict CSP with no unsafe-inline.
+  const swaggerEnabled = isSwaggerEnabled(process.env);
   app.use(
     helmet({
       contentSecurityPolicy: {
-        directives: {
-          defaultSrc: [`'self'`],
-          styleSrc: [`'self'`, `'unsafe-inline'`],
-          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
-          scriptSrc: [`'self'`, `'unsafe-inline'`],
-        },
+        directives: buildCspDirectives(swaggerEnabled),
       },
     }),
   );
@@ -39,11 +42,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // When deployed behind a reverse proxy (nginx, ALB, Cloudflare), enable trust proxy
-  // so `req.ip` and `req.headers['x-forwarded-for']` are populated correctly.
-  // Only enable when running behind a trusted proxy.
+  // SEC-W9: configurable trust-proxy so client-supplied X-Forwarded-For cannot be
+  // spoofed. Defaults to trusting exactly ONE hop (non-spoofable) when TRUST_PROXY
+  // is unset; production should set TRUST_PROXY to the exact hop count / proxy CIDR
+  // matching its real reverse-proxy chain (nginx / ALB / Cloudflare).
   try {
-    (app as any).set('trust proxy', true);
+    (app as any).set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
   } catch (err) {
     // older Nest/Express versions may not expose set; ignore if unavailable
   }
@@ -63,15 +67,18 @@ async function bootstrap() {
     }),
   );
 
-  // Configure Swagger Document
-  const config = new DocumentBuilder()
-    .setTitle('FinMate API')
-    .setDescription('FinMate Backend API Specification')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  // SEC-W5: only expose the Swagger `/docs` UI outside production (or when an
+  // operator explicitly opts in via ENABLE_SWAGGER). No new auth system is added.
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder()
+      .setTitle('FinMate API')
+      .setDescription('FinMate Backend API Specification')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

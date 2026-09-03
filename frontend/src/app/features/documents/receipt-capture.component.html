@@ -1,0 +1,48 @@
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">Add from a receipt</h3>
+    <button
+      type="button"
+      (click)="cancel()"
+      data-testid="receipt-capture-close"
+      class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+    >
+      Close
+    </button>
+  </div>
+  <p class="text-sm text-gray-500 dark:text-gray-400">
+    Reading runs privately on your device. Nothing is saved until you confirm and submit the expense.
+  </p>
+
+  <app-document-mode-selector (modeSelected)="onMode($event)" />
+
+  @if (mode() === 'ITEMIZED') {
+    <div class="space-y-3">
+      <label class="block text-sm">
+        <span class="text-gray-500 dark:text-gray-400">Choose a document (PDF or a receipt photo)</span>
+        <input
+          type="file"
+          accept="application/pdf,image/*"
+          (change)="onFile($event)"
+          data-testid="receipt-capture-file"
+          class="block mt-1 text-sm"
+        />
+      </label>
+
+      @if (loading()) {
+        <p role="status" class="text-sm text-gray-500">Reading document…</p>
+      }
+      @if (error(); as e) {
+        <p role="alert" class="text-sm text-red-600 dark:text-red-400">{{ e }}</p>
+      }
+
+      @if (result(); as r) {
+        <app-document-review
+          [extractionResult]="r"
+          (confirmed)="onConfirmed($event)"
+          (cancelled)="onReviewCancelled()"
+        />
+      }
+    </div>
+  }
+</div>

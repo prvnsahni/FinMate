@@ -20,11 +20,19 @@ import { UsersModule } from './users/users.module';
 import { GroupsModule } from './groups/groups.module';
 import { ContactsModule } from './contacts/contacts.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { TaxonomyModule } from './taxonomy/taxonomy.module';
+import { CustomTagsModule } from './custom-tags/custom-tags.module';
+import { PublicSharesModule } from './public-shares/public-shares.module';
 import { SettlementsModule } from './settlements/settlements.module';
 import { PeopleModule } from './people/people.module';
 import { ImportModule } from './import/import.module';
 import { AiModule } from './ai/ai.module';
 import { EmailModule } from './email/email.module';
+import { PlatformModule } from './platform/platform.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { RecoveryModule } from './recovery/recovery.module';
+import { GoalsModule } from './goals/goals.module';
+import { DocumentIntelligenceModule } from './document-intelligence/document-intelligence.module';
 import { Note, Goal, AuditLog } from '@finmate/data-models';
 import { ThrottlerConfigModule } from './throttler/throttler-config.module';
 import { ThrottlePolicyResolver } from './throttler/throttle-policy.resolver';
@@ -130,6 +138,14 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
             limit: getLimit('THROTTLE_LIMIT_EXPORT', 20),
             skipIf: skipUnlessPolicy(THROTTLE_PROFILES.EXPORT),
           },
+          {
+            // PUBLIC-1C — first ANONYMOUS data endpoint; keep the per-IP limit
+            // strict (enumeration resistance for the capability token).
+            name: THROTTLE_PROFILES.PUBLIC_SHARE,
+            ttl: 60000,
+            limit: getLimit('THROTTLE_LIMIT_PUBLIC_SHARE', 30),
+            skipIf: skipUnlessPolicy(THROTTLE_PROFILES.PUBLIC_SHARE),
+          },
         ];
 
         return {
@@ -174,11 +190,19 @@ import { THROTTLE_PROFILES } from './throttler/throttle.constants';
     GroupsModule,
     ContactsModule,
     ExpensesModule,
+    TaxonomyModule,
+    CustomTagsModule,
+    PublicSharesModule,
     SettlementsModule,
     PeopleModule,
     ImportModule,
     AiModule,
     EmailModule,
+    PlatformModule,
+    NotificationsModule,
+    RecoveryModule,
+    GoalsModule,
+    DocumentIntelligenceModule,
   ],
   controllers: [AppController],
   providers: [

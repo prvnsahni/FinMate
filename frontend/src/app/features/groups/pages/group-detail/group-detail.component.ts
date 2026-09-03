@@ -42,6 +42,13 @@ import {
 import { Store } from '@ngxs/store';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import { GroupKeyService } from '../../../../core/services/group-key.service';
+import {
+  CustomTagService,
+  CustomTagNameEntry,
+} from '../../../../core/services/custom-tag.service';
+import { CustomTagManagementComponent } from '../../../../shared/components/custom-tag-management/custom-tag-management.component';
+import { PublicSharePanelComponent } from '../../components/public-share-panel/public-share-panel.component';
+import { environment } from '../../../../../environments/environment';
 import { DECRYPTION_FAILED_PLACEHOLDER } from '../../../../core/constants/crypto.constants';
 import { MONTH_LOCK_DAY } from '../../../../core/constants/app.constants';
 import { ExpenseDecryptCoordinator } from '../../../../core/services/expense-decrypt-coordinator.service';
@@ -90,16 +97,25 @@ import { formatDateRangeLabel } from '../../utils/date-preset.util';
 
 /** A single removable filter-summary chip. Per-value for multi-select dimensions. */
 export interface FilterChip {
-  kind: 'date' | 'category' | 'member' | 'paidBy' | 'type' | 'amount';
+  kind: 'date' | 'category' | 'member' | 'paidBy' | 'tag' | 'type' | 'amount';
   key: string;
   label: string;
   value?: string;
+}
+
+/** TAG-BATCH-B1 — an advisory canonical tag as returned on an expense row. */
+export interface ExpenseTagView {
+  tagId: string;
+  authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+  source: 'rule_based' | 'user' | 'model' | 'population';
 }
 
 export interface GroupExpense extends Expense {
   paidByUserId: string | null;
   paidByGroupMemberId?: string | null;
   ownerUserId: string;
+  /** Advisory canonical tags (TAG-BATCH-B1). Display-only metadata. */
+  tags?: ExpenseTagView[];
   splits?: Array<
     ExpenseSplitInputDto & {
       participantUser?: {
@@ -152,6 +168,8 @@ export interface LedgerTotals {
     CryptoRecoveryPanelComponent,
     DecimalPipe,
     NgTemplateOutlet,
+    CustomTagManagementComponent,
+    PublicSharePanelComponent,
   ],
   templateUrl: './group-detail.component.html',
   styleUrls: ['./group-detail.component.scss'],
@@ -166,6 +184,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   private destroyRef = inject(DestroyRef);
   private encryptionService = inject(ClientEncryptionService);
   private groupKeyService = inject(GroupKeyService);
+  private customTagService = inject(CustomTagService);
   private decryptCoordinator = inject(ExpenseDecryptCoordinator);
   private expenseDecryption = inject(ExpenseDecryptionService);
   private store = inject(Store);
@@ -199,6 +218,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         const g = this.group();
         if (g?.id) {
           this.initializeGroupKeysAndSelfHeal(g.id);
+          // TAG-BATCH-C3 — resolve this group's custom-tag names now the key is
+          // available, so they join the unified tag facet alongside canonical tags.
+          this.loadGroupCustomTags(g.id);
         }
       }
     });
@@ -222,9 +244,11 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         this.currentPage.set(1);
         this.fetchExpenses(g.id);
         this.fetchBalances(g.id);
-        // History and Trash honor the date period too (reset to page 1).
-        this.fetchHistoryLogs(g.id);
-        this.fetchDeletedExpenses(g.id);
+        // History and Trash honor the date period too — but only if their tab has
+        // already been opened; an unopened tab fetches fresh (with the current
+        // filter) on first visit, so a filter change never eagerly loads it.
+        if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+        if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
         // Household contribution graph / period card follow the same TimeScope.
         if (g.groupType === 'household') {
           this.fetchCarryForward(g.id);
@@ -289,6 +313,150 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     })),
   );
 
+  /**
+   * TAG-BATCH-B — canonical tag pills for the filter drawer, loaded from the
+   * read-only `/taxonomy` endpoint (active tags only). Empty until loaded and
+   * on failure, so the facet degrades gracefully to "no tags" without blocking
+   * the rest of the filter drawer.
+   */
+  readonly tagPillOptions = signal<DropdownOption[]>([]);
+  private readonly tagLabelById = new Map<string, string>();
+  /**
+   * TAG-C6-DISPLAY — this group's custom-tag id → decrypted name/deprecated
+   * (active + deprecated), resolved once and passed to the analytics charts so
+   * they label custom tags instead of showing raw UUIDs.
+   */
+  readonly customTagNames = signal<Map<string, CustomTagNameEntry>>(new Map());
+
+  /** Resolve a canonical tag id to its display name for summary chips. */
+  tagNameById(id: string): string {
+    return this.tagLabelById.get(id) ?? id;
+  }
+
+  /** Max tag chips shown inline on a collapsed expense row (keeps rows compact on mobile). */
+  private readonly MAX_ROW_TAG_CHIPS = 4;
+
+  /**
+   * TAG-BATCH-B1 — advisory tag chips for an expense row. Resolves ids to display
+   * names via the loaded active taxonomy; ids not in it (deprecated/unknown) are
+   * dropped so the row only ever shows active tags (fail-safe). User-authored tags
+   * sort before inferred ones. `inferred` drives a subtle provenance indicator.
+   */
+  private sortedRowTags(
+    expense: GroupExpense,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    return (expense.tags ?? [])
+      .filter((t) => this.tagLabelById.has(t.tagId))
+      .map((t) => ({
+        tagId: t.tagId,
+        label: this.tagLabelById.get(t.tagId) as string,
+        inferred: t.authority === 'INFERRED',
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.inferred) - Number(b.inferred) ||
+          a.label.localeCompare(b.label),
+      );
+  }
+
+  /** Visible tag chips for a row (capped for compactness). */
+  rowTagChips(
+    expense: GroupExpense,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    return this.sortedRowTags(expense).slice(0, this.MAX_ROW_TAG_CHIPS);
+  }
+
+  /** Count of tags beyond the visible cap (rendered as a "+N" chip). */
+  rowTagOverflowCount(expense: GroupExpense): number {
+    return Math.max(
+      0,
+      this.sortedRowTags(expense).length - this.MAX_ROW_TAG_CHIPS,
+    );
+  }
+
+  /** Apply a tag from a row chip to the unified filter (adds to existing tag filter). */
+  applyTagFromChip(tagId: string): void {
+    const applied = this.filterStore.applied();
+    if (applied.tagIds?.includes(tagId)) return; // already active — no-op
+    this.filterStore.openDraft();
+    this.filterStore.toggleDraftTag(tagId);
+    this.filterStore.apply();
+  }
+
+  /**
+   * A "spending by tag" bar was activated in the analytics tab — apply the tag to
+   * the same unified filter and switch to the ledger so the user sees the matching
+   * expenses. No second filter state; every other dimension (month/category/…) is
+   * preserved by the store's openDraft copy.
+   */
+  onAnalyticsTagSelected(tagId: string): void {
+    this.applyTagFromChip(tagId);
+    this.setTab('ledger');
+  }
+
+  /**
+   * Load the read-only shared canonical taxonomy once for the tag filter facet.
+   * Best-effort: a failure just leaves the facet empty (the rest of the drawer
+   * works). No user/E2EE data is involved — the taxonomy is static reference data.
+   */
+  private loadTaxonomy(): void {
+    this.expensesService
+      .getTaxonomy()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (tags) => {
+          this.tagLabelById.clear();
+          for (const t of tags) this.tagLabelById.set(t.id, t.canonicalName);
+          this.tagPillOptions.set(
+            tags
+              .map((t) => ({ value: t.id, label: t.canonicalName }))
+              .sort((a, b) => a.label.localeCompare(b.label)),
+          );
+        },
+        error: () => {
+          // Leave the tag facet empty on failure — never block the drawer.
+        },
+      });
+  }
+
+  /**
+   * TAG-BATCH-C3 / TAG-C6-DISPLAY — resolve this group's custom-tag names ONCE via
+   * the single `CustomTagService.getCustomTagNameMap` path (group key/version,
+   * active + deprecated, decrypted client-side + cached). ACTIVE named tags join
+   * the unified filter facet + row-chip label map (`tagLabelById`); the full map
+   * (incl. deprecated, for historical analytics labels) is published to
+   * `customTagNames` for the analytics charts — so filter, rows and analytics all
+   * share ONE loaded/decrypted source (no per-component refetch). Best-effort: any
+   * failure leaves the canonical-only surfaces intact. Runs once crypto is ready.
+   */
+  private loadGroupCustomTags(groupId: string): void {
+    void this.customTagService
+      .getCustomTagNameMap({ groupId })
+      .then((map) => {
+        this.customTagNames.set(map);
+        const activeNamed = [...map.entries()].filter(
+          ([, v]) => !v.deprecated && !!v.name,
+        );
+        if (!activeNamed.length) return;
+        for (const [id, v] of activeNamed) {
+          this.tagLabelById.set(id, v.name as string);
+        }
+        // Append the active named custom tags to the canonical pills (one
+        // namespace), de-duping by id, sorted. Deprecated tags are NOT offered as
+        // a filter option (they can't match a new filter), only labeled in history.
+        const byValue = new Map(this.tagPillOptions().map((o) => [o.value, o]));
+        for (const [id, v] of activeNamed) {
+          byValue.set(id, { value: id, label: v.name as string });
+        }
+        this.tagPillOptions.set(
+          [...byValue.values()].sort((a, b) => a.label.localeCompare(b.label)),
+        );
+      })
+      .catch(() => {
+        // Never block the ledger/filter drawer on custom-tag resolution.
+      });
+  }
+
   /** Sort options (field + direction combined into one dropdown value). */
   readonly sortOptions: DropdownOption[] = [
     { value: 'date_desc', label: 'Newest first' },
@@ -329,6 +497,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       this.filterStore.draft().paidByIds ?? [],
       nextValues,
       (value) => this.filterStore.toggleDraftPaidBy(value),
+    );
+  }
+
+  onDraftTagsChange(nextValues: string[]): void {
+    this.syncDraftArray(
+      this.filterStore.draft().tagIds ?? [],
+      nextValues,
+      (value) => this.filterStore.toggleDraftTag(value),
     );
   }
 
@@ -442,6 +618,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         label: 'Paid by: ' + this.memberNameById(p),
       });
     }
+    for (const t of f.tagIds ?? []) {
+      chips.push({
+        kind: 'tag',
+        key: 'tag:' + t,
+        value: t,
+        label: 'Tag: ' + this.tagNameById(t),
+      });
+    }
     if (f.transactionType && f.transactionType !== 'both') {
       chips.push({
         kind: 'type',
@@ -492,6 +676,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         break;
       case 'paidBy':
         if (chip.value) this.filterStore.removeAppliedPaidBy(chip.value);
+        break;
+      case 'tag':
+        if (chip.value) this.filterStore.removeAppliedTag(chip.value);
         break;
       case 'type':
         this.filterStore.clearAppliedTxType();
@@ -547,6 +734,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       categories: applied.categories,
       memberIds: applied.memberIds,
       paidByIds: applied.paidByIds,
+      tagIds: applied.tagIds,
       transactionType:
         applied.transactionType === 'both'
           ? undefined
@@ -563,6 +751,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       categories: a.categories,
       memberIds: a.memberIds,
       paidByIds: a.paidByIds,
+      tagIds: a.tagIds,
       transactionType:
         a.transactionType === 'both' ? undefined : a.transactionType,
       minAmount: a.minAmount,
@@ -637,6 +826,14 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   pageSize = signal<number>(20);
   totalExpenses = signal<number>(0);
   /**
+   * Monotonic id for ledger fetches. Every `fetchExpenses` call bumps it and
+   * captures the value; a response is only applied when it is still the latest
+   * request. This drops a late/out-of-order response (e.g. a slow page-3 reply
+   * arriving after a newer reload/replace) so it can never overwrite fresher
+   * data — the request-sequence equivalent of switchMap for this subscribe.
+   */
+  private fetchSeq = 0;
+  /**
    * Scope-wide monetary totals per currency from the backend, independent of
    * pagination — so the summary tiles show the true totals for the whole
    * filtered ledger, not just the pages loaded so far. Null until the first
@@ -688,6 +885,21 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   trashError = signal<boolean>(false);
   isLoadingRecurring = signal<boolean>(false);
   recurringError = signal<boolean>(false);
+
+  /**
+   * Lazy-tab guards. History, Trash and Recurring hold data no other tab needs,
+   * so their APIs are NOT fired on the default (ledger) page load — only on the
+   * first activation of their tab, after which the data is retained across tab
+   * switches (no refetch on revisit). Reset when the route groupId changes.
+   * Filter/month/mutation refetch sites consult these so a change never forces a
+   * load of a tab the user has not opened yet — it will fetch fresh, with the
+   * current filter, when first visited.
+   */
+  private historyLoaded = false;
+  private trashLoaded = false;
+  private recurringLoaded = false;
+  /** The groupId currently owning the component's loaded state (for guard resets). */
+  private currentGroupId: string | null = null;
 
   // Decryption lifecycle state (owned by the coordinator).
   decryptionPhase = this.decryptCoordinator.phase;
@@ -775,6 +987,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     const member = this.members().find((m) => m.user?.id === userId);
     return member?.role === 'owner' || member?.role === 'admin';
   });
+
+  /** PUBLIC-1E — frontend mirror of the backend `public.groupShare` flag (default OFF). */
+  readonly publicShareEnabled = environment.publicGroupShare;
 
   isOwner = computed(() => {
     const userId = this.currentUserId();
@@ -949,6 +1164,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   ngOnInit() {
     this.currentUserId.set(this.getCurrentUserId());
     this.closeMonthSelected.set(this.getCurrentMonthString());
+    this.loadTaxonomy();
 
     // Subscribe to query parameters to sync the active tab. Filter query params
     // are owned by the GroupFilterStore + its effect (see the constructor), not
@@ -970,7 +1186,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         ) {
           this.activeTab.set(tab as any);
 
-          // Load settings or recurring data if target tab is active
+          // Load settings fields when the settings tab is active.
           if (tab === 'settings') {
             const g = this.group();
             if (g) {
@@ -981,11 +1197,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
               this.editGroupCarryForward = g.carryForwardEnabled || false;
               this.loadContributionsForMonth();
             }
-          } else if (tab === 'recurring') {
-            const g = this.group();
-            if (g?.id) {
-              this.fetchRecurringExpenses(g.id);
-            }
+          } else {
+            // History / Trash / Recurring fetch their data lazily on first visit
+            // and retain it thereafter; a no-op for ledger/analytics.
+            this.activateLazyTabData(tab as any);
           }
         }
 
@@ -1001,6 +1216,13 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.startLoading();
           this.currentPage.set(1);
 
+          // A (new) group owns its own lazy-tab state — reset the guards so the
+          // History/Trash/Recurring tabs refetch for this group on first visit.
+          this.currentGroupId = groupId;
+          this.historyLoaded = false;
+          this.trashLoaded = false;
+          this.recurringLoaded = false;
+
           // Seed the unified filter from the URL before any initial fetch, so
           // deep-links / refresh restore the previously applied filter.
           this.filterStore.initialize(
@@ -1010,11 +1232,16 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           // Fired independently of getGroup() — none of these need the Group
           // response, only the groupId already available from the route.
           // (docs/audits/group-detail-progressive-loading-audit.md §6.1)
+          // Members + balances back the default (ledger) tab, so they load now.
+          // History/Trash/Recurring are tab-only data — NOT fetched here, only on
+          // first activation of their tab (see activateLazyTabData below).
           this.fetchMembers(groupId);
           this.fetchBalances(groupId);
-          this.fetchHistoryLogs(groupId);
-          this.fetchDeletedExpenses(groupId);
-          this.fetchRecurringExpenses(groupId);
+
+          // Deep-link / group switch: if the active tab is a lazy tab, load its
+          // data now that the groupId is known (the queryParams subscriber can
+          // run first, before currentGroupId is set).
+          this.activateLazyTabData(this.activeTab());
 
           this.groupsService.getGroup(groupId).subscribe({
             next: (res) => {
@@ -1309,6 +1536,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     this.isMonthLocked.set(this.isPastEditWindow(`${y}-${m}-01`));
 
     if (g?.id) {
+      // A new month is a fresh list — start at page 1 so the replace fetch loads
+      // the new month's first page, never a stale deep page from the old month.
+      this.currentPage.set(1);
       this.fetchExpenses(g.id);
       this.fetchCarryForward(g.id);
       // Balances feed the "This Month" card + breakdown, whose period is the
@@ -1316,9 +1546,10 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       // in month mode). Without this refetch the card/breakdown stay on the old
       // month even though the ledger and carry-forward bars move.
       this.fetchBalances(g.id);
-      // History and Trash follow the navigated household month too.
-      this.fetchHistoryLogs(g.id);
-      this.fetchDeletedExpenses(g.id);
+      // History and Trash follow the navigated household month too — only if
+      // already opened (otherwise they load fresh, month-scoped, on first visit).
+      if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+      if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
     }
   }
 
@@ -1337,11 +1568,24 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
    * ledgerError) — it no longer touches the page-wide isLoading/showSkeleton
    * gate, which now only covers the brief window until getGroup() resolves.
    *
-   * `append`: false (default) replaces the list — used for the initial load
-   * and whenever filters/group/page reset to 1. true appends the fetched
-   * page to the existing list — used by infinite scroll (loadMoreExpenses).
+   * `mode`:
+   *  - 'replace' (default) fetches exactly the current page and replaces the
+   *    list — initial load, retry, and filter/group changes (which reset
+   *    currentPage to 1 first).
+   *  - 'append' fetches the next page and appends it — infinite scroll.
+   *  - 'reload' re-fetches every page the user has already scrolled through
+   *    (1..currentPage) in one authoritative request and replaces the list in
+   *    place. Used after a create/update/delete so the whole visible list stays
+   *    consistent with the backend instead of collapsing to a single page or
+   *    dropping the newest rows; it also clamps currentPage down when a delete
+   *    empties the final page (see below), so the user is never stranded past
+   *    the end of the ledger. Month/filter/sort are untouched throughout.
    */
-  fetchExpenses(groupId: string, append = false) {
+  fetchExpenses(
+    groupId: string,
+    mode: 'replace' | 'append' | 'reload' = 'replace',
+  ) {
+    const append = mode === 'append';
     if (append) {
       this.isLoadingMoreExpenses.set(true);
     } else {
@@ -1352,10 +1596,21 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     // unified filter's resolved range. Either way, the other dimensions apply.
     const { from, to } = this.effectiveDateRange();
 
+    // 'reload' collapses pages 1..currentPage into a single request (page 1,
+    // limit = loadedPages × pageSize) so a mutation refreshes the entire
+    // scrolled-through list at once; 'append'/'replace' fetch one page as before.
+    const loadedPages = Math.max(1, this.currentPage());
+    const requestPage = mode === 'reload' ? 1 : this.currentPage();
+    const requestLimit =
+      mode === 'reload' ? loadedPages * this.pageSize() : this.pageSize();
+
+    // Race/stale-response protection: only the latest fetch may apply its result.
+    const seq = ++this.fetchSeq;
+
     this.expensesService
       .getExpenses(groupId, {
-        page: this.currentPage(),
-        limit: this.pageSize(),
+        page: requestPage,
+        limit: requestLimit,
         startDate: from,
         endDate: to,
         ...this.appliedDimensionOptions(),
@@ -1364,6 +1619,8 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       })
       .subscribe({
         next: (res) => {
+          // A newer fetch superseded this one — drop the stale response.
+          if (seq !== this.fetchSeq) return;
           const mappedExpenses = (res.data as any[]).map((expense) => {
             const mappedSplits = (expense.splits || []).map((split: any) => {
               let email = split.participantUserEmail;
@@ -1411,7 +1668,20 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           } else {
             this.expenses.set(mappedExpenses);
           }
-          this.totalExpenses.set(res.meta?.totalItems || 0);
+          const total = res.meta?.totalItems || 0;
+          this.totalExpenses.set(total);
+          // After a reload, clamp currentPage to the last page that still holds
+          // data so a delete that emptied the final page moves the user to the
+          // previous valid page rather than stranding them past the end.
+          if (mode === 'reload') {
+            const lastValidPage = Math.max(
+              1,
+              Math.ceil(total / this.pageSize()),
+            );
+            if (this.currentPage() > lastValidPage) {
+              this.currentPage.set(lastValidPage);
+            }
+          }
           // Authoritative totals for the whole filtered scope — same on every
           // page, so setting on append is harmless and keeps them fresh.
           this.ledgerTotals.set(
@@ -1429,6 +1699,8 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.startDecryption();
         },
         error: () => {
+          // A newer fetch superseded this one — its failure is no longer relevant.
+          if (seq !== this.fetchSeq) return;
           this.isLoadingExpenses.set(false);
           this.isLoadingMoreExpenses.set(false);
           this.ledgerError.set(true);
@@ -1447,7 +1719,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     const g = this.group();
     if (!g?.id) return;
     this.currentPage.update((v) => v + 1);
-    this.fetchExpenses(g.id, true);
+    this.fetchExpenses(g.id, 'append');
   }
 
   /** Scroll handler for the bounded expense-list container — triggers the
@@ -1522,6 +1794,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
     } else {
       this.historyPage.set(1);
       this.isLoadingHistory.set(true);
+      // First fetch of this tab's data — mark loaded so filter/month/mutation
+      // refetch sites keep it fresh, and revisiting the tab doesn't refetch.
+      this.historyLoaded = true;
     }
     this.historyError.set(false);
     this.groupsService
@@ -1578,6 +1853,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
 
   fetchDeletedExpenses(groupId: string) {
     this.isLoadingTrash.set(true);
+    this.trashLoaded = true;
     this.trashError.set(false);
     this.groupsService
       .getDeletedExpenses(groupId, this.appliedFilterOptions())
@@ -1592,6 +1868,34 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
           this.trashError.set(true);
         },
       });
+  }
+
+  /**
+   * Fetch a lazy tab's data the first time it is activated for the current group,
+   * then retain it (subsequent activations are a no-op; the per-tab fetch methods
+   * flip their `*Loaded` guard). Ledger/analytics/settings are handled elsewhere,
+   * so they no-op here. Uses `currentGroupId` (set by the route paramMap handler)
+   * — safe to call before it is set, in which case it simply does nothing and the
+   * paramMap handler re-invokes it once the id is known.
+   */
+  private activateLazyTabData(
+    tab:
+      | 'ledger'
+      | 'analytics'
+      | 'history'
+      | 'trash'
+      | 'settings'
+      | 'recurring',
+  ): void {
+    const id = this.currentGroupId;
+    if (!id) return;
+    if (tab === 'history') {
+      if (!this.historyLoaded) this.fetchHistoryLogs(id);
+    } else if (tab === 'trash') {
+      if (!this.trashLoaded) this.fetchDeletedExpenses(id);
+    } else if (tab === 'recurring') {
+      if (!this.recurringLoaded) this.fetchRecurringExpenses(id);
+    }
   }
 
   fetchCarryForward(groupId: string) {
@@ -1806,10 +2110,16 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   onExpenseCreated() {
     const g = this.group();
     if (g?.id) {
-      this.fetchExpenses(g.id);
+      // 'reload' keeps the user on the pages they've scrolled through: it
+      // refreshes the whole loaded list in place (newest row lands at the top
+      // naturally) instead of collapsing it to the current page, and clamps the
+      // page down if a delete emptied the final one. Month/filter/sort are kept.
+      this.fetchExpenses(g.id, 'reload');
       this.fetchBalances(g.id);
-      this.fetchHistoryLogs(g.id);
-      this.fetchDeletedExpenses(g.id);
+      // Only refresh tab data the user has actually opened; an unopened tab will
+      // fetch fresh (including this mutation's effects) on its first visit.
+      if (this.historyLoaded) this.fetchHistoryLogs(g.id);
+      if (this.trashLoaded) this.fetchDeletedExpenses(g.id);
       if (g.groupType === 'household') {
         this.fetchCarryForward(g.id);
       }
@@ -1860,13 +2170,12 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   openExportModal(): void {
     const g = this.group();
     if (g?.groupType === 'household') {
-      // Household exports the current calendar month (via 'month' mode), matching
-      // the ledger's month-driven behavior.
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-      this.exportFromDate.set(`${month}-01`);
-      this.exportToDate.set(`${month}-${this.lastDayOfMonth(month)}`);
+      // Household exports the month currently on screen (via 'month' mode) —
+      // effectiveDateRange follows the household month navigator, so exporting
+      // while viewing July uses July, not the system month.
+      const { from, to } = this.effectiveDateRange();
+      this.exportFromDate.set(from ?? '');
+      this.exportToDate.set(to ?? '');
       this.exportRangeMode.set('month');
     } else {
       // Non-household seeds the currently applied filter's date range so the
@@ -1888,19 +2197,24 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   }
 
   /** Resolve the effective [from, to] for the export based on the chosen mode:
-   *  'month' = current calendar month; 'custom' = the picked date inputs. */
+   *  'month' = the period currently being viewed (household month navigation and
+   *  every date preset flow through the shared effectiveDateRange, so the export
+   *  always matches the on-screen month — never the system month); 'custom' = the
+   *  picked date inputs. */
   private resolveExportRange(): { from: string; to: string } {
     if (this.exportRangeMode() === 'month') {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-      return {
-        from: `${month}-01`,
-        to: `${month}-${this.lastDayOfMonth(month)}`,
-      };
+      const { from, to } = this.effectiveDateRange();
+      return { from: from ?? '', to: to ?? '' };
     }
     return { from: this.exportFromDate(), to: this.exportToDate() };
   }
+
+  /**
+   * Human label for the period the export will cover (e.g. "July 2026"), derived
+   * from the same shared TimeScope that drives the ledger — so the export button
+   * and the modal's period toggle always name the month/range on screen.
+   */
+  exportPeriodLabel = computed(() => this.timeScope().label);
 
   /**
    * Export the group ledger for the chosen date range to Excel.
@@ -1941,15 +2255,15 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         categories: dims.categories,
         memberIds: dims.memberIds,
         paidByIds: dims.paidByIds,
+        tagIds: dims.tagIds,
         transactionType: dims.transactionType,
         minAmount: dims.minAmount,
         maxAmount: dims.maxAmount,
       };
-      const datePart = new Date().toISOString().slice(0, 10);
       await this.expenseExportService.exportExpenses(
         filter,
         'xlsx',
-        `ledger-${this.sanitizeForFilename(g.name)}-${datePart}`,
+        this.buildExportFilenameBase(g.name, from, to),
       );
       this.isExporting.set(false);
       this.showExportModal.set(false);
@@ -1976,6 +2290,40 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
       .trim()
       .replace(/[. ]+$/, '');
     return cleaned || 'group';
+  }
+
+  /**
+   * Download filename base for a ledger export, naming the selected period so the
+   * file is self-describing: a single whole calendar month → `<group>-July-2026`;
+   * any other explicit range → `<group>-<from>_to_<to>`; the whole ledger (both
+   * bounds blank, i.e. All Time) → `<group>-all-time`.
+   */
+  private buildExportFilenameBase(
+    groupName: string,
+    from: string,
+    to: string,
+  ): string {
+    const name = this.sanitizeForFilename(groupName);
+    if (!from && !to) return `${name}-all-time`;
+    if (from && to && this.isWholeCalendarMonth(from, to)) {
+      // formatDateRangeLabel yields "July 2026" for a single month.
+      const label = formatDateRangeLabel('this_month', from, to).replace(
+        /\s+/g,
+        '-',
+      );
+      return `${name}-${label}`;
+    }
+    return `${name}-${from || 'start'}_to_${to || 'end'}`;
+  }
+
+  /** True when [from, to] spans exactly one whole calendar month (first day
+   *  through its real last day, e.g. 2026-07-01 → 2026-07-31). */
+  private isWholeCalendarMonth(from: string, to: string): boolean {
+    const [fy, fm, fd] = from.split('-').map(Number);
+    const [ty, tm, td] = to.split('-').map(Number);
+    if (!fy || !fm || !fd || !ty || !tm || !td) return false;
+    if (fy !== ty || fm !== tm || fd !== 1) return false;
+    return td === new Date(fy, fm, 0).getDate();
   }
 
   onImportFileSelected(event: Event) {
@@ -2104,6 +2452,7 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
 
   fetchRecurringExpenses(groupId: string) {
     this.isLoadingRecurring.set(true);
+    this.recurringLoaded = true;
     this.recurringError.set(false);
     this.recurringExpensesService.getRecurringExpenses(groupId).subscribe({
       next: (res) => {
@@ -2516,7 +2865,9 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
         );
         this.fetchExpenses(g.id);
         this.fetchBalances(g.id);
-        this.fetchHistoryLogs(g.id);
+        // Refresh history only if its tab is open; otherwise it loads fresh
+        // (with the new rollover entries) on first visit.
+        if (this.historyLoaded) this.fetchHistoryLogs(g.id);
         this.fetchCarryForward(g.id);
         setTimeout(() => this.closeMonthSuccess.set(null), 5000);
       },

@@ -1,0 +1,23 @@
+# ADR-017 — Financial calculation parity / golden fixtures before changing the calculation engine
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (protected) · **Date:** 2026-08-12
+- **Decision:** Any change touching financial calculations MUST be verified by a **golden-fixture parity suite** that reproduces current production results for: equal/fixed/percent/share splits, multi-payer, refunds, household expenses, carry-forward, spectator exclusion, multi-currency, settlements, and P2P. Current production behaviour is the baseline. Quick-add "smart defaults" are **UI pre-fills only** and MUST NOT silently modify computed payer/split values; user confirmation is required before persistence where a default affects financial semantics.
+- **Context:** Balances/settlements are the protected core; a security/UX refactor could silently change numbers.
+- **Problem:** "Same inputs → same result" is untestable without a comprehensive fixture corpus; unconstrained defaults could alter computed shares.
+- **Alternatives considered:** (a) Trust limited unit tests; (b) **mandatory golden-fixture parity + constrained defaults**.
+- **Why selected:** (a) lets a full engine rewrite pass while breaking edge cases; (b) makes financial correctness provable and prevents silent drift — the worst failure mode.
+- **Security impact:** Indirect (integrity of the ledger).
+- **Privacy impact:** None.
+- **Performance impact:** Test-time only.
+- **Backward-compatibility impact:** LOW/protective — this ADR guards compatibility.
+- **Migration impact:** Build fixtures before any calc refactor.
+- **User impact:** No silent balance changes.
+- **Operational impact:** Fixture suite maintained as a regression gate.
+- **Rollback/reversal:** n/a (guardrail).
+- **Dependencies:** ADR-001.
+- **Related SRS:** FIN-002, FIN-007, FIN-013, FIN-014, REL-001/003/006.
+- **Related Ledger items:** Z-2 (amounts), GOV-1/2.
+- **Related Threat Model:** T-16 (financial tampering), financial-correctness scenarios.
+- **Related architecture docs:** Current System Baseline (#11).
+- **Simple explanation:** Before changing any money maths, FinMate must prove — with a big set of test cases — that it still gets exactly the same answers as today. Quick shortcuts pre-fill fields but never change the maths without you confirming.
+- **Technical explanation:** Golden-fixture regression suite across all split/payer/refund/household/currency/settlement/P2P cases vs production baseline; quick-add defaults are confirmable UI pre-fills, not computed-value mutations.

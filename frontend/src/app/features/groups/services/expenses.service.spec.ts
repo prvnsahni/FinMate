@@ -118,6 +118,17 @@ describe('ExpensesService', () => {
       req.flush({ data: [], meta: { totalItems: 0 } });
     });
 
+    it('should send tagIds as a comma-separated param (TAG-BATCH-B)', (done) => {
+      service
+        .getExpenses('group-1', { tagIds: ['milk', 'grocery'] })
+        .subscribe(() => done());
+
+      const req = httpMock.expectOne(
+        '/api/expenses?groupId=group-1&tagIds=milk,grocery',
+      );
+      req.flush({ data: [], meta: { totalItems: 0 } });
+    });
+
     it('should decrypt expenses from paginated response payloads', (done) => {
       const mockData = {
         data: [
@@ -201,6 +212,68 @@ describe('ExpensesService', () => {
 
       const req = httpMock.expectOne('/api/expenses?groupId=group-1');
       req.flush({ data: mockData });
+    });
+  });
+
+  // --- TAG-BATCH-B: taxonomy + tag analytics ---
+  describe('taxonomy + tag analytics (TAG-BATCH-B)', () => {
+    it('getTaxonomy fetches the read-only canonical taxonomy', (done) => {
+      const tags = [
+        {
+          id: 'milk',
+          canonicalName: 'Milk',
+          normalizedKey: 'milk',
+          parentId: 'dairy',
+          status: 'active',
+          version: 1,
+        },
+      ];
+      service.getTaxonomy().subscribe((res) => {
+        expect(res).toEqual(tags);
+        done();
+      });
+      const req = httpMock.expectOne('/api/taxonomy');
+      expect(req.request.method).toBe('GET');
+      req.flush(tags);
+    });
+
+    it('getTagAnalytics honors the unified filter and hits the tags endpoint', (done) => {
+      const points = [{ tagId: 'grocery', total: 60, currency: 'INR' }];
+      service
+        .getTagAnalytics('group-1', {
+          tagIds: ['grocery'],
+          startDate: '2026-08-01',
+        })
+        .subscribe((res) => {
+          expect(res).toEqual(points);
+          done();
+        });
+      const req = httpMock.expectOne(
+        '/api/expenses/analytics/tags?groupId=group-1&startDate=2026-08-01&tagIds=grocery',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(points);
+    });
+
+    it('getTagTrend hits the tags-trend endpoint with the unified filter (B2)', (done) => {
+      const points = [
+        { month: '2026-07', tagId: 'grocery', total: 7200, currency: 'INR' },
+        { month: '2026-08', tagId: 'grocery', total: 8420, currency: 'INR' },
+      ];
+      service
+        .getTagTrend('group-1', {
+          startDate: '2026-07-01',
+          endDate: '2026-08-31',
+        })
+        .subscribe((res) => {
+          expect(res).toEqual(points);
+          done();
+        });
+      const req = httpMock.expectOne(
+        '/api/expenses/analytics/tags-trend?groupId=group-1&startDate=2026-07-01&endDate=2026-08-31',
+      );
+      expect(req.request.method).toBe('GET');
+      req.flush(points);
     });
   });
 

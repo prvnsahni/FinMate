@@ -8,6 +8,7 @@ import {
   ExpensesCrudService,
 } from './services';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RecoveryStatusService } from '../recovery/recovery-status.service';
 
 /**
  * HTTP-level route-matching tests.
@@ -80,6 +81,13 @@ describe('ExpensesController — HTTP route matching', () => {
         { provide: ExpensesCrudService, useValue: crud },
         { provide: ExpensesAnalyticsService, useValue: analytics },
         { provide: ExpenseExportQueryService, useValue: exportQuery },
+        {
+          provide: RecoveryStatusService,
+          useValue: {
+            assertConfigured: jest.fn().mockResolvedValue(undefined),
+            isConfigured: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)

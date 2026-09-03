@@ -5,10 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
+  CustomTag,
   EncryptedExpenseKey,
   Expense,
   ExpenseSplit,
   GroupMember,
+  getActiveCanonicalTag,
 } from '@finmate/data-models';
 import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import {
@@ -44,6 +46,8 @@ export interface ExportFilter {
   /** Inclusive amount bounds. */
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). Filters only; no new columns. */
+  tagIds?: string[];
 }
 
 /**
@@ -99,7 +103,35 @@ export class ExpenseExportQueryService {
     private readonly encryptedExpenseKeyRepository: Repository<EncryptedExpenseKey>,
     @InjectRepository(GroupMember)
     private readonly groupMemberRepository: Repository<GroupMember>,
+    @InjectRepository(CustomTag)
+    private readonly customTagRepository: Repository<CustomTag>,
   ) {}
+
+  /**
+   * TAG-BATCH-C3 — of the requested filter `tagIds`, which are custom-tag ids the
+   * export may filter by. The group ledger export is always scoped to one group
+   * with membership already verified, so only that group's ACTIVE group custom
+   * tags qualify; everything else (canonical ids, personal customs, other groups',
+   * deprecated, unknown) is dropped here. Never reads the encrypted name — the
+   * export filters on the opaque id only and adds no tag column.
+   */
+  private async resolveGroupCustomTagIds(
+    groupId: string,
+    tagIds: string[] | undefined,
+  ): Promise<string[]> {
+    if (!tagIds?.length) return [];
+    const candidates = tagIds.filter((id) => !getActiveCanonicalTag(id));
+    if (!candidates.length) return [];
+    const rows = await this.customTagRepository.find({
+      where: {
+        id: In(candidates),
+        status: 'active',
+        scopeType: 'group',
+        group: { id: groupId },
+      },
+    });
+    return rows.map((r) => r.id);
+  }
 
   private static readonly DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -348,9 +380,10 @@ export class ExpenseExportQueryService {
     this.applyExpenseFilters(qb, filter, currency);
 
     // Unified group-filter dimensions (categories / members / payers / type / amount).
-    const [member, paidBy] = await Promise.all([
+    const [member, paidBy, exportCustomTagIds] = await Promise.all([
       this.resolveGroupMemberRefs(filter.memberIds, groupId),
       this.resolveGroupMemberRefs(filter.paidByIds, groupId),
+      this.resolveGroupCustomTagIds(groupId, filter.tagIds),
     ]);
     applyExpenseDimensionFilters(qb, {
       categories: filter.categories,
@@ -363,6 +396,8 @@ export class ExpenseExportQueryService {
       paidBy,
       minAmount: filter.minAmount,
       maxAmount: filter.maxAmount,
+      tagIds: filter.tagIds,
+      customTagIds: exportCustomTagIds,
     });
 
     const expenses = await qb.take(MAX_EXPORT_ROWS + 1).getMany();

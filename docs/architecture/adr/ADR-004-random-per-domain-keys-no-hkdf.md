@@ -1,0 +1,23 @@
+# ADR-004 — Random per-domain keys instead of HKDF-derived domain keys
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET (new domains) · **Date:** 2026-08-12
+- **Decision:** Class-A domain/entry keys are **randomly generated and wrapped** under the user's master key (and recovery key). They are **not** deterministically HKDF-derived from the master.
+- **Context:** New per-domain E2EE (goals, journal, wardrobe, P2P/settlement notes) needs a key strategy that also supports permanent deletion.
+- **Problem:** A deterministic HKDF-derived key can always be re-derived from the master, so it can never be truly destroyed → crypto-shred is impossible.
+- **Alternatives considered:** (a) HKDF-derived per-domain keys (simple, deterministic); (b) **random keys wrapped under master + recovery**.
+- **Why selected:** (a) blocks crypto-shredding and per-domain revocation; (b) enables destroy-the-key deletion and per-domain revocation while remaining recoverable via the recovery key.
+- **Security impact:** Enables crypto-shred + per-domain isolation; a leaked domain key doesn't reveal the master.
+- **Privacy impact:** Supports true erasure of a domain (deletion right).
+- **Performance impact:** Negligible (one unwrap per domain).
+- **Backward-compatibility impact:** Existing personal data stays under the master key directly (unchanged, K-3); this applies to new domains only.
+- **Migration impact:** New domains born with random wrapped keys; no migration of existing data.
+- **User impact:** None visible; better deletion guarantees.
+- **Operational impact:** Key store must hold wrapped-key blobs per domain/entry.
+- **Rollback/reversal:** n/a (new domains).
+- **Dependencies:** ADR-005 (recovery), ADR-006 (crypto-shred), ADR-003.
+- **Related SRS:** KEY-001, KEY-003.
+- **Related Ledger items:** K-1 (explicitly supersedes an earlier HKDF suggestion), K-3.
+- **Related Threat Model:** T-N4 (key-mgmt), T-23 (backup), deletion completeness.
+- **Related architecture docs:** Key Management (#4).
+- **Simple explanation:** Each locked area gets its own randomly-made key kept inside a locked box. Because it's random (not a formula), FinMate can truly throw it away — then that area's data can never be unlocked again.
+- **Technical explanation:** Random AES-256-GCM per-domain/entry keys wrapped under master + recovery. Deterministic derivation is prohibited because re-derivability defeats crypto-shredding.

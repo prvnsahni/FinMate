@@ -24,6 +24,8 @@ export class DashboardHomeComponent {
   @Input() activeGroupsCount = 0;
   @Input() personalExpenses: any[] = [];
   @Input() myExpenses: any[] = [];
+  /** TAG-BATCH-B2 — active canonical tag id → display name (from /taxonomy). */
+  @Input() tagNameMap = new Map<string, string>();
   @Input() expenseViewFilter: 'all' | 'personal' | 'group_share' = 'all';
   /** True while a subsequent page is being appended via infinite scroll. */
   @Input() isLoadingMoreExpenses = false;
@@ -68,6 +70,52 @@ export class DashboardHomeComponent {
 
   get displayExpenses(): any[] {
     return this.myExpenses.length > 0 ? this.myExpenses : this.personalExpenses;
+  }
+
+  /** Max tag chips shown per dashboard row (keeps rows compact on mobile). */
+  private readonly MAX_ROW_TAG_CHIPS = 4;
+
+  /**
+   * TAG-BATCH-B2 — advisory tag chips for a dashboard expense row. Same visual
+   * language as the group ledger (B1): active tags only (ids not in the taxonomy
+   * — deprecated/unknown — are dropped fail-safe), user-authored tags before
+   * inferred, `inferred` drives the subtle styling. Display-only: the dashboard
+   * has no unified tag-filter surface, so chips are not clickable (reported).
+   */
+  private sortedRowTags(
+    expense: any,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    const tags = Array.isArray(expense?.tags) ? expense.tags : [];
+    return tags
+      .filter((t: any) => this.tagNameMap.has(t?.tagId))
+      .map((t: any) => ({
+        tagId: t.tagId as string,
+        label: this.tagNameMap.get(t.tagId) as string,
+        inferred: t.authority === 'INFERRED',
+      }))
+      .sort(
+        (
+          a: { inferred: boolean; label: string },
+          b: { inferred: boolean; label: string },
+        ) =>
+          Number(a.inferred) - Number(b.inferred) ||
+          a.label.localeCompare(b.label),
+      );
+  }
+
+  /** Visible tag chips for a row (capped for compactness). */
+  rowTagChips(
+    expense: any,
+  ): { tagId: string; label: string; inferred: boolean }[] {
+    return this.sortedRowTags(expense).slice(0, this.MAX_ROW_TAG_CHIPS);
+  }
+
+  /** Count of tags beyond the visible cap (rendered as "+N"). */
+  rowTagOverflowCount(expense: any): number {
+    return Math.max(
+      0,
+      this.sortedRowTags(expense).length - this.MAX_ROW_TAG_CHIPS,
+    );
   }
 
   /** Scroll handler for the bounded transactions container — requests the next

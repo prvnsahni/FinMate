@@ -2315,11 +2315,23 @@ paths:
         '404':
           $ref: '#/components/responses/NotFoundError'
 
+  # Goals-v2 (BATCH-11 / W-GOAL-01..03). Born-E2EE (title is client ciphertext;
+  # server never decrypts). Owner-scoped. Whole surface gated behind the
+  # feature.goals flag (404 when OFF). Creating a goal requires recovery (REC-1).
   /goals:
+    get:
+      summary: List the caller's goals (owner-scoped, priority-ordered)
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Goals retrieved (title returned as ciphertext)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
     post:
-      summary: Create a financial goal
-      tags:
-        - Goals
+      summary: Create a goal (born-E2EE title; requires recovery — REC-1)
+      tags: [Goals]
       security:
         - bearerAuth: []
       requestBody:
@@ -2328,180 +2340,141 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - title
-                - targetAmount
-                - currency
+              required: [title, encryptedContentKey, targetAmount, currency]
               properties:
                 title:
                   type: string
-                  maxLength: 1000
-                  example: 'Trip to Goa'
-                targetAmount:
-                  type: number
-                  example: 30000.00
-                savedAmount:
-                  type: number
-                  default: 0.00
-                  example: 5000.00
-                currency:
+                  description: E2EE ciphertext of the title — the server never decrypts it.
+                encryptedContentKey:
                   type: string
-                  maxLength: 3
-                  example: 'INR'
-                targetDate:
-                  type: string
-                  format: date
-                  nullable: true
-                  example: '2026-12-31'
+                  description: Owner's RSA-wrapped per-goal content key (born-E2EE).
+                targetAmount: { type: number, format: float }
+                savedAmount: { type: number, format: float }
+                currency: { type: string, maxLength: 3 }
+                targetDate: { type: string, format: date }
+                priority: { type: integer, minimum: 0 }
       responses:
         '201':
-          description: Goal created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Goal'
+          description: Goal created
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
-    get:
-      summary: List goals with pagination
-      tags:
-        - Goals
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [active, achieved, paused, cancelled]
-          required: false
-      responses:
-        '200':
-          description: List of goals
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/PaginatedResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Goal'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-
+        '409':
+          description: Recovery not configured (errorCode REC_RECOVERY_REQUIRED)
   /goals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
-      summary: Get details of a goal
-      tags:
-        - Goals
+      summary: Get a goal (owner-scoped; title returned as ciphertext)
+      tags: [Goals]
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       responses:
-        '200':
-          description: Goal details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Goal'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+        '200': { description: Goal retrieved }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
     patch:
-      summary: Update goal progress or status
-      tags:
-        - Goals
+      summary: Update a goal (owner-scoped; optimistic version)
+      tags: [Goals]
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - version
+              required: [version]
               properties:
-                title:
-                  type: string
-                  maxLength: 1000
-                targetAmount:
-                  type: number
-                savedAmount:
-                  type: number
-                currency:
-                  type: string
-                  maxLength: 3
-                targetDate:
-                  type: string
-                  format: date
+                version: { type: integer }
+                title: { type: string }
+                encryptedContentKey: { type: string }
+                targetAmount: { type: number }
+                savedAmount: { type: number }
+                currency: { type: string, maxLength: 3 }
+                targetDate: { type: string, format: date }
+                priority: { type: integer, minimum: 0 }
                 status:
-                  type: string
-                  enum: [active, achieved, paused, cancelled]
-                version:
-                  type: integer
-                  example: 2
+                  { type: string, enum: [active, achieved, paused, cancelled] }
       responses:
-        '200':
-          description: Goal updated successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Goal'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
+        '200': { description: Goal updated }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+        '412': { $ref: '#/components/responses/PreconditionFailedError' }
     delete:
-      summary: Delete a goal
-      tags:
-        - Goals
+      summary: Delete a goal (owner-scoped; crypto-shreds the wrapped key)
+      tags: [Goals]
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Goal deleted }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /goals/{id}/projection:
+    get:
+      summary: Deterministic goal projection (Goal Engine V1, numeric only)
+      tags: [Goals]
       security:
         - bearerAuth: []
       parameters:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
-            format: uuid
+          schema: { type: string, format: uuid }
+        - name: assumedMonthlyContribution
+          in: query
+          required: false
+          schema: { type: number }
       responses:
-        '204':
-          description: Goal deleted successfully
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '403':
-          $ref: '#/components/responses/ForbiddenError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-
+        '200':
+          description: Projection (status ok/insufficient_data/invalid_goal; no free-text)
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
+  /document-intelligence/attachments/{attachmentId}/process:
+    post:
+      summary: Document intake — choose TOTAL_ONLY or ITEMIZED for an owned attachment (DOC-1)
+      description: |
+        Establishes the document-intake boundary over the existing attachment
+        infrastructure. Owner-scoped and gated behind the `document.intelligence`
+        feature flag (404 when OFF). TOTAL_ONLY performs no extraction (the caller
+        uses the normal expense flow). ITEMIZED invokes the replaceable
+        DocumentExtractionEngine — currently a stub that returns an explicit
+        `unsupported_document` (item extraction is not implemented yet). Never
+        mutates finance data, never decrypts attachment content, calls no OCR.
+      tags: [Document Intelligence]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachmentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode:
+                  type: string
+                  enum: [TOTAL_ONLY, ITEMIZED]
+                  description: TOTAL_ONLY (no extraction) or ITEMIZED (invoke extraction boundary).
+      responses:
+        '201':
+          description: |
+            Intake processed. Returns the mode, sourceType, whether extraction was
+            attempted, and (ITEMIZED only) the normalized extraction result — which
+            is candidates-only and currently `unsupported_document`.
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/UnauthorizedError' }
+        '404': { $ref: '#/components/responses/NotFoundError' }
   /import/expenses:
     post:
       summary: Upload CSV/XLSX to import expenses
@@ -2611,6 +2584,105 @@ paths:
               schema:
                 type: string
                 format: binary
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  # In-app ranked notifications (BATCH-12 / W-NOT-01). Computed & read-only; gated
+  # behind the notifications.inApp feature flag (returns an empty list when OFF).
+  /notifications:
+    get:
+      summary: List the caller's ranked in-app notifications
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: whileAway
+          in: query
+          required: false
+          description: When 'true', returns the smaller capped "while you were away" summary.
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Ranked notifications (empty when the feature flag is OFF)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        category:
+                          type: string
+                          enum:
+                            [security, recurring, settlement, reminder, finance]
+                        level: { type: integer, minimum: 1, maximum: 5 }
+                        title: { type: string }
+                        message: { type: string }
+                        actionable: { type: boolean }
+                        observedAt: { type: string, format: date-time }
+                  control:
+                    type: string
+                    enum: [quieter, standard, off]
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /notifications/{id}/seen:
+    post:
+      summary: Mark a notification seen (or acted) for the caller
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                acted:
+                  type: boolean
+                  description: When true the item is "acted" (also suppressed).
+      responses:
+        '200':
+          description: Notification state updated
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /notifications/preferences:
+    put:
+      summary: Set the caller's 3-way notification control
+      tags:
+        - Notifications
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [control]
+              properties:
+                control:
+                  type: string
+                  enum: [quieter, standard, off]
+      responses:
+        '200':
+          description: Preference updated
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':

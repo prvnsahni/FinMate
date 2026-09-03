@@ -1,0 +1,72 @@
+<section class="space-y-4" data-testid="public-share-panel">
+  <div>
+    <h3 class="text-lg font-semibold">Public link</h3>
+    <p class="text-xs text-gray-500 dark:text-gray-400">
+      Share a read-only summary (amounts, dates, categories, and who owes whom)
+      with anyone via a private link. Member names are hidden — people appear as
+      "Member 1", "Member 2". Titles, notes, tags, and attachments are never shared.
+    </p>
+  </div>
+
+  @if (loading()) {
+    <p class="text-sm text-gray-500" data-testid="share-loading">Loading…</p>
+  } @else {
+    <!-- Current status -->
+    <div class="flex items-center gap-2 text-sm">
+      <span class="text-gray-500">Status:</span>
+      @if (status()?.active) {
+        <span class="rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300" data-testid="share-status-on">On</span>
+      } @else {
+        <span class="rounded-full bg-gray-100 dark:bg-gray-700/40 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-500" data-testid="share-status-off">Off</span>
+      }
+    </div>
+
+    <!-- Freshly-issued link (one-time, in memory only) -->
+    @if (shareUrl(); as url) {
+      <div class="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2" data-testid="share-url-box">
+        <p class="text-[11px] text-amber-800 dark:text-amber-300">
+          Copy this link now — for security it is shown only once.
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <input class="finmate-input flex-1 min-w-[12rem] text-xs" type="text" [value]="url" readonly data-testid="share-url-input" />
+          <button type="button" class="finmate-btn-primary" (click)="copy()" data-testid="share-copy">
+            {{ copied() ? 'Copied!' : 'Copy' }}
+          </button>
+        </div>
+      </div>
+    }
+
+    @if (notice()) {
+      <p class="text-xs text-amber-600 dark:text-amber-400" role="status" data-testid="share-notice">{{ notice() }}</p>
+    }
+    @if (error()) {
+      <p class="text-xs text-red-600 dark:text-red-400" role="alert" data-testid="share-error">{{ error() }}</p>
+    }
+
+    <!-- Actions -->
+    @if (confirmingRevoke()) {
+      <div class="flex flex-wrap items-center gap-2 text-sm" data-testid="revoke-confirm">
+        <span class="flex-1">Turn off public sharing? The current link will stop working.</span>
+        <button type="button" class="finmate-btn-danger" (click)="revoke()" [disabled]="busy()" data-testid="share-revoke-confirm">Turn off</button>
+        <button type="button" class="finmate-btn-secondary" (click)="cancelRevoke()">Cancel</button>
+      </div>
+    } @else if (confirmingRegenerate()) {
+      <div class="flex flex-wrap items-center gap-2 text-sm" data-testid="regenerate-confirm">
+        <span class="flex-1">Create a new link? The previous link will immediately stop working.</span>
+        <button type="button" class="finmate-btn-primary" (click)="regenerate()" [disabled]="busy()" data-testid="share-regenerate-confirm">Create new link</button>
+        <button type="button" class="finmate-btn-secondary" (click)="cancelRegenerate()">Cancel</button>
+      </div>
+    } @else {
+      <div class="flex flex-wrap items-center gap-2">
+        @if (status()?.active) {
+          <button type="button" class="finmate-btn-secondary" (click)="askRegenerate()" [disabled]="busy()" data-testid="share-regenerate">Regenerate link</button>
+          <button type="button" class="finmate-btn-danger" (click)="askRevoke()" [disabled]="busy()" data-testid="share-revoke">Turn off</button>
+        } @else {
+          <button type="button" class="finmate-btn-primary" (click)="create()" [disabled]="busy()" data-testid="share-create">
+            {{ busy() ? 'Creating…' : 'Create public link' }}
+          </button>
+        }
+      </div>
+    }
+  }
+</section>

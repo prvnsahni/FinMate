@@ -1,0 +1,23 @@
+# ADR-020 — V1 Helpful + Proactive; Personalized deferred to V2
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** V1 (Helpful/Proactive) / V2 (Personalized) · **Date:** 2026-08-12
+- **Decision:** V1 delivers only the **Helpful** and **Proactive** interaction stages, earned by demonstrated user response. The **Personalized** stage is **deferred to V2** because it depends on the INTELLIGENCE architecture and applicable DPIA/privacy gates.
+- **Context:** FinMate evolves Helpful → Proactive → Personalized; Personalized needs cross-domain intelligence that is unbuilt and DPIA-gated.
+- **Problem:** Placing Personalized in V1 would commit V1 to unbuilt intelligence + a DPIA, blowing scope or shipping profiling without guards.
+- **Alternatives considered:** (a) All three stages in V1; (b) **Helpful/Proactive in V1, Personalized in V2**.
+- **Why selected:** (a) is legally/technically premature (Doc #10 places personalization in V2); (b) matches the frozen product scope and dependency reality.
+- **Security impact:** Avoids premature profiling without the firewall/intelligence guards.
+- **Privacy impact:** Personalization stays behind DPIA + consent (Art. 22 considerations).
+- **Performance impact:** Neutral.
+- **Backward-compatibility impact:** n/a (new behaviour).
+- **Migration impact:** None for V1.
+- **User impact:** V1 users get helpful observations and gentle proactive prompts; tailored recommendations arrive later.
+- **Operational impact:** Personalization engine deferred with its infra.
+- **Rollback/reversal:** n/a.
+- **Dependencies:** ADR-008 (intelligence), DPIA (OQ-02).
+- **Related SRS:** UX-005, UX-005b.
+- **Related Ledger items:** product scope (#10), DPIA-1, INT-3.
+- **Related Threat Model:** T-26 (profiling).
+- **Related architecture docs:** Product Principles (#10); UX Spec (#12).
+- **Simple explanation:** At first FinMate just points things out and gently nudges. The deeper, tailored advice comes later, once the "understanding" system exists and privacy checks are done.
+- **Technical explanation:** V1 = Helpful + Proactive (earned by response); Personalized = V2, gated on INTELLIGENCE + DPIA.

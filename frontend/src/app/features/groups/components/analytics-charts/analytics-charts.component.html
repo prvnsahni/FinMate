@@ -259,3 +259,142 @@
     }
   </div>
 </div>
+
+<!-- TAG-BATCH-B1: Spending by tag. Bars are relative to the largest tag, not a
+     share of a whole — tags overlap (ancestor materialization), so this is NOT
+     a mutually-exclusive breakdown. Click a bar to filter the ledger by that tag. -->
+<div
+  class="bg-white/70 dark:bg-finmate-card/70 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl shadow-black/5 mb-8"
+  data-testid="tag-spending-card"
+>
+  <div class="flex items-start justify-between gap-3 mb-1">
+    <h3 class="text-lg font-bold">Spending by tag</h3>
+  </div>
+  <p class="text-xs text-muted mb-5">
+    Totals can overlap — an item tagged “milk” also counts under dairy, grocery
+    and food — so tags may add up to more than your total spend.
+  </p>
+
+  @if (isLoading) {
+    <div class="space-y-3 animate-pulse" aria-hidden="true">
+      @for (row of [1, 2, 3, 4]; track row) {
+        <div class="h-6 rounded-lg bg-slate-200 dark:bg-white/5"></div>
+      }
+    </div>
+  }
+
+  @if (!isLoading && processedTags.length === 0) {
+    <p class="text-sm text-slate-500 py-6 text-center">
+      No tagged spending in this period.
+    </p>
+  }
+
+  @if (!isLoading && processedTags.length > 0) {
+    <ul class="flex flex-col gap-2.5" data-testid="tag-spending-bars">
+      @for (tag of processedTags; track tag.tagId) {
+        <li>
+          <button
+            type="button"
+            (click)="onTagBarActivate(tag.tagId, tag.deprecated)"
+            [disabled]="tag.deprecated"
+            [attr.aria-label]="
+              tag.deprecated
+                ? tag.name + ' (deprecated — historical only)'
+                : 'Filter ledger by ' + tag.name + ', ' +
+                  (tag.total | currency: currency)
+            "
+            class="w-full flex items-center gap-3 group text-left min-h-[40px] rounded-xl px-1"
+            [class.cursor-pointer]="!tag.deprecated"
+            [class.cursor-default]="tag.deprecated"
+            [class.opacity-70]="tag.deprecated"
+          >
+            <span
+              class="w-24 sm:w-32 shrink-0 text-sm font-semibold capitalize truncate text-slate-700 dark:text-slate-200"
+              >{{ tag.name }}</span
+            >
+            @if (tag.deprecated) {
+              <span class="shrink-0 rounded-full bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-gray-500 dark:text-gray-400" data-testid="tag-deprecated-badge">Deprecated</span>
+            }
+            <span
+              class="relative flex-1 h-4 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden"
+            >
+              <span
+                class="absolute inset-y-0 left-0 rounded-full bg-finmate-primary/70 group-hover:bg-finmate-primary transition-all"
+                [style.width.%]="tag.barWidth"
+              ></span>
+            </span>
+            <span
+              class="w-20 sm:w-24 shrink-0 text-right text-sm font-bold tabular-nums text-slate-800 dark:text-white"
+              >{{ tag.total | currency: currency }}</span
+            >
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</div>
+
+<!-- TAG-BATCH-B2: Tag trend (month × tag). Same "spending by tag" overlap
+     semantics; shown only when the selected range spans ≥2 months. Clicking a
+     tag row applies the unified tag filter (reuses tagSelected). -->
+@if (!isLoading && tagTrendMonths.length >= 2 && tagTrendRows.length > 0) {
+  <div
+    class="bg-white/70 dark:bg-finmate-card/70 backdrop-blur-xl border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl shadow-black/5 mb-8"
+    data-testid="tag-trend-card"
+  >
+    <h3 class="text-lg font-bold mb-1">Tag trend</h3>
+    <p class="text-xs text-muted mb-4">
+      Spending by tag over time. Tags can overlap (an item tagged “milk” also
+      counts under dairy, grocery and food), so totals aren’t exclusive.
+    </p>
+    <div class="overflow-x-auto -mx-1 px-1">
+      <table class="w-full min-w-[360px] text-sm border-collapse">
+        <thead>
+          <tr class="text-muted">
+            <th class="text-left font-semibold py-1.5 pr-3">Tag</th>
+            @for (m of tagTrendMonths; track m) {
+              <th class="text-right font-semibold py-1.5 px-2 whitespace-nowrap">
+                {{ tagTrendMonthLabel(m) }}
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of tagTrendRows; track row.tagId) {
+            <tr class="border-t border-slate-100 dark:border-white/5">
+              <td class="py-1.5 pr-3">
+                <button
+                  type="button"
+                  (click)="onTagBarActivate(row.tagId, row.deprecated)"
+                  [disabled]="row.deprecated"
+                  [attr.aria-label]="
+                    row.deprecated
+                      ? row.name + ' (deprecated — historical only)'
+                      : 'Filter ledger by ' + row.name
+                  "
+                  class="capitalize font-semibold text-slate-700 dark:text-slate-200 min-h-[32px] text-left"
+                  [class.hover:text-finmate-primary]="!row.deprecated"
+                  [class.cursor-pointer]="!row.deprecated"
+                  [class.cursor-default]="row.deprecated"
+                  [class.opacity-70]="row.deprecated"
+                >
+                  {{ row.name }}
+                  @if (row.deprecated) {
+                    <span class="ml-1 text-[9px] uppercase tracking-wide text-gray-400">(deprecated)</span>
+                  }
+                </button>
+              </td>
+              @for (cell of row.cells; track $index) {
+                <td
+                  class="text-right py-1.5 px-2 tabular-nums whitespace-nowrap text-slate-700 dark:text-slate-300"
+                >
+                  {{ cell | currency: currency }}
+                </td>
+              }
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+}

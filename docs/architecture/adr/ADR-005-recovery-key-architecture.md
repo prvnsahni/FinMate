@@ -1,0 +1,23 @@
+# ADR-005 — Recovery-key architecture
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** CURRENT (recovery-wrapped key exists) / TARGET (mandatory before E2EE storage) · **Date:** 2026-08-12
+- **Decision:** A user-held recovery code derives a recovery key that wraps the master key (and thus every Class-A domain key). Recovery setup is **mandatory/strongly-gated before storing E2EE data**. The server never holds plaintext key material; a lost password + lost recovery = permanent, irrecoverable loss (by design).
+- **Context:** Zero-knowledge E2EE means the server cannot reset access to encrypted data; users forget passwords.
+- **Problem:** Without recovery, a forgotten password permanently orphans all E2EE data; but recovery must not weaken E2EE.
+- **Alternatives considered:** (a) No recovery (max privacy, high loss risk); (b) server-escrow of keys (recoverable but breaks ZK); (c) **user-held recovery code wrapping the master**.
+- **Why selected:** (a) causes catastrophic data loss + support burden; (b) violates zero-knowledge; (c) preserves ZK while giving the user a self-custodied backstop.
+- **Security impact:** Recovery is a second user-held wrap; server gains no decryption ability.
+- **Privacy impact:** Preserves E2EE; recovery invariant (never wrap recoverable data under master alone).
+- **Performance impact:** Negligible.
+- **Backward-compatibility impact:** `recoveryWrappedKey` already exists (currently optional).
+- **Migration impact:** TARGET makes setup mandatory at onboarding before E2EE storage.
+- **User impact:** Small onboarding step; clear "lose this and locked data is unrecoverable" messaging.
+- **Operational impact:** No server key custody; support cannot recover E2EE data.
+- **Rollback/reversal:** Onboarding gating can be relaxed; crypto model unaffected.
+- **Dependencies:** ADR-004 (keys), ADR-013/015 (reset flow).
+- **Related SRS:** KEY-004, AUTH (ZK reset).
+- **Related Ledger items:** REC-1, recovery-RSA-root invariant.
+- **Related Threat Model:** T-06 (recovery phishing), E2EE-loss scenarios.
+- **Related architecture docs:** Key Management (#4).
+- **Simple explanation:** A recovery code is a spare key you keep. If you forget your password, it can still open your locked data. If you lose both, no one — not even FinMate — can open it.
+- **Technical explanation:** Recovery code → recovery key → wraps master (+ all domain keys). Mandatory before E2EE storage; server stores only ciphertext/wrapped blobs; irrecoverable without user secrets.

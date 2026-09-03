@@ -19,3 +19,7 @@ export { AddContactsAndPendingMembers1719600000000 } from './1719600000000-AddCo
 export { AddRecurringExpenseGroupMemberPayer1719700000000 } from './1719700000000-AddRecurringExpenseGroupMemberPayer';
 export { AddExpenseTransactionType1719800000000 } from './1719800000000-AddExpenseTransactionType';
 export { AddExpensePaymentsAndDirectLedger1719900000000 } from './1719900000000-AddExpensePaymentsAndDirectLedger';
+export { AddGoalsV2Fields1720000000000 } from './1720000000000-AddGoalsV2Fields';
+export { AddExpenseTags1720100000000 } from './1720100000000-AddExpenseTags';
+export { AddCustomTags1720200000000 } from './1720200000000-AddCustomTags';
+export { AddPublicShares1720300000000 } from './1720300000000-AddPublicShares';

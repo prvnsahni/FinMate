@@ -110,6 +110,75 @@ describe('DashboardHomeComponent', () => {
     expect(emitSpy).toHaveBeenCalledWith(mockInvitations[0]);
   });
 
+  describe('tag chips (TAG-BATCH-B2)', () => {
+    beforeEach(() => {
+      component.tagNameMap = new Map([
+        ['milk', 'Milk'],
+        ['grocery', 'Grocery'],
+        ['dairy', 'Dairy'],
+        ['food', 'Food'],
+        ['fuel', 'Fuel'],
+      ]);
+    });
+
+    it('resolves chips, drops unknown/deprecated ids, sorts user-authored first', () => {
+      const expense = {
+        id: 'e1',
+        tags: [
+          { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+          { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'zzz-unknown', authority: 'INFERRED', source: 'rule_based' },
+        ],
+      };
+      const chips = component.rowTagChips(expense);
+      expect(chips.map((c) => c.label)).toEqual(['Milk', 'Grocery']);
+      expect(chips.find((c) => c.tagId === 'milk')?.inferred).toBe(false);
+      expect(chips.find((c) => c.tagId === 'grocery')?.inferred).toBe(true);
+    });
+
+    it('renders safely for expenses with no tags', () => {
+      expect(component.rowTagChips({ id: 'e' })).toEqual([]);
+      expect(component.rowTagOverflowCount({ id: 'e', tags: [] })).toBe(0);
+    });
+
+    it('caps visible chips and reports the overflow count', () => {
+      const expense = {
+        id: 'e1',
+        tags: [
+          { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          { tagId: 'dairy', authority: 'INFERRED', source: 'rule_based' },
+          { tagId: 'grocery', authority: 'INFERRED', source: 'rule_based' },
+          { tagId: 'food', authority: 'INFERRED', source: 'rule_based' },
+          { tagId: 'fuel', authority: 'INFERRED', source: 'rule_based' },
+        ],
+      };
+      expect(component.rowTagChips(expense).length).toBe(4);
+      expect(component.rowTagOverflowCount(expense)).toBe(1);
+    });
+
+    it('renders tag chips in the dashboard expense row', () => {
+      component.myExpenses = [
+        {
+          id: 'exp-1',
+          title: 'Milk',
+          amountTotal: 120,
+          myShare: 120,
+          category: 'Food & Drinks',
+          expenseDate: new Date(),
+          expenseType: 'PERSONAL',
+          tags: [
+            { tagId: 'milk', authority: 'USER_CONFIRMED', source: 'user' },
+          ],
+        },
+      ];
+      fixture.detectChanges();
+      const chips = fixture.nativeElement.querySelector(
+        '[data-testid="expense-tag-chips"]',
+      );
+      expect(chips?.textContent).toContain('Milk');
+    });
+  });
+
   describe('infinite scroll', () => {
     it('emits loadMoreExpensesEvent when scrolled near the bottom', () => {
       fixture.detectChanges();

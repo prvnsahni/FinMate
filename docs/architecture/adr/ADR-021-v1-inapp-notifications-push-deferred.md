@@ -1,0 +1,23 @@
+# ADR-021 — V1 in-app ranked notifications; OS push deferred until native push infrastructure exists
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** V1 (in-app) / TARGET (OS push) · **Date:** 2026-08-12
+- **Decision:** V1 notifications are **in-app and ranked** by an internal importance model (L1 critical … L5 optional); only L1/L2 are ever push-eligible. **OS push is TARGET, gated on native push infrastructure** (currently the mobile app is a web wrapper with no push plugin). Whenever OS push is introduced, payloads are **content-free** (sensitive detail fetched after auth).
+- **Context:** There is no notification system today and no native push capability; evidence shows push overload drives users to disable notifications.
+- **Problem:** Committing V1 to OS push assumes unbuilt push infra; unranked/noisy push causes churn; push payloads can leak on lock screens.
+- **Alternatives considered:** (a) OS push in V1 (needs unbuilt infra); (b) **in-app ranked V1, push deferred + content-free**.
+- **Why selected:** (b) delivers ranked usefulness now without depending on native push, and keeps push private when it arrives.
+- **Security impact:** Content-free payloads prevent lock-screen leakage (when push ships).
+- **Privacy impact:** No sensitive content through third-party push networks.
+- **Performance impact:** Neutral.
+- **Backward-compatibility impact:** Additive.
+- **Migration impact:** Push added later with native infra.
+- **User impact:** Quiet, relevant, in-app-first; no spam.
+- **Operational impact:** Native push provider is a future vendor review (VEN-1).
+- **Rollback/reversal:** Additive; push gated by flag.
+- **Dependencies:** Native mobile hardening (ADR-013 adjacent), NOT-1.
+- **Related SRS:** NOT-001..007.
+- **Related Ledger items:** NOT-1, product scope (#10).
+- **Related Threat Model:** T-28 (lock-screen leak), notification-fatigue.
+- **Related architecture docs:** UX Spec (#12); Current System Baseline (#11).
+- **Simple explanation:** For now, notifications appear inside the app, ranked so the important ones stand out. Phone pop-ups come later — and when they do, they'll say "you have an alert," never your private details.
+- **Technical explanation:** V1 in-app ranked (L1–L5, only L1/L2 push-eligible); OS push gated on native infra; content-free payloads mandatory whenever push ships.

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { QueryFailedError, EntityNotFoundError } from 'typeorm';
 import { randomUUID } from 'crypto';
+import { redactUrl } from '../common/log-redaction.util';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -220,7 +221,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error(
         JSON.stringify({
           message: `Unexpected 500 Internal Server Error: ${err?.message || exception}`,
-          path: request.url,
+          path: redactUrl(request.url), // SEC-W2: no token/email query values in logs
           userId: request.user?.id || null,
           correlationId,
           errorId,
@@ -273,7 +274,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       try {
         const timestamp = new Date().toISOString();
         const method = request.method;
-        const url = request.url;
+        const url = redactUrl(request.url); // SEC-W2: redact sensitive query values
         const userId =
           request.user?.id ||
           request.user?.userId ||

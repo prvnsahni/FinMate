@@ -15,11 +15,15 @@ import {
   ExpenseSplit,
   ExpensePayment,
   ExpenseSplitVersion,
+  ExpenseTag,
   ExpenseVersion,
   Group,
   GroupKeyVersion,
   GroupMember,
   GroupMemberContribution,
+  CustomTag,
+  getActiveCanonicalTag,
+  materializeConfirmedExpenseTags,
   ReceiptVersion,
   User,
 } from '@finmate/data-models';
@@ -61,6 +65,8 @@ interface ExpenseListParams {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). */
+  tagIds?: string[];
   sortBy?: 'date' | 'amount';
   sortOrder?: 'asc' | 'desc';
 }
@@ -76,6 +82,22 @@ interface AnalyticsFilter {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  /** TAG-BATCH-B — canonical tag ids (match ANY). */
+  tagIds?: string[];
+}
+
+interface TagTotal {
+  tagId: string;
+  total: number;
+  currency: string;
+}
+
+interface TagTrendPoint {
+  /** `YYYY-MM`. */
+  month: string;
+  tagId: string;
+  total: number;
+  currency: string;
 }
 
 interface MonthlyTotal {
@@ -109,6 +131,10 @@ export class ExpensesService {
     private readonly expenseRepository: Repository<Expense>,
     @InjectRepository(ExpenseSplit)
     private readonly expenseSplitRepository: Repository<ExpenseSplit>,
+    @InjectRepository(ExpenseTag)
+    private readonly expenseTagRepository: Repository<ExpenseTag>,
+    @InjectRepository(CustomTag)
+    private readonly customTagRepository: Repository<CustomTag>,
     @InjectRepository(ExpensePayment)
     private readonly expensePaymentRepository: Repository<ExpensePayment>,
     @InjectRepository(Group)
@@ -480,6 +506,7 @@ export class ExpensesService {
     splits: ExpenseSplit[],
     attachments: Attachment[],
     wrappedContentKeys: Array<{ userId: string; wrappedKey: string }>,
+    tags: ExpenseTag[] = [],
   ): Record<string, unknown> {
     return {
       id: expense.id,
@@ -530,6 +557,17 @@ export class ExpensesService {
         createdAt: attachment.createdAt,
       })),
       wrappedContentKeys,
+      // TAG-BATCH-B1/C3 — advisory tags (server-readable Zone-2 metadata, like
+      // `category`). Ids + scope + provenance only; NEVER a financial value and
+      // NEVER an E2EE plaintext name. `tagScope` tells the client how to resolve
+      // the display name: `global` → GET /taxonomy; `personal`/`group` → the
+      // encrypted custom-tag payload (GET /custom-tags), decrypted client-side.
+      tags: tags.map((t) => ({
+        tagId: t.tagId,
+        tagScope: t.tagScope,
+        authority: t.authority,
+        source: t.source,
+      })),
       version: expense.version,
       createdAt: expense.createdAt,
       updatedAt: expense.updatedAt,
@@ -554,11 +592,17 @@ export class ExpensesService {
 
     const wrappedContentKeys = await this.getWrappedContentKeys(expense.id);
 
+    const tags = await this.expenseTagRepository.find({
+      where: { expense: { id: expense.id } },
+      order: { createdAt: 'ASC' },
+    });
+
     return this.toExpenseResponse(
       expense,
       splits,
       attachments,
       wrappedContentKeys,
+      tags,
     );
   }
 
@@ -580,22 +624,29 @@ export class ExpensesService {
     // `relations: ['expense']` loads expense.id for grouping via the identity map;
     // TypeORM deduplicates entity instances within a single query so each unique
     // expense UUID is only instantiated once.
-    const [allSplits, allAttachments, allWrappedKeys] = await Promise.all([
-      this.expenseSplitRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'participantUser', 'participantGroupMember'],
-        order: { createdAt: 'ASC' },
-      }),
-      this.attachmentRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'uploaderUser'],
-        order: { createdAt: 'ASC' },
-      }),
-      this.encryptedExpenseKeyRepository.find({
-        where: { expense: { id: In(ids) } },
-        relations: ['expense', 'user'],
-      }),
-    ]);
+    const [allSplits, allAttachments, allWrappedKeys, allTags] =
+      await Promise.all([
+        this.expenseSplitRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'participantUser', 'participantGroupMember'],
+          order: { createdAt: 'ASC' },
+        }),
+        this.attachmentRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'uploaderUser'],
+          order: { createdAt: 'ASC' },
+        }),
+        this.encryptedExpenseKeyRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense', 'user'],
+        }),
+        // TAG-BATCH-B1 — one bulk tag fetch for the whole page (no N+1).
+        this.expenseTagRepository.find({
+          where: { expense: { id: In(ids) } },
+          relations: ['expense'],
+          order: { createdAt: 'ASC' },
+        }),
+      ]);
 
     // Group each batch result by expense ID for O(1) lookup during mapping.
     const splitsByExpId = new Map<string, ExpenseSplit[]>();
@@ -622,10 +673,19 @@ export class ExpensesService {
       else keysByExpId.set(eid, [key]);
     }
 
+    const tagsByExpId = new Map<string, ExpenseTag[]>();
+    for (const tag of allTags) {
+      const eid = tag.expense.id;
+      const arr = tagsByExpId.get(eid);
+      if (arr) arr.push(tag);
+      else tagsByExpId.set(eid, [tag]);
+    }
+
     return expenses.map((expense) => {
       const splits = splitsByExpId.get(expense.id) ?? [];
       const attachments = attachsByExpId.get(expense.id) ?? [];
       const wrappedKeys = keysByExpId.get(expense.id) ?? [];
+      const tags = tagsByExpId.get(expense.id) ?? [];
       const wrappedContentKeys = wrappedKeys.map((k) => ({
         userId: k.user.id,
         wrappedKey: k.wrappedKey,
@@ -636,6 +696,7 @@ export class ExpensesService {
         splits,
         attachments,
         wrappedContentKeys,
+        tags,
       );
     });
   }
@@ -1262,6 +1323,11 @@ export class ExpensesService {
         }
       }
 
+      // TAG-BATCH-A — persist confirmed DOC-5 tags (descriptive Zone-2 metadata
+      // only; never touches any financial column). No-op for total-only receipts
+      // and manual creation (no `dto.tags`).
+      await this.persistConfirmedExpenseTags(manager, expense, dto, ownerUser);
+
       await this.recordExpenseVersion(manager, expense, 'created', ownerUser);
       await this.recordSplitVersions(
         manager,
@@ -1309,6 +1375,215 @@ export class ExpensesService {
     });
 
     return this.mapExpenseResponse(saved);
+  }
+
+  /**
+   * TAG-BATCH-A — persist the confirmed DOC-5 taxonomy tags for a freshly
+   * created expense. Purely descriptive, server-readable Zone-2 metadata (the
+   * same classification as `expenses.category`): it NEVER reads or writes any
+   * financial field, so FIN-002 is unaffected.
+   *
+   * Privacy: the classifier input is ONLY the stable canonical `tagId` +
+   * authority the client already confirmed — never `title`/`description`, never
+   * keys. The server does not decrypt anything and does not classify from free
+   * text here; it only validates each id against the shared canonical taxonomy,
+   * materializes active ancestors (milk → dairy → grocery → food), de-dups by
+   * id keeping the highest authority (a `USER_CONFIRMED` tag is never downgraded
+   * by a derived `INFERRED` one), and drops unknown/deprecated ids.
+   *
+   * Runs inside the create transaction so tags commit atomically with the
+   * expense; the `ON DELETE CASCADE` FK removes them if the expense is hard
+   * deleted. No historical backfill — only tags supplied for THIS creation.
+   */
+  private async persistConfirmedExpenseTags(
+    manager: EntityManager,
+    expense: Expense,
+    dto: CreateExpenseDto,
+    createdByUser: User,
+  ): Promise<void> {
+    if (!dto.tags?.length) {
+      return;
+    }
+    // Canonical (global) tags: expanded with active ancestors, deprecated/unknown
+    // dropped — unchanged TAG-BATCH-A behaviour.
+    const materialized = materializeConfirmedExpenseTags(
+      dto.tags.map((t) => ({
+        tagId: t.tagId,
+        authority: t.authority,
+        source: t.source,
+        confidence: t.confidence ?? null,
+      })),
+    );
+
+    // TAG-BATCH-C3 — custom (personal/group) tags in the SAME unified namespace.
+    // Every id the canonical taxonomy does NOT resolve as active is treated as a
+    // candidate custom-tag id and validated server-side against `custom_tags`
+    // (the client-supplied scope is never trusted). Only ACTIVE tags whose scope
+    // matches this expense are assigned; invalid / deprecated / inaccessible /
+    // cross-scope ids are silently dropped, exactly like an unknown canonical id
+    // — never an error, never another owner's/group's tag.
+    const customRows = await this.resolveAssignableCustomTags(
+      manager,
+      dto.tags,
+      createdByUser.id,
+      dto.groupId,
+    );
+
+    if (materialized.length === 0 && customRows.length === 0) {
+      return;
+    }
+    const repo = manager.getRepository(ExpenseTag);
+    const rows = [
+      ...materialized.map((m) =>
+        repo.create({
+          expense,
+          tagId: m.tagId,
+          tagScope: 'global' as const,
+          authority: m.authority,
+          source: m.source,
+          confidence: m.confidence,
+          taxonomyVersion: m.taxonomyVersion,
+          createdByUser,
+        }),
+      ),
+      ...customRows.map((c) =>
+        repo.create({
+          expense,
+          tagId: c.tagId,
+          tagScope: c.tagScope,
+          authority: c.authority,
+          source: c.source,
+          confidence: c.confidence,
+          // Custom tags are not part of the code-curated canonical taxonomy, so
+          // there is no canonical version to stamp — 0 marks a non-canonical row.
+          taxonomyVersion: 0,
+          createdByUser,
+        }),
+      ),
+    ];
+    await repo.save(rows);
+  }
+
+  /**
+   * TAG-BATCH-C3 — resolve which of the confirmed tag inputs are CUSTOM tags the
+   * creator may attach to THIS expense, authorizing every one server-side:
+   *  - personal custom tag → must be owned by the creator AND the expense must be
+   *    personal (no group), so a private tag never lands on a shared row;
+   *  - group custom tag → must belong to the expense's own group (no cross-group
+   *    assignment; group membership is already enforced by the create flow).
+   * Only `active` tags qualify; unknown / deprecated / inaccessible / cross-scope
+   * ids are dropped (returned set excludes them). Names are never read here — the
+   * server authorizes on the opaque id + scope only.
+   */
+  private async resolveAssignableCustomTags(
+    manager: EntityManager,
+    inputs: NonNullable<CreateExpenseDto['tags']>,
+    creatorUserId: string,
+    groupId?: string,
+  ): Promise<
+    Array<{
+      tagId: string;
+      tagScope: 'personal' | 'group';
+      authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+      source: 'rule_based' | 'user' | 'model' | 'population';
+      confidence: number | null;
+    }>
+  > {
+    // Candidate custom ids = every confirmed id the active canonical taxonomy
+    // does not claim, de-duplicated. (A deprecated canonical id is not active,
+    // so it falls through to the DB lookup, finds nothing, and is dropped.)
+    const byId = new Map<string, (typeof inputs)[number]>();
+    for (const t of inputs) {
+      if (!getActiveCanonicalTag(t.tagId) && !byId.has(t.tagId)) {
+        byId.set(t.tagId, t);
+      }
+    }
+    if (byId.size === 0) return [];
+
+    const rows = await manager.getRepository(CustomTag).find({
+      where: { id: In([...byId.keys()]), status: 'active' },
+      relations: ['ownerUser', 'group'],
+    });
+
+    const out: Array<{
+      tagId: string;
+      tagScope: 'personal' | 'group';
+      authority: 'INFERRED' | 'USER_CORRECTED' | 'USER_CONFIRMED';
+      source: 'rule_based' | 'user' | 'model' | 'population';
+      confidence: number | null;
+    }> = [];
+    for (const tag of rows) {
+      const input = byId.get(tag.id);
+      if (!input) continue;
+      const authorized =
+        tag.scopeType === 'personal'
+          ? tag.ownerUser?.id === creatorUserId && !groupId
+          : !!groupId && tag.group?.id === groupId;
+      if (!authorized) continue;
+      out.push({
+        tagId: tag.id,
+        tagScope: tag.scopeType,
+        authority: input.authority,
+        source: input.source ?? 'user',
+        confidence: input.confidence ?? null,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * TAG-BATCH-C3 — resolve which of the requested filter `tagIds` are CUSTOM tags
+   * the caller may filter by, authorizing every one server-side (the client scope
+   * is never trusted): personal customs must be owned by the caller; group
+   * customs must belong to a group the caller is an ACTIVE member of (and, for a
+   * group-scoped query, that same group). Only `active` tags qualify — mirroring
+   * the canonical "deprecated dropped from filters" fail-safe. Unknown /
+   * inaccessible ids are dropped. Names are never read.
+   */
+  private async resolveAccessibleCustomTagIds(
+    userId: string,
+    tagIds: string[] | undefined,
+    groupId?: string,
+  ): Promise<string[]> {
+    if (!tagIds?.length) return [];
+    const candidates = tagIds.filter((id) => !getActiveCanonicalTag(id));
+    if (!candidates.length) return [];
+
+    const rows = await this.customTagRepository.find({
+      where: { id: In(candidates), status: 'active' },
+      relations: ['ownerUser', 'group'],
+    });
+    if (!rows.length) return [];
+
+    const groupTagGroupIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.scopeType === 'group' && r.group)
+          .map((r) => r.group!.id),
+      ),
+    ];
+    let memberGroupIds = new Set<string>();
+    if (groupTagGroupIds.length) {
+      const memberships = await this.groupMemberRepository.find({
+        where: {
+          user: { id: userId },
+          group: { id: In(groupTagGroupIds) },
+          joinStatus: 'active',
+        },
+        relations: ['group'],
+      });
+      memberGroupIds = new Set(memberships.map((m) => m.group.id));
+    }
+
+    const out: string[] = [];
+    for (const tag of rows) {
+      if (tag.scopeType === 'personal') {
+        if (tag.ownerUser?.id === userId) out.push(tag.id);
+      } else if (tag.group && memberGroupIds.has(tag.group.id)) {
+        if (!groupId || tag.group.id === groupId) out.push(tag.id);
+      }
+    }
+    return out;
   }
 
   /**
@@ -1478,6 +1753,11 @@ export class ExpensesService {
       this.resolveGroupMemberRefs(params.memberIds, params.groupId),
       this.resolveGroupMemberRefs(params.paidByIds, params.groupId),
     ]);
+    const listCustomTagIds = await this.resolveAccessibleCustomTagIds(
+      userId,
+      params.tagIds,
+      params.groupId,
+    );
     applyExpenseDimensionFilters(query, {
       categories: params.categories,
       transactionType: params.transactionType,
@@ -1485,6 +1765,8 @@ export class ExpensesService {
       paidBy: paidByRefs,
       minAmount: params.minAmount,
       maxAmount: params.maxAmount,
+      tagIds: params.tagIds,
+      customTagIds: listCustomTagIds,
     });
 
     if (params.cursor) {
@@ -2435,6 +2717,149 @@ export class ExpensesService {
     return results.sort((a, b) => b.total - a.total);
   }
 
+  /**
+   * TAG-BATCH-B — READ-ONLY tag spending distribution, parallel to
+   * `getCategoryDistribution`. Aggregates the SAME authoritative expense amounts
+   * (`amountTotal`, refund-signed) grouped by canonical tag id, over the same
+   * scoped + dimension-filtered expense set. Purely descriptive: it never reads
+   * or writes payer/split/refund/settlement/balance and cannot alter any finance
+   * value (FIN-002 untouched).
+   *
+   * Because ancestors are materialized, an expense tagged `milk` contributes its
+   * amount to `milk`, `dairy`, `grocery` AND `food` — so totals are a hierarchical
+   * roll-up (a `food` total is the sum of its family), not a partition; tag totals
+   * may therefore overlap and need not sum to the overall spend. Scoped to a
+   * month via `startDate`/`endDate` this is the "monthly tag spending" report.
+   */
+  async getTagDistribution(filter: AnalyticsFilter): Promise<TagTotal[]> {
+    const { userId, groupId, startDate, endDate } = filter;
+
+    await this.assertGroupAccess(userId, groupId);
+
+    const dimensions = await this.resolveAnalyticsDimensions(filter);
+
+    const rows = await this.buildBaseAnalyticsQuery(
+      userId,
+      groupId,
+      startDate,
+      endDate,
+      dimensions,
+    )
+      // INNER JOIN so only tagged expenses contribute; one row per (expense, tag)
+      // — the (expense_id, tag_id) uniqueness means each expense counts once per
+      // tag, never double within a tag. Relation-property condition (like the
+      // shared EXISTS helper) so the naming strategy maps the FK column.
+      .innerJoin(ExpenseTag, 'tag', 'tag.expense = expense.id')
+      .select([
+        'tag.tagId AS "tagId"',
+        'expense.amountTotal AS "amountTotal"',
+        'expense.transactionType AS "transactionType"',
+        'expense.currency AS "currency"',
+      ])
+      .getRawMany<{
+        tagId: string;
+        amountTotal: string;
+        transactionType: 'expense' | 'refund';
+        currency: string;
+      }>();
+
+    const groups = new Map<
+      string,
+      { tagId: string; total: number; currency: string }
+    >();
+    for (const row of rows) {
+      const key = `${row.tagId} ${row.currency}`;
+      const existing = groups.get(key) ?? {
+        tagId: row.tagId,
+        total: 0,
+        currency: row.currency,
+      };
+      existing.total += this.signedAmount(row.amountTotal, row.transactionType);
+      groups.set(key, existing);
+    }
+
+    return [...groups.values()]
+      .map((v) => ({
+        tagId: v.tagId,
+        total: Math.round(v.total * 100) / 100,
+        currency: v.currency,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * TAG-BATCH-B2 — READ-ONLY monthly tag spending trend. ONE query (same shape as
+   * `getTagDistribution`, plus `expenseDate`) over the scoped, dimension-filtered
+   * set; months are grouped in JS (portable across Postgres/SQLite, no DB-specific
+   * date SQL), summing the SAME refund-signed `amountTotal` per (month, tag,
+   * currency). No N-per-month queries, no second analytics engine, no finance
+   * mutation (FIN-002 untouched). Overlap is inherent (ancestor tags), so callers
+   * must present this as "spending by tag", never an exclusive breakdown.
+   */
+  async getTagTrend(filter: AnalyticsFilter): Promise<TagTrendPoint[]> {
+    const { userId, groupId, startDate, endDate } = filter;
+
+    await this.assertGroupAccess(userId, groupId);
+
+    const dimensions = await this.resolveAnalyticsDimensions(filter);
+
+    const rows = await this.buildBaseAnalyticsQuery(
+      userId,
+      groupId,
+      startDate,
+      endDate,
+      dimensions,
+    )
+      .innerJoin(ExpenseTag, 'tag', 'tag.expense = expense.id')
+      .select([
+        'tag.tagId AS "tagId"',
+        'expense.expenseDate AS "expenseDate"',
+        'expense.amountTotal AS "amountTotal"',
+        'expense.transactionType AS "transactionType"',
+        'expense.currency AS "currency"',
+      ])
+      .getRawMany<{
+        tagId: string;
+        expenseDate: string | Date;
+        amountTotal: string;
+        transactionType: 'expense' | 'refund';
+        currency: string;
+      }>();
+
+    const groups = new Map<
+      string,
+      { month: string; tagId: string; total: number; currency: string }
+    >();
+    for (const row of rows) {
+      const month = this.monthKey(row.expenseDate);
+      const key = `${month} ${row.tagId} ${row.currency}`;
+      const existing = groups.get(key) ?? {
+        month,
+        tagId: row.tagId,
+        total: 0,
+        currency: row.currency,
+      };
+      existing.total += this.signedAmount(row.amountTotal, row.transactionType);
+      groups.set(key, existing);
+    }
+
+    return [...groups.values()]
+      .map((v) => ({
+        month: v.month,
+        tagId: v.tagId,
+        total: Math.round(v.total * 100) / 100,
+        currency: v.currency,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month) || b.total - a.total);
+  }
+
+  /** `YYYY-MM` for a `date`-column value (string 'YYYY-MM-DD' or a Date). */
+  private monthKey(value: string | Date): string {
+    return value instanceof Date
+      ? value.toISOString().slice(0, 7)
+      : String(value).slice(0, 7);
+  }
+
   private buildBaseAnalyticsQuery(
     userId: string,
     groupId?: string,
@@ -2476,9 +2901,14 @@ export class ExpensesService {
   private async resolveAnalyticsDimensions(
     filter: AnalyticsFilter,
   ): Promise<GroupExpenseDimensionFilters> {
-    const [member, paidBy] = await Promise.all([
+    const [member, paidBy, customTagIds] = await Promise.all([
       this.resolveGroupMemberRefs(filter.memberIds, filter.groupId),
       this.resolveGroupMemberRefs(filter.paidByIds, filter.groupId),
+      this.resolveAccessibleCustomTagIds(
+        filter.userId,
+        filter.tagIds,
+        filter.groupId,
+      ),
     ]);
     return {
       categories: filter.categories,
@@ -2487,6 +2917,8 @@ export class ExpensesService {
       paidBy,
       minAmount: filter.minAmount,
       maxAmount: filter.maxAmount,
+      tagIds: filter.tagIds,
+      customTagIds,
     };
   }
 
@@ -3231,9 +3663,10 @@ export class ExpensesService {
     if (filter?.to) {
       query.andWhere('expense.expenseDate <= :trashTo', { trashTo: filter.to });
     }
-    const [member, paidBy] = await Promise.all([
+    const [member, paidBy, trashCustomTagIds] = await Promise.all([
       this.resolveGroupMemberRefs(filter?.memberIds, groupId),
       this.resolveGroupMemberRefs(filter?.paidByIds, groupId),
+      this.resolveAccessibleCustomTagIds(userId, filter?.tagIds, groupId),
     ]);
     applyExpenseDimensionFilters(query, {
       categories: filter?.categories,
@@ -3242,6 +3675,8 @@ export class ExpensesService {
       paidBy,
       minAmount: filter?.minAmount,
       maxAmount: filter?.maxAmount,
+      tagIds: filter?.tagIds,
+      customTagIds: trashCustomTagIds,
     });
 
     query.orderBy('expense.deletedAt', 'DESC');
@@ -3509,7 +3944,54 @@ export class ExpensesService {
     const total = items.length;
     const pageItems = items.slice((p - 1) * l, (p - 1) * l + l);
 
+    // TAG-BATCH-B2 — attach advisory tags to the returned page in ONE bulk query
+    // (no N+1), matching the group-ledger shape from B1.
+    await this.attachTagsToItems(pageItems);
+
     return paginate(pageItems, total, p, l, '/api/v1/expenses/me', {});
+  }
+
+  /**
+   * TAG-BATCH-B2 — attach advisory canonical tags to already-built response
+   * items (which carry an `id`), in a single bulk query keyed on those ids. Used
+   * by the dashboard's `listMyExpenses`, whose items are hand-built rather than
+   * routed through `toExpenseResponse`. Descriptive Zone-2 metadata only (id +
+   * authority + source); never a financial value, never E2EE plaintext.
+   */
+  private async attachTagsToItems(
+    items: Array<Record<string, unknown>>,
+  ): Promise<void> {
+    const ids = items
+      .map((i) => i.id)
+      .filter((v): v is string => typeof v === 'string');
+    if (ids.length === 0) return;
+
+    const tags = await this.expenseTagRepository.find({
+      where: { expense: { id: In(ids) } },
+      relations: ['expense'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const byExpId = new Map<string, ExpenseTag[]>();
+    for (const tag of tags) {
+      const eid = tag.expense.id;
+      const arr = byExpId.get(eid);
+      if (arr) arr.push(tag);
+      else byExpId.set(eid, [tag]);
+    }
+
+    for (const item of items) {
+      const list = byExpId.get(item.id as string) ?? [];
+      // TAG-BATCH-C3 — carry `tagScope` so the client knows how to resolve each
+      // name (global → /taxonomy; personal/group → decrypt the custom-tag
+      // payload). Still ids + scope + provenance only — never an E2EE plaintext.
+      item.tags = list.map((t) => ({
+        tagId: t.tagId,
+        tagScope: t.tagScope,
+        authority: t.authority,
+        source: t.source,
+      }));
+    }
   }
 
   /**

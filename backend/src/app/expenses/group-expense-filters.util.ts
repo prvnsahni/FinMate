@@ -1,4 +1,8 @@
-import { ExpenseSplit } from '@finmate/data-models';
+import {
+  ExpenseSplit,
+  ExpenseTag,
+  getActiveCanonicalTag,
+} from '@finmate/data-models';
 import { SelectQueryBuilder } from 'typeorm';
 
 /**
@@ -29,6 +33,24 @@ export interface GroupExpenseDimensionFilters {
   member?: MemberRef[];
   minAmount?: number;
   maxAmount?: number;
+  /**
+   * TAG-BATCH-B — canonical taxonomy tag ids (e.g. `milk`, `grocery`). Multi-select
+   * — matches ANY, consistent with the other dimensions. Because ancestors are
+   * materialized (milk → dairy → grocery → food), selecting `grocery` already
+   * matches milk/bread rows. Unknown/deprecated ids are dropped (like the member
+   * filter drops unknown members), so a stale id simply widens nothing.
+   */
+  tagIds?: string[];
+  /**
+   * TAG-BATCH-C3 — custom-tag ids (personal/group `custom_tags.id` UUIDs) that
+   * the caller has ALREADY been authorized to filter by, resolved server-side
+   * (`resolveAccessibleCustomTagIds` — the client-supplied scope is never
+   * trusted). Matched in the SAME `EXISTS` as the canonical ids, so the unified
+   * `tagIds` namespace keeps OR-within-tags / AND-across-dimensions. Empty when
+   * nothing resolved (unknown / inaccessible / deprecated ids are dropped, like
+   * the canonical fail-safe), so a stale id simply widens nothing.
+   */
+  customTagIds?: string[];
 }
 
 /**
@@ -44,6 +66,7 @@ export interface RawGroupExpenseFilter {
   transactionType?: 'expense' | 'refund';
   minAmount?: number;
   maxAmount?: number;
+  tagIds?: string[];
 }
 
 /** Parse raw query strings (comma-separated arrays, numbers) into a filter. */
@@ -56,6 +79,7 @@ export function parseRawGroupExpenseFilter(q: {
   transactionType?: string;
   minAmount?: string;
   maxAmount?: string;
+  tagIds?: string;
 }): RawGroupExpenseFilter {
   const csv = (v?: string): string[] | undefined => {
     if (!v) return undefined;
@@ -82,6 +106,7 @@ export function parseRawGroupExpenseFilter(q: {
         : undefined,
     minAmount: num(q.minAmount),
     maxAmount: num(q.maxAmount),
+    tagIds: csv(q.tagIds),
   };
 }
 
@@ -159,5 +184,37 @@ export function applyExpenseDimensionFilters<T>(
     });
     qb.setParameter('gefMemGm', gmIds);
     if (userIds.length) qb.setParameter('gefMemUser', userIds);
+  }
+
+  // TAG-BATCH-B — canonical-tag filter (match ANY). Correlated EXISTS over
+  // `expense_tags` (never a JOIN), so it never multiplies rows — counts,
+  // pagination and scope-wide totals stay correct. Descriptive Zone-2 metadata
+  // only; it selects WHICH expenses match and never reads any financial column.
+  // Unknown/deprecated ids are dropped so a stale selection can never widen the
+  // result or resurrect a deprecated tag as a filter.
+  // TAG-BATCH-C3 — the unified tag dimension now matches canonical ids AND the
+  // pre-authorized custom-tag ids in the SAME correlated EXISTS (still one
+  // namespace, still match-ANY). Canonical ids are re-validated here (active
+  // only); custom ids arrive already authorized server-side. Scope of the outer
+  // query (owner / group membership) still bounds every match, so a custom id
+  // can never surface another user's/group's rows.
+  if (filter.tagIds?.length || filter.customTagIds?.length) {
+    const activeTagIds = (filter.tagIds ?? []).filter(
+      (id) => !!getActiveCanonicalTag(id),
+    );
+    const matchIds = [...activeTagIds, ...(filter.customTagIds ?? [])];
+    if (matchIds.length) {
+      qb.andWhere((sub) => {
+        const inner = sub
+          .subQuery()
+          .select('1')
+          .from(ExpenseTag, 'gefTag')
+          .where(`gefTag.expense = ${alias}.id`)
+          .andWhere('gefTag.tagId IN (:...gefTagIds)')
+          .getQuery();
+        return `EXISTS ${inner}`;
+      });
+      qb.setParameter('gefTagIds', matchIds);
+    }
   }
 }

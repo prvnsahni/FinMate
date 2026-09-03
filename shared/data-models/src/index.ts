@@ -7,6 +7,8 @@ export * from './lib/expense-payment.entity';
 export * from './lib/direct-ledger-entry.entity';
 export * from './lib/expense-version.entity';
 export * from './lib/expense-split-version.entity';
+export * from './lib/expense-tag.entity';
+export * from './lib/custom-tag.entity';
 export * from './lib/recurring-expense.entity';
 export * from './lib/recurring-expense-split.entity';
 export * from './lib/contact.entity';
@@ -14,6 +16,7 @@ export * from './lib/group.entity';
 export * from './lib/group-member.entity';
 export * from './lib/group-member-contribution.entity';
 export * from './lib/group-invite.entity';
+export * from './lib/public-share.entity';
 export * from './lib/group-key-version.entity';
 export * from './lib/member-wrapped-group-key.entity';
 export * from './lib/settlement.entity';
@@ -30,6 +33,11 @@ export * from './lib/encryption.transformer';
 export * from './lib/encrypted-envelope';
 export * from './lib/api-responses';
 export * from './lib/ledger-debt-simplifier';
+
+// DOC-5 shared canonical taxonomy + deterministic classifier (pure, browser-safe).
+export * from './lib/taxonomy/canonical-taxonomy';
+export * from './lib/taxonomy/classify';
+export * from './lib/taxonomy/expense-tag-materializer';
 
 // Shared validation DTOs
 export * from './lib/dto/auth.dto';

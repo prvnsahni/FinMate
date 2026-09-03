@@ -1,0 +1,23 @@
+# ADR-018 — Withdrawal, suppression and override are separate states
+
+- **Status:** Accepted (reflects frozen decision) · **Implementation state:** TARGET · **Date:** 2026-08-12
+- **Decision:** INTELLIGENCE models three **distinct** states: (1) **override/suppression** — a user rejects a specific derived fact, stored **independently of the derived data** so it survives recompute, deletion, and re-consent; (2) **restriction** — a reversible "pause processing" flag; (3) **consent withdrawal** — stop processing + invalidate dependent derived data + revoke analysis-key access, retaining raw unless separately deleted. Withdrawal-driven invalidation MUST NOT delete durable override/suppression/"do-not-infer" preferences. A rejected inference must not silently regenerate.
+- **Context:** Users need fine-grained control over what FinMate infers.
+- **Problem:** Conflating these states causes the "suppression resurrection" bug: withdrawing then re-consenting regenerates a rejected inference if suppression was stored as deletable derived data.
+- **Alternatives considered:** (a) One combined "off" state; (b) **three explicit states with independent suppression storage**.
+- **Why selected:** (a) resurrects rejected inferences and confuses pause vs delete; (b) makes each control behave correctly and durably.
+- **Security impact:** Indirect (integrity of user controls).
+- **Privacy impact:** Core rectification/restriction (Arts. 16/18) behaviour.
+- **Performance impact:** Recompute checks suppression unconditionally.
+- **Backward-compatibility impact:** Additive.
+- **Migration impact:** Separate suppression store; new domain.
+- **User impact:** "This is wrong" stays fixed; "pause" ≠ "delete."
+- **Operational impact:** Suppression persistence independent of derived-data lifecycle.
+- **Rollback/reversal:** Additive.
+- **Dependencies:** ADR-008, ADR-011, ADR-019.
+- **Related SRS:** PRIV-002/003/004, INT-004, AI-013.
+- **Related Ledger items:** RGT-1, INT-4, CON-1.
+- **Related Threat Model:** T-12 (suppression resurrection), T-11.
+- **Related architecture docs:** Security & Privacy Architecture (#3); AI Firewall (#5).
+- **Simple explanation:** "That guess about me is wrong" (permanent), "pause using this for now" (reversible), and "stop this kind of processing" (throw away conclusions) are three different buttons — and rejecting a guess stays rejected even if you turn things off and on again.
+- **Technical explanation:** Override/suppression persists independently of derived data; restriction is a reversible flag; withdrawal cascades invalidation + key revocation but never deletes suppression; recompute honours suppression unconditionally.

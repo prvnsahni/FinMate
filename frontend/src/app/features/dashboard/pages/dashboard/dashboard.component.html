@@ -8,6 +8,7 @@
       [activeGroupsCount]="activeGroupsCount"
       [personalExpenses]="personalExpenses"
       [myExpenses]="filteredMyExpenses"
+      [tagNameMap]="tagNameMap"
       [expenseViewFilter]="expenseViewFilter"
       [hasMoreExpenses]="hasMoreMyExpenses"
       [isLoadingMoreExpenses]="isLoadingMoreExpenses"
@@ -39,6 +40,7 @@
   @if (activeTab === 'Analytics') {
     <app-dashboard-analytics
       [userProfile]="userProfile"
+      [customTagNames]="customTagNames"
     ></app-dashboard-analytics>
   }
 
@@ -58,6 +60,11 @@
       (toggleAiOptInEvent)="toggleAiOptIn($event)"
       (saveIncomeEvent)="saveIncome()"
     ></app-dashboard-settings>
+
+    <!-- TAG-BATCH-C5a — personal custom-tag management (E2EE names, client-side). -->
+    <div class="mt-6 bg-finmate-card/70 dark:bg-finmate-card/70 backdrop-blur-xl border border-border/10 rounded-3xl p-6 shadow-xl shadow-black/5">
+      <app-custom-tag-management scope="personal"></app-custom-tag-management>
+    </div>
   }
 
   <!-- PROFILE TAB VIEW -->

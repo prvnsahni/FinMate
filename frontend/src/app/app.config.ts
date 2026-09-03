@@ -9,6 +9,7 @@ import { appRoutes } from './app.routes';
 import { optimisticLockInterceptor } from './core/interceptors/optimistic-lock.interceptor';
 import { jwtInterceptor } from './core/interceptors/jwt.interceptor';
 import { errorInterceptor } from './core/interceptors/error.interceptor';
+import { recoveryRequiredInterceptor } from './core/interceptors/recovery-required.interceptor';
 import { responseInterceptor } from './core/interceptors/response.interceptor';
 import { provideStore } from '@ngxs/store';
 import { withNgxsReduxDevtoolsPlugin } from '@ngxs/devtools-plugin';
@@ -29,6 +30,7 @@ export const appConfig: ApplicationConfig = {
         responseInterceptor,
         jwtInterceptor,
         optimisticLockInterceptor,
+        recoveryRequiredInterceptor,
         errorInterceptor,
       ]),
     ),

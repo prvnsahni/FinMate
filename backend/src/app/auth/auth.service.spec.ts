@@ -32,6 +32,7 @@ describe('AuthService', () => {
     sendPasswordResetEmail: jest.Mock;
   };
   let contactsService: { claimContactsForUser: jest.Mock };
+  let auditLogRepo: { save: jest.Mock; create: jest.Mock };
 
   beforeEach(async () => {
     const mockUsersService = {
@@ -72,6 +73,7 @@ describe('AuthService', () => {
       save: jest.fn(),
       create: jest.fn(),
     };
+    auditLogRepo = mockAuditLogRepository;
 
     const mockEmailService = {
       sendEmail: jest.fn().mockResolvedValue(undefined),
@@ -529,6 +531,36 @@ describe('AuthService', () => {
           updatedAt: mockUser.updatedAt,
         },
       });
+    });
+
+    it('SEC-W7: writes the login audit event without the user email in metadataJson', async () => {
+      const mockUser = {
+        id: 'user-id',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        status: 'active',
+        passwordHash: 'hashed',
+        isTwoFactorEnabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any;
+
+      usersService.findByEmail.mockResolvedValue(mockUser);
+      (argon2.verify as jest.Mock).mockResolvedValue(true);
+      jwtService.sign
+        .mockReturnValueOnce('access-token')
+        .mockReturnValueOnce('refresh-token');
+
+      await service.login('test@example.com', 'password');
+
+      const loginAudit = auditLogRepo.create.mock.calls
+        .map((c) => c[0])
+        .find((a) => a?.action === 'auth.login_success');
+      expect(loginAudit).toBeDefined();
+      const meta = loginAudit.metadataJson ?? {};
+      expect(meta).not.toHaveProperty('email');
+      // the raw email value must not appear anywhere in the persisted metadata
+      expect(JSON.stringify(meta)).not.toContain('test@example.com');
     });
 
     it('should throw ForbiddenException if 2FA is enabled but code is missing', async () => {
