@@ -562,6 +562,13 @@
                       >
                         {{ participantName(participant) }}
                       </span>
+                      @if (participant.kind === 'contact') {
+                        <span
+                          class="shrink-0 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded-full"
+                          title="Involved in this expense but not a FinMate member of this group"
+                          >Contact</span
+                        >
+                      }
                     </label>
                     <div class="flex items-center gap-2 shrink-0">
                       @if (selectedUserIds.has(participant.id)) {
@@ -605,6 +612,16 @@
                 }
               </div>
             </div>
+
+            @if (hasContactParticipants()) {
+              <p
+                class="text-[11px] leading-snug text-slate-500 dark:text-slate-400 px-1"
+              >
+                <span class="font-semibold">Contact</span> = someone involved in
+                this expense but not a FinMate member of this group. Adding them
+                to an expense does not give them group access.
+              </p>
+            }
 
             <!-- Live summary -->
             <div class="grid grid-cols-3 gap-2">

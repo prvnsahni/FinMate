@@ -4736,3 +4736,36 @@ the anonymous endpoint (PUBLIC-1G).
 - **Files:** backend — `backend/src/app/expenses/expenses.service.spec.ts` (test-only; 1 file).
 - **Verification:** `npx nx test backend` → **83 suites / 929 tests pass** (was 928; +1), including all FIN-002
   finance golden tests. No production code touched; no frontend/API/schema/migration/E2EE/finance change. No push.
+
+## 2026-09-07 — Reusable non-member Contacts in the group expense UI (frontend)
+
+- **Summary:** Made the already-supported reusable non-member Contact selectable/reusable from the group
+  Add/Edit-Expense modal. Previously the modal was keyed entirely by `user.id` and **excluded**
+  Contact-backed members from both participants (`!!m.user`) and payers, so a non-member could never be
+  put on a group expense from the UI despite full backend support. **Frontend-only, additive; no backend,
+  DTO, migration, or FIN-002 change** — the contract (`participantGroupMemberId`, `paidByGroupMemberId`)
+  already existed.
+- **Design (approved Option A — additive composite key):** registered members keep their raw `user.id`
+  and are still sent as `participantUserId`/`paidByUserId` (byte-for-byte unchanged); non-member
+  Contact-backed members are keyed by `member:<groupMemberId>` and sent as
+  `participantGroupMemberId`/`paidByGroupMemberId`. The SAME GroupMember id is reused across every expense
+  — no client-side identity creation, no per-expense Contact.
+- **Changes (`create-expense-modal.component.ts`):** `availableParticipants`/`availablePayers` now include
+  Contact-backed members with a `kind: 'user' | 'contact'` discriminator; `resolveParticipantUserId` →
+  `resolveParticipantKey` (round-trips Contact-backed splits/payer in edit mode instead of dropping them);
+  new `participantRefFor`/`isContactKey`/`groupMemberIdOf` bridge the selection key to the DTO fields;
+  `currentSplitPayload` and the payer payload branch on the key; default create-mode selection also
+  auto-selects Contact-backed members; `hasContactParticipants()` added.
+- **Template (`create-expense-modal.component.html`):** a "Contact" badge per non-member row, a "· Contact"
+  suffix on contact payer options, and a caption clarifying a Contact is not a group member and gains no
+  group access. Only `displayName` is ever rendered — no phone/email.
+- **Privacy:** selector is limited to this group's already-authorized members; no new search/endpoint; no
+  contact phone/email surfaced (test-asserted).
+- **Files:** frontend — `create-expense-modal.component.ts`, `create-expense-modal.component.html`,
+  `create-expense-modal.component.spec.ts` (3 files).
+- **Tests:** +9 modal cases (Priya): lists/auto-selects the Contact by `member:<id>`; **reuses the same
+  GroupMember id across a 2nd expense**; User+Contact splits coexist; Contact payer → `paidByGroupMemberId`
+  (no `paidByUserId`); fixed-amount split for a Contact; edit-mode round-trip; no phone/email exposure;
+  badge/caption render.
+- **Verification:** `npx nx test frontend` → **79 suites / 730 tests pass** (was 721; +9); `npx nx lint
+  frontend` 0 errors (pre-existing `any` warnings only); prettier clean on changed files. No push.

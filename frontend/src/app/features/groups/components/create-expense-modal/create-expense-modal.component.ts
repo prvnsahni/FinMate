@@ -155,7 +155,9 @@ export class CreateExpenseModalComponent implements OnChanges {
   get payerOptions(): DropdownOption[] {
     return this.availablePayers.map((p) => ({
       value: p.id,
-      label: p.name,
+      // Non-member Contacts are suffixed so the payer is visibly not a FinMate
+      // member — never implying they have group access.
+      label: p.kind === 'contact' ? `${p.name} · Contact` : p.name,
     }));
   }
 
@@ -837,71 +839,140 @@ export class CreateExpenseModalComponent implements OnChanges {
     throw new Error('Encryption key not loaded/derived. Please try again.');
   }
 
-  get availablePayers(): { id: string; name: string }[] {
+  get availablePayers(): {
+    id: string;
+    name: string;
+    kind: 'user' | 'contact';
+  }[] {
     if (this.groupId) {
-      // Pending (Contact-backed) members have no User account and can't be
-      // selected as payer in this User-keyed flow.
+      // A group expense may be paid by a registered member (User) or by a
+      // non-member Contact-backed member. Users keep their raw user id and are
+      // sent as paidByUserId (unchanged); Contact-backed members are keyed by
+      // `member:<groupMemberId>` and sent as paidByGroupMemberId — the backend
+      // already supports both via the ExpensePayment identity model.
       return this.members
-        .filter((m) => !!m.user)
-        .map((m) => ({
-          id: m.user!.id,
-          name: m.user!.displayName || m.user!.username || m.user!.email || '',
-        }));
+        .filter((m) => !!m.user || !!m.contact)
+        .map((m) =>
+          m.user
+            ? {
+                id: m.user.id,
+                name:
+                  m.user.displayName || m.user.username || m.user.email || '',
+                kind: 'user' as const,
+              }
+            : {
+                id: `member:${m.id}`,
+                name: m.contact?.displayName || 'Contact',
+                kind: 'contact' as const,
+              },
+        );
     } else {
       const currentUserId = this.getCurrentUserId();
-      const list = [];
+      const list: { id: string; name: string; kind: 'user' | 'contact' }[] = [];
       if (currentUserId) {
-        list.push({ id: currentUserId, name: 'You' });
+        list.push({ id: currentUserId, name: 'You', kind: 'user' });
       }
       for (const friend of this.resolvedFriends.values()) {
         list.push({
           id: friend.id,
           name: friend.displayName || friend.username || friend.email || '',
+          kind: 'user',
         });
       }
       return list;
     }
   }
 
-  get availableParticipants() {
+  get availableParticipants(): {
+    id: string;
+    name: string | undefined;
+    kind: 'user' | 'contact';
+  }[] {
     if (this.groupId) {
+      // Registered members are keyed by user id (participantUserId, unchanged);
+      // non-member Contact-backed members (no `user`) are keyed by
+      // `member:<groupMemberId>` and sent as participantGroupMemberId, so the
+      // SAME Contact identity is reused across every expense in the group.
       return this.members
-        .filter((m) => m.role !== 'spectator' && !!m.user)
-        .map((m) => ({
-          id: m.user!.id,
-          name: m.user!.displayName || m.user!.email,
-        }));
+        .filter((m) => m.role !== 'spectator' && (!!m.user || !!m.contact))
+        .map((m) =>
+          m.user
+            ? {
+                id: m.user.id,
+                name: m.user.displayName || m.user.email,
+                kind: 'user' as const,
+              }
+            : {
+                id: `member:${m.id}`,
+                name: m.contact?.displayName || 'Contact',
+                kind: 'contact' as const,
+              },
+        );
     } else {
       const currentUserId = this.getCurrentUserId();
-      const list = [];
+      const list: {
+        id: string;
+        name: string | undefined;
+        kind: 'user' | 'contact';
+      }[] = [];
       if (currentUserId) {
-        list.push({ id: currentUserId, name: 'You' });
+        list.push({ id: currentUserId, name: 'You', kind: 'user' });
       }
       for (const friend of this.resolvedFriends.values()) {
-        list.push({ id: friend.id, name: friend.displayName });
+        list.push({ id: friend.id, name: friend.displayName, kind: 'user' });
       }
       return list;
     }
   }
 
+  /** True when at least one selectable participant is a non-member Contact. */
+  hasContactParticipants(): boolean {
+    return this.availableParticipants.some((p) => p.kind === 'contact');
+  }
+
   /**
-   * Resolves a split/payer reference to a *user* id — the id space the payer
-   * dropdown and participant checkboxes are keyed by. Group expenses carry the
-   * reference as a GroupMember id (participantUserId/paidByUserId come back
-   * null), so fall back to looking the member up in `members`. Returns null for
-   * pending (userless) members, which can't be represented in the user-keyed
-   * selection.
+   * Resolves a split/payer reference to the *selection key* the payer dropdown
+   * and participant checkboxes are keyed by. Registered members resolve to
+   * their raw user id; non-member Contact-backed members (no `user`) resolve to
+   * a `member:<groupMemberId>` composite key so they round-trip in edit mode
+   * instead of being silently dropped. Group expenses carry the reference as a
+   * GroupMember id (participantUserId/paidByUserId come back null), so fall
+   * back to looking the member up in `members`.
    */
-  private resolveParticipantUserId(
+  private resolveParticipantKey(
     userId?: string | null,
     groupMemberId?: string | null,
   ): string | null {
     if (userId) return userId;
     if (groupMemberId) {
       const member = this.members.find((m) => m.id === groupMemberId);
-      return member?.user?.id ?? null;
+      if (member?.user) return member.user.id;
+      if (member?.contact) return `member:${member.id}`;
     }
     return null;
+  }
+
+  /**
+   * A selection key is either a raw user id (registered member) or a
+   * `member:<groupMemberId>` composite (non-member Contact-backed member).
+   * These bridge that key to the backend's dual-identity DTO fields without
+   * ever inventing a new identity on the client.
+   */
+  private isContactKey(key: string): boolean {
+    return key.startsWith('member:');
+  }
+  private groupMemberIdOf(key: string): string {
+    return key.slice('member:'.length);
+  }
+  private participantRefFor(
+    key: string,
+  ): Pick<
+    ExpenseSplitInputDto,
+    'participantUserId' | 'participantGroupMemberId'
+  > {
+    return this.isContactKey(key)
+      ? { participantGroupMemberId: this.groupMemberIdOf(key) }
+      : { participantUserId: key };
   }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -937,7 +1008,7 @@ export class CreateExpenseModalComponent implements OnChanges {
       // participantGroupMemberId. The payer dropdown and participant checkboxes
       // are keyed by *user* id, so resolve member ids back to user ids here or
       // "Paid By" and "Split Equally Among" render empty in edit mode.
-      const resolvedPayerUserId = this.resolveParticipantUserId(
+      const resolvedPayerUserId = this.resolveParticipantKey(
         this.expense.paidByUserId,
         this.expense.paidByGroupMemberId,
       );
@@ -957,7 +1028,7 @@ export class CreateExpenseModalComponent implements OnChanges {
       this.selectedUserIds.clear();
       if (this.expense.splits) {
         this.expense.splits.forEach((s) => {
-          const uid = this.resolveParticipantUserId(
+          const uid = this.resolveParticipantKey(
             s.participantUserId,
             s.participantGroupMemberId,
           );
@@ -1024,7 +1095,7 @@ export class CreateExpenseModalComponent implements OnChanges {
       this.splitMode = originalSplitType === 'fixed' ? 'fixed' : 'equal';
       this.splitDraftAmounts.clear();
       for (const split of this.expense.splits ?? []) {
-        const uid = this.resolveParticipantUserId(
+        const uid = this.resolveParticipantKey(
           split.participantUserId,
           split.participantGroupMemberId,
         );
@@ -1063,12 +1134,14 @@ export class CreateExpenseModalComponent implements OnChanges {
     if (changes['members'] && this.members && !this.expense) {
       this.selectedUserIds.clear();
       this.members.forEach((m) => {
-        if (
-          m.user &&
-          (m.joinStatus === 'active' || m.joinStatus === 'invited') &&
-          m.role !== 'spectator'
-        ) {
+        if (m.role === 'spectator') return;
+        if (m.joinStatus !== 'active' && m.joinStatus !== 'invited') return;
+        if (m.user) {
           this.selectedUserIds.add(m.user.id);
+        } else if (m.contact) {
+          // Non-member Contact-backed participant — reused by its stable
+          // GroupMember id, never re-created.
+          this.selectedUserIds.add(`member:${m.id}`);
         }
       });
 
@@ -1213,15 +1286,15 @@ export class CreateExpenseModalComponent implements OnChanges {
 
   private currentSplitPayload(): ExpenseSplitInputDto[] {
     if (this.splitMode === 'fixed') {
-      return Array.from(this.selectedUserIds).map((userId) => ({
-        participantUserId: userId,
+      return Array.from(this.selectedUserIds).map((key) => ({
+        ...this.participantRefFor(key),
         splitType: 'fixed' as const,
-        shareValue: this.splitDraftAmounts.get(userId) ?? 0,
+        shareValue: this.splitDraftAmounts.get(key) ?? 0,
       }));
     }
 
-    return Array.from(this.selectedUserIds).map((userId) => ({
-      participantUserId: userId,
+    return Array.from(this.selectedUserIds).map((key) => ({
+      ...this.participantRefFor(key),
       splitType: 'equal' as const,
       shareValue: 1,
     }));
@@ -1386,7 +1459,9 @@ export class CreateExpenseModalComponent implements OnChanges {
         | 'expense'
         | 'refund';
       const expenseDate = formValue.expenseDate;
-      const paidByUserId = formValue.paidByUserId;
+      // Selection key: a raw user id, or `member:<groupMemberId>` when the
+      // chosen payer is a non-member Contact-backed member.
+      const paidByKey = formValue.paidByUserId;
 
       if (
         !title ||
@@ -1395,7 +1470,7 @@ export class CreateExpenseModalComponent implements OnChanges {
         !currency ||
         !category ||
         !expenseDate ||
-        !paidByUserId
+        !paidByKey
       ) {
         this.isSubmitting = false;
         return;
@@ -1582,7 +1657,12 @@ export class CreateExpenseModalComponent implements OnChanges {
           currency,
           category,
           expenseDate,
-          paidByUserId,
+          // Dual-identity payer: a Contact-backed member is sent as
+          // paidByGroupMemberId (mutually exclusive with paidByUserId per the
+          // backend Check constraint); registered members are unchanged.
+          ...(this.isContactKey(paidByKey)
+            ? { paidByGroupMemberId: this.groupMemberIdOf(paidByKey) }
+            : { paidByUserId: paidByKey }),
           groupId: this.groupId ?? undefined,
           splits,
           encryptionScope: scope,
