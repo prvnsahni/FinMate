@@ -1142,6 +1142,127 @@ describe('ExpensesService', () => {
     });
   });
 
+  // Frozen-architecture regression for the reusable non-member "Person"
+  // feature, which is implemented as `Contact` + a Contact-backed
+  // `GroupMember` (contact set, user null), NOT a second identity model.
+  // See contact.entity.ts and ContactsService.resolveOrCreateIdentity. This
+  // guards the core product requirement: the SAME non-member identity must be
+  // reused across MULTIPLE group expenses, and merely appearing in an expense
+  // must never turn that person into an authenticated User/member.
+  describe('reusable non-member Contact across multiple group expenses (Priya scenario)', () => {
+    it('references the SAME Contact-backed GroupMember for a non-member reused in three separate expenses, and never a User', async () => {
+      // Priya: a non-member participant. Contact-backed membership with no
+      // `user`, so she has no login, no keys, and no group permissions purely
+      // from being named in expenses.
+      const priyaContact = { id: 'contact-priya', displayName: 'Priya' };
+      const priyaMember = {
+        id: 'membership-priya',
+        role: 'member',
+        joinStatus: 'invited',
+        user: undefined,
+        contact: priyaContact,
+      } as any;
+      const callerMember = {
+        id: 'membership-caller',
+        role: 'member',
+        joinStatus: 'active',
+        user: { id: 'caller-id' },
+      } as any;
+
+      userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+      groupMemberRepository.findOne.mockResolvedValue(callerMember);
+      // buildGroupParticipantMaps reads this same array on every createExpense,
+      // so `groupMemberById.get('membership-priya')` returns the identical
+      // object reference each time — the crux of the reuse assertion below.
+      groupMemberRepository.find.mockResolvedValue([callerMember, priyaMember]);
+      groupRepository.findOne.mockResolvedValue({
+        id: 'group-id',
+        currency: 'INR',
+        isArchived: false,
+      } as any);
+      groupKeyVersionRepository.findOne.mockResolvedValue({
+        id: 'gkv-1',
+        version: 1,
+        status: 'ACTIVE',
+      } as any);
+      expenseRepository.save.mockImplementation(async (data: any) => ({
+        ...data,
+        id: 'exp-priya',
+      }));
+      expenseRepository.findOne.mockResolvedValue({
+        id: 'exp-priya',
+        title: 'Reused',
+        amountTotal: 100,
+        currency: 'INR',
+        category: 'Other',
+        expenseDate: '2026-06-10',
+        status: 'posted',
+        encryptionScope: 'group',
+        isCarryForward: false,
+        paidByUser: undefined,
+        paidByGroupMember: callerMember,
+        ownerUser: { id: 'caller-id' },
+        group: { id: 'group-id' },
+        groupKeyVersion: { id: 'gkv-1', version: 1 },
+      } as any);
+      splitRepository.find.mockResolvedValue([]);
+      attachmentRepository.find.mockResolvedValue([]);
+
+      const addExpenseWithPriya = (title: string, amount: number) =>
+        service.createExpense('caller-id', {
+          title,
+          amountTotal: amount,
+          currency: 'INR',
+          category: 'Other',
+          paidByUserId: 'caller-id',
+          groupId: 'group-id',
+          expenseDate: '2026-06-10',
+          splits: [
+            {
+              participantUserId: 'caller-id',
+              splitType: 'equal',
+              shareValue: 1,
+            },
+            {
+              participantGroupMemberId: 'membership-priya',
+              splitType: 'equal',
+              shareValue: 1,
+            },
+          ],
+        } as any);
+
+      // Expense 1 (Hotel), 2 (Dinner), 3 (Taxi) — the same Priya each time.
+      await addExpenseWithPriya('Hotel', 6000);
+      await addExpenseWithPriya('Dinner', 3000);
+      await addExpenseWithPriya('Taxi', 1500);
+
+      // Three distinct Expense rows were written (no identity was minted per
+      // expense — the person is reused, not recreated).
+      expect(expenseRepository.save).toHaveBeenCalledTimes(3);
+
+      // Every persisted split belonging to Priya, across all three expenses,
+      // references the IDENTICAL Contact-backed GroupMember — one stable
+      // Person identity, never a fresh Person/Contact per expense.
+      const priyaSplits = splitRepository.create.mock.calls
+        .map((c) => c[0] as any)
+        .filter((s) => s.participantGroupMember?.id === 'membership-priya');
+      expect(priyaSplits).toHaveLength(3);
+      for (const split of priyaSplits) {
+        expect(split.participantGroupMember).toBe(priyaMember);
+        expect(split.participantGroupMember.contact.id).toBe('contact-priya');
+        // Contact-backed only: participation never resolves her as a User.
+        expect(split.participantGroupMember.user).toBeUndefined();
+        expect(split.participantUser).toBeUndefined();
+      }
+
+      // Exactly ONE Contact identity underlies Priya across all three expenses.
+      const priyaContactIds = new Set(
+        priyaSplits.map((s) => s.participantGroupMember.contact.id),
+      );
+      expect(priyaContactIds.size).toBe(1);
+    });
+  });
+
   describe('Phase 5 Verification Rules', () => {
     it('should reject createExpense when currency does not match group base currency', async () => {
       userRepository.findOne

@@ -4710,3 +4710,29 @@ the anonymous endpoint (PUBLIC-1G).
 - **Files:** `group-detail.component.ts`, `group-detail.component.spec.ts` (2 files, frontend only).
 - **Verification:** frontend 79 suites / **721 tests** (was 713; +8); production build clean; lint 0 errors
   (pre-existing `any` warnings only). No backend change → backend suite/FIN-002 not required. No push.
+
+## 2026-09-07 — Reusable non-member "Person": audit + Priya reuse regression lock
+
+- **Summary:** A "Reusable Non-Member Person" feature was requested. A repository audit found the capability
+  **already fully implemented** as the `Contact` entity (not a new `Person` model): stable UUID identity,
+  `displayName`/`email`/`phoneNumber`, `status` (`pending`/`claimed`/`archived`), `claimedByUser`/`claimedAt`
+  link path, and `mergedIntoContact`/`mergedAt`/`mergedByUser` merge lineage. A non-member participates via a
+  Contact-backed `GroupMember` (contact set, `user` null → no login/keys/permissions), and expense
+  splits/payments reference that membership via `participantGroupMember`/`paidByGroupMember`. Building a second
+  `Person` model was rejected as duplicative (violates the frozen identity architecture and the "reuse existing
+  identity" rule). **No new entity, schema, migration, API, or architecture change.** Only the missing
+  end-to-end regression test for the core "same non-member reused across multiple expenses in one group"
+  scenario was added.
+- **Why already-done:** `ContactsService.resolveOrCreateIdentity` resolves-or-creates exactly one Contact
+  (advisory lock + partial unique indexes prevent duplicates); `claimContactsForUser` links a later-registered
+  User without minting a second identity or copying history; `mergeContacts` archives (never deletes) and
+  forbids LOW/name-only auto-merge; `listAddressBook` is group-scoped (no global private directory). All
+  pre-existing and unit-tested (~45 cases in `contacts.service.spec.ts`).
+- **Test added:** `expenses.service.spec.ts` → new describe *"reusable non-member Contact across multiple group
+  expenses (Priya scenario)"*: creates 3 group expenses (Hotel/Dinner/Taxi) all splitting to the same
+  Contact-backed member "Priya"; asserts every persisted Priya split references the **identical** GroupMember
+  object (one stable Person identity, not one-per-expense), exactly one underlying Contact id, `user` undefined
+  (never resolved as an authenticated User), and 3 distinct Expense rows.
+- **Files:** backend — `backend/src/app/expenses/expenses.service.spec.ts` (test-only; 1 file).
+- **Verification:** `npx nx test backend` → **83 suites / 929 tests pass** (was 928; +1), including all FIN-002
+  finance golden tests. No production code touched; no frontend/API/schema/migration/E2EE/finance change. No push.
