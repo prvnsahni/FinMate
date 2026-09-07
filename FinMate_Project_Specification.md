@@ -4769,3 +4769,39 @@ the anonymous endpoint (PUBLIC-1G).
   badge/caption render.
 - **Verification:** `npx nx test frontend` → **79 suites / 730 tests pass** (was 721; +9); `npx nx lint
   frontend` 0 errors (pre-existing `any` warnings only); prettier clean on changed files. No push.
+
+## 2026-09-07 — Add a new non-member Contact from group Add-Expense (frontend)
+
+- **Summary:** Closed the last UX gap — an owner/admin can now add a brand-new non-member Contact **without
+  leaving Add Expense**. Prior to this the only entry point was Members tab → Add New Contact. Added a small
+  owner/admin-only inline "+ Add someone not in this group" form in the expense modal's participant area that
+  **reuses the existing identity path** and auto-selects the created Contact. **Frontend-only; no backend,
+  DTO, schema, migration, finance, E2EE, P2P, recurring, or public-sharing change; no new endpoint.**
+- **Reuse (no duplicated logic):** the inline form calls the existing
+  `GroupsService.inviteMember(groupId, { identifier, displayName, role:'member' })` →
+  `POST /groups/:id/members` → `GroupsService.inviteMember` → `ContactsService.resolveOrCreateIdentity`.
+  The Members-tab Add-New-Contact modal was **not** reusable directly (it stages into the bulk-invite +
+  key-wrapping flow), so per the audit's fallback the smallest equivalent integration keeps identity
+  creation in the existing API/service layer. Key-wrapping is intentionally omitted — the backend ignores
+  it for a Contact (no `targetUser`).
+- **Authorization (frozen — owner/admin only):** control shown only when `canAddContact()` (=
+  `isCurrentUserOwnerOrAdmin()`); `submitNewContact()` also guards; the backend `inviteMember` owner/admin
+  check remains the security boundary. Regular members see a non-actionable hint instead.
+- **State/refresh:** on success the modal optimistically selects `member:<newGroupMemberId>` and emits a new
+  `memberChanged` output wired to the parent's existing `fetchMembers()`; the refreshed `members()` flows
+  back in. The create-mode default-selection was guarded to **initialize-once** so the mid-expense refresh
+  no longer wipes the user's in-progress selection.
+- **Payer / reuse / duplicates / privacy:** contact payer → `paidByGroupMemberId` (no `paidByUserId`); the
+  same GroupMember id is reused on later expenses (no second Contact); duplicate handling is entirely
+  server-side (conflict message surfaced, no client-side duplicate); only `displayName` is rendered — no
+  phone/email, no Contact search.
+- **Files:** frontend — `create-expense-modal.component.ts`, `create-expense-modal.component.html`,
+  `create-expense-modal.component.spec.ts`, `pages/group-detail/group-detail.component.html` (wire
+  `memberChanged`). (4 files.)
+- **Tests:** +7 modal cases: owner/admin visibility + non-owner cannot invoke; create-from-expense uses the
+  existing inviteMember path once, refreshes, auto-selects, shows only displayName; reuse of same
+  GroupMember id on a 2nd expense; contact payer; privacy (no search, no phone/email); server-conflict
+  surfaced with no duplicate.
+- **Verification:** `npx nx test frontend` → **79 suites / 737 tests pass** (was 730; +7); `npx nx lint
+  frontend` 0 errors (pre-existing warnings only); prettier clean on changed files. Backend untouched → not
+  run. No push.

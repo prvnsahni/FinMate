@@ -25,6 +25,7 @@ import {
   DuplicateExpenseMatch,
   ExpensesService,
 } from '../../services/expenses.service';
+import { GroupsService } from '../../services/groups.service';
 import { FriendsService } from '../../../../features/friends/services/friends.service';
 import { SubmitButtonComponent } from '../../../../shared/components/submit-button/submit-button.component';
 import {
@@ -138,6 +139,7 @@ export interface ExpenseDraftPrefill {
 })
 export class CreateExpenseModalComponent implements OnChanges {
   private expensesService = inject(ExpensesService);
+  private groupsService = inject(GroupsService);
   private friendsService = inject(FriendsService);
   private fb = inject(FormBuilder);
   private destroyRef = inject(DestroyRef);
@@ -185,8 +187,30 @@ export class CreateExpenseModalComponent implements OnChanges {
 
   @Output() expenseCreated = new EventEmitter<void>();
   @Output() closeModalEvent = new EventEmitter<void>();
+  /**
+   * Fired after a new non-member Contact is created inline (see
+   * submitNewContact). The parent (GroupDetailComponent) re-fetches members via
+   * its existing `fetchMembers()` — the same lifecycle GroupMembersComponent
+   * already uses — so the fresh Contact-backed GroupMember flows back into
+   * `members` and renders as a selectable participant/payer.
+   */
+  @Output() memberChanged = new EventEmitter<void>();
 
   selectedUserIds = new Set<string>();
+
+  // --- Inline "add someone not in this group" (owner/admin only) ----------
+  /** Whether the inline add-Contact form is expanded. */
+  showAddContact = signal(false);
+  newContactName = '';
+  newContactIdentifier = '';
+  newContactError = '';
+  isAddingContact = false;
+  /**
+   * True once the create-mode default participant/payer selection has been
+   * seeded. Later `members` refreshes (e.g. after adding a Contact mid-expense)
+   * must not re-seed — that would wipe the user's in-progress selection.
+   */
+  private participantsInitialized = false;
   splitMode: EditableSplitMode = 'equal';
   splitDraftAmounts = new Map<string, number>();
   participantSearchTerm = signal('');
@@ -931,6 +955,103 @@ export class CreateExpenseModalComponent implements OnChanges {
   }
 
   /**
+   * Whether the current user may add a new non-member Contact from here.
+   * Mirrors the backend authorization on `POST /groups/:id/members`
+   * (owner/admin only). This only controls UI affordance — the backend remains
+   * the security boundary and rejects an unauthorized caller regardless.
+   */
+  canAddContact(): boolean {
+    return !!this.groupId && this.isCurrentUserOwnerOrAdmin();
+  }
+
+  openAddContact(): void {
+    this.newContactName = '';
+    this.newContactIdentifier = '';
+    this.newContactError = '';
+    this.showAddContact.set(true);
+  }
+
+  cancelAddContact(): void {
+    this.showAddContact.set(false);
+    this.newContactError = '';
+  }
+
+  /**
+   * Create a new non-member Contact-backed GroupMember from inside Add Expense
+   * and select it for the current expense. Reuses the EXISTING identity path
+   * (`GroupsService.inviteMember` → `POST /groups/:id/members` →
+   * `ContactsService.resolveOrCreateIdentity`); no Contact is created on the
+   * client and no second endpoint is introduced. Duplicate/conflict protection
+   * stays entirely server-side — a conflict surfaces its message and triggers a
+   * members refresh, never a client-side duplicate.
+   */
+  async submitNewContact(): Promise<void> {
+    if (!this.groupId || !this.canAddContact()) return;
+    const name = this.newContactName.trim();
+    const identifier = this.newContactIdentifier.trim();
+    this.newContactError = '';
+
+    if (!name) {
+      this.newContactError = 'Name is required.';
+      return;
+    }
+    if (!identifier) {
+      this.newContactError = 'Email or phone number is required.';
+      return;
+    }
+    if (!this.isValidEmail(identifier) && !this.isValidPhone(identifier)) {
+      this.newContactError =
+        'Enter a valid email address or phone number (7-15 digits).';
+      return;
+    }
+
+    this.isAddingContact = true;
+    try {
+      const res = await firstValueFrom(
+        this.groupsService.inviteMember(this.groupId, {
+          identifier,
+          displayName: name,
+          role: 'member',
+        }),
+      );
+      const newMemberId = res?.member?.id;
+      if (newMemberId) {
+        // Select the reusable Contact-backed GroupMember by its stable member
+        // key. Optimistic: the authoritative refresh (memberChanged → parent
+        // fetchMembers → members) then renders the row as checked.
+        this.selectedUserIds.add(`member:${newMemberId}`);
+        if (this.splitMode === 'fixed') {
+          this.splitDraftAmounts.set(`member:${newMemberId}`, 0);
+        }
+      }
+      this.showAddContact.set(false);
+      this.newContactName = '';
+      this.newContactIdentifier = '';
+      this.memberChanged.emit();
+      this.markChanged();
+    } catch (err: any) {
+      // Server-side duplicate/conflict protection is the source of truth.
+      // Surface its message and still refresh so an already-existing identity
+      // appears for selection — never create a second Contact here.
+      this.newContactError =
+        err?.error?.message ||
+        err?.message ||
+        'Could not add this person. Please try again.';
+      this.memberChanged.emit();
+    } finally {
+      this.isAddingContact = false;
+    }
+  }
+
+  private isValidEmail(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  private isValidPhone(value: string): boolean {
+    return /^\+?[0-9\s-]{7,15}$/.test(value);
+  }
+
+  /**
    * Resolves a split/payer reference to the *selection key* the payer dropdown
    * and participant checkboxes are keyed by. Registered members resolve to
    * their raw user id; non-member Contact-backed members (no `user`) resolve to
@@ -1132,31 +1253,40 @@ export class CreateExpenseModalComponent implements OnChanges {
     // returns before reaching here); a later members re-emit must not clobber
     // that selection or reset the payer.
     if (changes['members'] && this.members && !this.expense) {
-      this.selectedUserIds.clear();
-      this.members.forEach((m) => {
-        if (m.role === 'spectator') return;
-        if (m.joinStatus !== 'active' && m.joinStatus !== 'invited') return;
-        if (m.user) {
-          this.selectedUserIds.add(m.user.id);
-        } else if (m.contact) {
-          // Non-member Contact-backed participant — reused by its stable
-          // GroupMember id, never re-created.
-          this.selectedUserIds.add(`member:${m.id}`);
-        }
-      });
-
-      const currentUserId = this.getCurrentUserId();
-      const registeredMembers = this.members.filter((m) => !!m.user);
-      if (
-        currentUserId &&
-        registeredMembers.some((m) => m.user!.id === currentUserId)
-      ) {
-        this.expenseForm.patchValue({ paidByUserId: currentUserId });
-      } else if (registeredMembers.length > 0) {
-        this.expenseForm.patchValue({
-          paidByUserId: registeredMembers[0].user!.id,
+      // Seed the default selection/payer only on the FIRST members arrival.
+      // A later refresh (e.g. after "+ Add someone not in this group" creates a
+      // Contact mid-expense) must NOT clear the user's in-progress selection —
+      // the freshly added member is selected explicitly in submitNewContact().
+      if (!this.participantsInitialized) {
+        this.participantsInitialized = true;
+        this.selectedUserIds.clear();
+        this.members.forEach((m) => {
+          if (m.role === 'spectator') return;
+          if (m.joinStatus !== 'active' && m.joinStatus !== 'invited') return;
+          if (m.user) {
+            this.selectedUserIds.add(m.user.id);
+          } else if (m.contact) {
+            // Non-member Contact-backed participant — reused by its stable
+            // GroupMember id, never re-created.
+            this.selectedUserIds.add(`member:${m.id}`);
+          }
         });
+
+        const currentUserId = this.getCurrentUserId();
+        const registeredMembers = this.members.filter((m) => !!m.user);
+        if (
+          currentUserId &&
+          registeredMembers.some((m) => m.user!.id === currentUserId)
+        ) {
+          this.expenseForm.patchValue({ paidByUserId: currentUserId });
+        } else if (registeredMembers.length > 0) {
+          this.expenseForm.patchValue({
+            paidByUserId: registeredMembers[0].user!.id,
+          });
+        }
       }
+      // Recompute participant computeds against the (possibly refreshed) list.
+      this.markChanged();
     }
 
     if (changes['groupCurrency'] && this.groupCurrency) {
