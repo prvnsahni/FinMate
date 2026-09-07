@@ -4805,3 +4805,41 @@ the anonymous endpoint (PUBLIC-1G).
 - **Verification:** `npx nx test frontend` → **79 suites / 737 tests pass** (was 730; +7); `npx nx lint
   frontend` 0 errors (pre-existing warnings only); prettier clean on changed files. Backend untouched → not
   run. No push.
+
+## 2026-09-07 — P2P-1: DirectLedgerEntry Contact identity + ledger assembly (backend)
+
+- **Summary:** First backend batch of the approved P2P Contact plan. `DirectLedgerEntry` now supports a
+  non-member `Contact` on either side (`User XOR Contact`), mirroring `ExpenseSplit`/`ExpensePayment`, and
+  `PersonLedgerService` assembles direct entries under opaque `user:<id>` / `contact:<id>` ledger keys.
+  **No API/frontend/claim/merge/settlement-API work** (later batches). **FIN-002 calculators untouched.**
+- **Entity (`direct-ledger-entry.entity.ts`):** `fromUser`/`toUser` relaxed to nullable; added nullable
+  `fromContact`/`toContact` (`@ManyToOne(Contact)`); `createdByUser` still required (a Contact never
+  records). New `@Check`s: per-side XOR (`chk_dle_from_identity`/`chk_dle_to_identity`) + same-kind
+  distinctness (`chk_dle_distinct_parties` — rejects userA→userA and contactC→contactC, allows cross-kind);
+  added `fromContact`/`toContact` indexes.
+- **Migration `1720400000000-AddDirectLedgerContactIdentity`:** additive/non-destructive — drops NOT NULL on
+  the two user FKs, adds two nullable contact FKs (`ON DELETE RESTRICT`), swaps the distinctness check, adds
+  the XOR checks + indexes. Existing User↔User rows untouched (no backfill/rewrite/delete). `down()` is
+  **guarded**: raises if Contact-backed rows exist rather than silently deleting history; otherwise reverses
+  the schema. Registered in `migrations/index.ts`.
+- **`PersonLedgerService`:** opaque key helpers `keyForUser`/`keyForContact`; `CounterpartyLedger` rekeyed to
+  a composite key + `kind`/`userId?`/`contactId?`; `accumulateDirectLedger` resolves the counterparty as User
+  **or** Contact (caller is always the User side); group-side keys wrapped in `keyForUser` (V1 guards left
+  **unchanged** — deferred). `simplifyLedgerDebts` still receives opaque keys, unmodified. **External User
+  API is byte-for-byte unchanged:** `getOverview` skips non-user counterparties (P2P-1 defers Contact
+  exposure to P2P-3), `getPersonDetail`/`createDirectSettlement` look up `keyForUser(counterpartyUserId)`; a
+  Contact's email/phone is never surfaced through the ledger (`email: ''`).
+- **Tests (+13):** migration spec (5) asserts additive/XOR/same-kind/guarded-down SQL; `person-ledger` spec
+  (8) proves User→Contact & Contact→User assembly, same-Contact reuse across 3 entries → one `contact:<id>`
+  identity, per-currency bucketing, zero-net, round2 drift, User↔User parity (internal `user:<id>` key,
+  external `counterpartyUserId` unchanged), and that Contacts are not yet surfaced in the User overview.
+- **Files:** `shared/data-models/src/lib/direct-ledger-entry.entity.ts`;
+  `backend/src/migrations/1720400000000-AddDirectLedgerContactIdentity.ts` (+ `.spec.ts`);
+  `backend/src/migrations/index.ts`; `backend/src/app/people/person-ledger.service.ts` (+ `.spec.ts`).
+- **Verification:** `npx nx test backend` → **84 suites / 942 tests pass** (was 929; +13), including the full
+  FIN-002 `finance-golden` gate (unchanged) and all existing `person-ledger` User↔User tests (parity).
+  `nx lint backend`/`data-models` 0 errors; prettier clean. No push.
+- **Governance follow-up (NOT done here):** the frozen `FINMATE_DECISION_LEDGER.md` + an ADR must record
+  "P2P counterparty = User XOR Contact; Contact claim/merge = read-time resolution; Contact email/phone
+  omitted from P2P DTOs." Not authored in this code batch — editing the frozen doc stack needs the
+  freeze/back-port governance approval. Flagged as a required approval before P2P-3 exposes Contacts.

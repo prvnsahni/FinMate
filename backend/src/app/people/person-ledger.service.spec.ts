@@ -332,4 +332,226 @@ describe('PersonLedgerService', () => {
       expect(aToB.netBalance).toBe(0);
     });
   });
+
+  // ── P2P-1 — Contact-capable direct ledger (internal assembly) ─────────────
+  // Proves DirectLedgerEntry can be assembled for a non-member Contact under an
+  // opaque `contact:<id>` key, that the same Contact reuses one identity, and
+  // that existing User↔User external behaviour is unchanged. Contact rows are
+  // NOT yet surfaced through the User API (deferred to P2P-3).
+  describe('P2P-1 Contact-capable ledger', () => {
+    const contactStub = (id: string, displayName = id) => ({
+      id,
+      displayName,
+      email: `${id}@contact.example`, // must never leak into the ledger
+      phoneNumber: '+10000000000',
+    });
+    const rd2 = (n: number) => Math.round(n * 100) / 100;
+    // White-box: buildLedger is private; assemble the internal ledger directly.
+    const buildLedger = (callerId: string, only?: string) =>
+      (
+        service as unknown as {
+          buildLedger: (
+            c: string,
+            o?: string,
+          ) => Promise<Map<string, Record<string, any>>>;
+        }
+      ).buildLedger(callerId, only);
+
+    it('assembles a User→Contact lend under contact:<id> (caller is owed); never leaks email', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'x1',
+          fromUser: null,
+          fromContact: contactStub('C1', 'Priya'),
+          toUser: userStub('U1'),
+          toContact: null,
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+      ]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['contact:C1']);
+      const cp = ledger.get('contact:C1')!;
+      expect(cp.kind).toBe('contact');
+      expect(cp.contactId).toBe('C1');
+      expect(cp.userId).toBeUndefined();
+      expect(cp.displayName).toBe('Priya');
+      expect(cp.email).toBe(''); // privacy — Contact email/phone never surfaced
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(500);
+    });
+
+    it('assembles a Contact→User borrow under contact:<id> (caller owes)', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'x2',
+          fromUser: userStub('U1'),
+          fromContact: null,
+          toUser: null,
+          toContact: contactStub('C1'),
+          entryType: 'borrow',
+          amount: '300',
+          currency: 'USD',
+          occurredOn: '2026-08-02',
+        },
+      ]);
+      const ledger = await buildLedger('U1');
+      expect(
+        rd2(ledger.get('contact:C1')!.byCurrency.get('USD').directLending),
+      ).toBe(-300);
+    });
+
+    it('reuses the SAME contact:<id> key across three entries — no identity duplication', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'e1',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+        {
+          id: 'e2',
+          fromUser: userStub('U1'),
+          toContact: contactStub('C1'),
+          entryType: 'borrow',
+          amount: '300',
+          currency: 'USD',
+          occurredOn: '2026-08-02',
+        },
+        {
+          id: 'e3',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '700',
+          currency: 'USD',
+          occurredOn: '2026-08-03',
+        },
+      ]);
+      const ledger = await buildLedger('U1');
+      const contactKeys = [...ledger.keys()].filter((k) =>
+        k.startsWith('contact:'),
+      );
+      expect(contactKeys).toEqual(['contact:C1']); // ONE identity, not three
+      const bucket = ledger.get('contact:C1')!.byCurrency.get('USD');
+      expect(rd2(bucket.directLending)).toBe(900); // +500 -300 +700
+      expect(bucket.history).toHaveLength(3);
+    });
+
+    it('buckets a Contact counterparty independently per currency', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'm1',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+        {
+          id: 'm2',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '400',
+          currency: 'INR',
+          occurredOn: '2026-08-01',
+        },
+      ]);
+      const cp = (await buildLedger('U1')).get('contact:C1')!;
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(500);
+      expect(rd2(cp.byCurrency.get('INR').directLending)).toBe(400);
+    });
+
+    it('nets a Contact relationship to zero when fully offset', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'z1',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+        {
+          id: 'z2',
+          fromUser: userStub('U1'),
+          toContact: contactStub('C1'),
+          entryType: 'borrow',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-02',
+        },
+      ]);
+      const cp = (await buildLedger('U1')).get('contact:C1')!;
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(0);
+    });
+
+    it('round2 collapses floating-point drift for a Contact net (0.1 + 0.2 = 0.3)', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'f1',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '0.1',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+        {
+          id: 'f2',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '0.2',
+          currency: 'USD',
+          occurredOn: '2026-08-02',
+        },
+      ]);
+      const cp = (await buildLedger('U1')).get('contact:C1')!;
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(0.3);
+    });
+
+    it('PARITY: User↔User still uses a user:<id> internal key and the external overview still returns the raw counterpartyUserId', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'p1',
+          fromUser: userStub('U2'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+      ]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U2']); // internal key
+      const res = await service.getOverview('U1');
+      expect(res.people[0].counterpartyUserId).toBe('U2'); // external shape unchanged
+      expect(res.people[0].netBalance).toBe(500);
+    });
+
+    it('does NOT surface Contact counterparties through the User overview yet (deferred to P2P-3)', async () => {
+      directRepo.find.mockResolvedValue([
+        {
+          id: 'c1',
+          fromContact: contactStub('C1'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '500',
+          currency: 'USD',
+          occurredOn: '2026-08-01',
+        },
+      ]);
+      const res = await service.getOverview('U1');
+      expect(res.people).toHaveLength(0);
+      expect(res.totalYouAreOwed).toBe(0);
+    });
+  });
 });

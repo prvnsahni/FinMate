@@ -36,15 +36,45 @@ interface CurrencyBucket {
   history: PersonHistoryItem[];
 }
 
-/** Accumulated relationship with one counterparty user, keyed by currency. */
+/**
+ * Accumulated relationship with one counterparty, keyed by currency. The
+ * counterparty is a registered `User` or a non-member `Contact`; `key` is the
+ * opaque ledger identity (`user:<id>` / `contact:<id>`) that also feeds
+ * `simplifyLedgerDebts` unchanged.
+ */
 interface CounterpartyLedger {
-  userId: string;
+  key: string;
+  kind: 'user' | 'contact';
+  /** Set when kind === 'user'. */
+  userId?: string;
+  /** Set when kind === 'contact'. */
+  contactId?: string;
   displayName: string;
   email: string;
   byCurrency: Map<string, CurrencyBucket>;
 }
 
+/** Metadata carried alongside a ledger key when a counterparty is first seen. */
+interface CounterpartyMeta {
+  kind: 'user' | 'contact';
+  userId?: string;
+  contactId?: string;
+  displayName: string;
+  email: string;
+}
+
+/** Get-or-create a counterparty bucket by its opaque ledger key. */
+type GetCp = (key: string, meta: CounterpartyMeta) => CounterpartyLedger;
+
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Opaque ledger identity keys. Kept as plain prefixed strings so the FIN-002
+ * calculator `simplifyLedgerDebts` continues to receive opaque keys with no
+ * business meaning (it already sorts/tie-breaks purely lexicographically).
+ */
+const keyForUser = (id: string): string => `user:${id}`;
+const keyForContact = (id: string): string => `contact:${id}`;
 
 @Injectable()
 export class PersonLedgerService {
@@ -86,6 +116,12 @@ export class PersonLedgerService {
     const byCurrency = new Map<string, { owed: number; owe: number }>();
 
     for (const cp of ledger.values()) {
+      // P2P-1: only registered-User counterparties are surfaced in the public
+      // response. Contact-backed direct entries are assembled internally (so the
+      // ledger is Contact-capable) but exposed via dedicated Contact routes in a
+      // later batch (P2P-3), keeping the existing User API byte-for-byte.
+      if (cp.kind !== 'user' || !cp.userId) continue;
+      const counterpartyUserId = cp.userId;
       for (const [currency, bucket] of cp.byCurrency.entries()) {
         const net = round2(
           bucket.groupObligations + bucket.directLending + bucket.settlements,
@@ -95,7 +131,7 @@ export class PersonLedgerService {
         else if (net < 0) totals.owe += Math.abs(net);
         byCurrency.set(currency, totals);
         people.push({
-          counterpartyUserId: cp.userId,
+          counterpartyUserId,
           displayName: cp.displayName,
           email: cp.email,
           currency,
@@ -143,7 +179,7 @@ export class PersonLedgerService {
       throw new BadRequestException('Cannot view a relationship with yourself');
     }
     const ledger = await this.buildLedger(callerUserId, counterpartyUserId);
-    const cp = ledger.get(counterpartyUserId);
+    const cp = ledger.get(keyForUser(counterpartyUserId));
 
     const counterparty = await this.userRepository.findOne({
       where: { id: counterpartyUserId },
@@ -241,7 +277,9 @@ export class PersonLedgerService {
     const currency = dto.currency.toUpperCase();
 
     const ledger = await this.buildLedger(callerUserId, counterpartyUserId);
-    const bucket = ledger.get(counterpartyUserId)?.byCurrency.get(currency);
+    const bucket = ledger
+      .get(keyForUser(counterpartyUserId))
+      ?.byCurrency.get(currency);
     const net = bucket
       ? round2(
           bucket.groupObligations + bucket.directLending + bucket.settlements,
@@ -375,19 +413,19 @@ export class PersonLedgerService {
     onlyCounterpartyId?: string,
   ): Promise<Map<string, CounterpartyLedger>> {
     const ledger = new Map<string, CounterpartyLedger>();
-    const getCp = (
-      userId: string,
-      display: { displayName: string; email: string },
-    ): CounterpartyLedger => {
-      let cp = ledger.get(userId);
+    const getCp: GetCp = (key, meta) => {
+      let cp = ledger.get(key);
       if (!cp) {
         cp = {
-          userId,
-          displayName: display.displayName,
-          email: display.email,
+          key,
+          kind: meta.kind,
+          userId: meta.userId,
+          contactId: meta.contactId,
+          displayName: meta.displayName,
+          email: meta.email,
           byCurrency: new Map(),
         };
-        ledger.set(userId, cp);
+        ledger.set(key, cp);
       }
       return cp;
     };
@@ -400,10 +438,7 @@ export class PersonLedgerService {
   private async accumulateGroupLedger(
     callerUserId: string,
     onlyCounterpartyId: string | undefined,
-    getCp: (
-      userId: string,
-      display: { displayName: string; email: string },
-    ) => CounterpartyLedger,
+    getCp: GetCp,
   ): Promise<void> {
     // Caller's active memberships in NORMAL groups only.
     const memberships = await this.groupMemberRepository.find({
@@ -533,7 +568,9 @@ export class PersonLedgerService {
           if (onlyCounterpartyId && info.userId !== onlyCounterpartyId)
             continue;
 
-          const cp = getCp(info.userId, {
+          const cp = getCp(keyForUser(info.userId), {
+            kind: 'user',
+            userId: info.userId,
             displayName: info.displayName,
             email: info.email ?? '',
           });
@@ -594,7 +631,9 @@ export class PersonLedgerService {
           (counterpartyUserId === toUserId
             ? s.toGroupMember?.user?.email
             : s.fromGroupMember?.user?.email) ?? '';
-        const cp = getCp(counterpartyUserId, {
+        const cp = getCp(keyForUser(counterpartyUserId), {
+          kind: 'user',
+          userId: counterpartyUserId,
           displayName: cpDisplayName || cpEmail,
           email: cpEmail,
         });
@@ -618,42 +657,68 @@ export class PersonLedgerService {
   private async accumulateDirectLedger(
     callerUserId: string,
     onlyCounterpartyId: string | undefined,
-    getCp: (
-      userId: string,
-      display: { displayName: string; email: string },
-    ) => CounterpartyLedger,
+    getCp: GetCp,
   ): Promise<void> {
+    // The caller is always a User on one side (a Contact never records/queries),
+    // so filtering by the caller's user id on either side finds every entry the
+    // caller is party to — including User↔Contact ones.
     const entries = await this.directLedgerRepository.find({
       where: [
         { fromUser: { id: callerUserId }, deletedAt: IsNull() },
         { toUser: { id: callerUserId }, deletedAt: IsNull() },
       ],
-      relations: ['fromUser', 'toUser'],
+      relations: ['fromUser', 'toUser', 'fromContact', 'toContact'],
     });
 
     for (const e of entries) {
-      const isCallerTo = e.toUser.id === callerUserId;
-      const counterparty = isCallerTo ? e.fromUser : e.toUser;
-      if (onlyCounterpartyId && counterparty.id !== onlyCounterpartyId)
-        continue;
+      const callerIsFrom = e.fromUser?.id === callerUserId;
+      const callerIsTo = e.toUser?.id === callerUserId;
+      if (!callerIsFrom && !callerIsTo) continue;
+
+      // Counterparty = the OTHER side — a registered User or a non-member Contact.
+      const cpUser = callerIsTo ? e.fromUser : e.toUser;
+      const cpContact = callerIsTo ? e.fromContact : e.toContact;
+
+      let cpKey: string;
+      let cpMeta: CounterpartyMeta;
+      if (cpUser) {
+        cpKey = keyForUser(cpUser.id);
+        cpMeta = {
+          kind: 'user',
+          userId: cpUser.id,
+          displayName: cpUser.displayName || cpUser.email,
+          email: cpUser.email,
+        };
+      } else if (cpContact) {
+        cpKey = keyForContact(cpContact.id);
+        cpMeta = {
+          kind: 'contact',
+          contactId: cpContact.id,
+          // Privacy: never surface a Contact's email/phone through the ledger.
+          displayName: cpContact.displayName || 'Contact',
+          email: '',
+        };
+      } else {
+        continue; // malformed row (DB checks forbid this) — skip defensively
+      }
+
+      // `onlyCounterpartyId` is a User id (P2P-1 read routes are User-only), so
+      // Contact counterparties are assembled but never match a User filter.
+      if (onlyCounterpartyId && cpMeta.userId !== onlyCounterpartyId) continue;
 
       let signedForCaller: number;
       let bucketKey: 'directLending' | 'settlements';
       if (e.entryType === 'settlement') {
         // from = payer. Caller paying back increases net toward "they owe you".
-        signedForCaller =
-          e.fromUser.id === callerUserId ? Number(e.amount) : -Number(e.amount);
+        signedForCaller = callerIsFrom ? Number(e.amount) : -Number(e.amount);
         bucketKey = 'settlements';
       } else {
-        // lend/borrow: toUser is the creditor.
-        signedForCaller = isCallerTo ? Number(e.amount) : -Number(e.amount);
+        // lend/borrow: the `to` side is the creditor.
+        signedForCaller = callerIsTo ? Number(e.amount) : -Number(e.amount);
         bucketKey = 'directLending';
       }
 
-      const cp = getCp(counterparty.id, {
-        displayName: counterparty.displayName || counterparty.email,
-        email: counterparty.email,
-      });
+      const cp = getCp(cpKey, cpMeta);
       const bucket = this.ensureBucket(cp, e.currency);
       bucket[bucketKey] += signedForCaller;
       bucket.history.push({
