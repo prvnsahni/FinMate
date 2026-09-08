@@ -157,7 +157,11 @@ Metadata columns (`id` PK, `version`, `createdAt`, `updatedAt`, `deletedAt`) are
 | currency                      | char(3)       | N    | plaintext                                                       | INTERNAL            | F     | Yes     |
 | **note**                      | text          | Y    | **plaintext (CURRENT)** → **E2EE `direct_shared` (TARGET B-2)** | SENSITIVE (Zone 1a) | U,P   | **Yes** |
 | occurredOn                    | date          | N    | plaintext                                                       | INTERNAL            | F     | Yes     |
-| fromUser/toUser/createdByUser | FK            | N    | plaintext refs                                                  | SENSITIVE (R)       | R     | Yes     |
+| createdByUser                 | FK            | N    | plaintext ref                                                   | SENSITIVE (R)       | R     | Yes     |
+| fromUser/toUser               | FK            | Y    | plaintext refs                                                  | SENSITIVE (R)       | R     | Yes     |
+| fromContact/toContact         | FK            | Y    | plaintext refs                                                  | SENSITIVE (R); Contact PII per §5.13 | R,P | Yes |
+
+> **Finding (P2P-CNT-1, 2026-09-07):** each side is now `User` XOR `Contact` (DB-enforced); `fromUser`/`toUser` are **nullable** and `fromContact`/`toContact` were added, while `createdByUser` stays NOT NULL. Contact-side references are non-user third-party PII (governed by §5.13 + ledger CNT-1). **No plaintext phone/email is stored on `direct_ledger_entries`** — only FK references; P2P reads surface Contact `displayName` only (see ledger **P2P-CNT-3**). `note` classification (Zone 1a / B-2) is unchanged.
 
 ### 5.8 FINANCE — `recurring_expenses` (+ `recurring_expense_splits` [ENG-UNKNOWN exact cols; mirrors expense_splits])
 

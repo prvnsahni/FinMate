@@ -35,10 +35,11 @@ An **ADR** is a short note that records _why_ an important decision was made —
 | [022](adr/ADR-022-privacy-first-ai-dev-context.md)                  | Privacy-first AI dev context                  | Accepted | Least-knowledge agents; secretless env                  | Dev/IP                              | High     | Low          |
 | [023](adr/ADR-023-no-user-data-training-v1.md)                      | No user-data training in V1                   | Accepted | No training; verified no-train providers                | AI, vendors                         | High     | Low          |
 | [024](adr/ADR-024-finance-data-protected-though-server-readable.md) | Finance data protected though server-readable | Accepted | Zone-2 plaintext-but-protected                          | Finance                             | High     | Low          |
+| [025](adr/ADR-025-p2p-contact-counterparty.md)                      | P2P direct-ledger counterparty (User XOR Contact) | Accepted | User XOR Contact; read-time claim/merge; PII not leaked; API [COUNSEL] | Finance/People (P2P), Contacts | High | Med |
 
 ### Related SRS requirements (per ADR)
 
-001→GOV/COMP/FIN · 002→DATA/FLD · 003→ENC-001/KEY-001-002/FUT-001 · 004→KEY-001/003 · 005→KEY-004 · 006→KEY-006/DEL-002-003 · 007→SEC-ISO-001-002/INT-001 · 008→INT-001-005 · 009→AI-001/003/009 · 010→AI-002/004 · 011→AI-005/013/PRIV-004-006 · 012→FUT-002 · 013→AUTH-002/004 · 014→AUTH-003 · 015→AUTH-005/SEC-003 · 016→MIG-001-003/008 · 017→FIN-002/007/013/014 · 018→PRIV-002-004/INT-004 · 019→DEL-001-006/DER-1 · 020→UX-005/005b · 021→NOT-001-007 · 022→SEC-001/IP · 023→AI-008/FUT-004 · 024→FIN-003/DATA-003/FLD-5.
+001→GOV/COMP/FIN · 002→DATA/FLD · 003→ENC-001/KEY-001-002/FUT-001 · 004→KEY-001/003 · 005→KEY-004 · 006→KEY-006/DEL-002-003 · 007→SEC-ISO-001-002/INT-001 · 008→INT-001-005 · 009→AI-001/003/009 · 010→AI-002/004 · 011→AI-005/013/PRIV-004-006 · 012→FUT-002 · 013→AUTH-002/004 · 014→AUTH-003 · 015→AUTH-005/SEC-003 · 016→MIG-001-003/008 · 017→FIN-002/007/013/014 · 018→PRIV-002-004/INT-004 · 019→DEL-001-006/DER-1 · 020→UX-005/005b · 021→NOT-001-007 · 022→SEC-001/IP · 023→AI-008/FUT-004 · 024→FIN-003/DATA-003/FLD-5 · 025→P2P-CNT-1..4 (Ledger)/CNT-1-2/DEL-001/FIN-002.
 
 ## Classification summary
 

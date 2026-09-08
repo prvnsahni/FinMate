@@ -537,4 +537,32 @@ Product · Engineering · Security · Counsel (an item may be primarily one type
 
 ---
 
+### Addendum — P2P Contact direct-ledger counterparty (2026-09-07)
+
+- **Added:** 4 new items — **P2P-CNT-1, P2P-CNT-2, P2P-CNT-3, P2P-CNT-4.** Recorded per the freeze rule (new dated entries + **ADR-025**). **Supersessions:** none — no prior LOCKED/DEFERRED/COUNSEL item is modified or replaced. **Contradictions:** none; consistent with GOV-1 (additive baseline), CNT-1/CNT-2 (Contact PII + claim), ADR-016 (mixed-state P2P), ADR-017 (parity), ADR-024 (Zone-2), DEL-1 (deletion — reconciled by P2P-CNT-4, premise updated additively, intent preserved).
+- **Counsel-flagged:** P2P-CNT-3 (non-user Contact PII **API** exposure — lawful basis + non-user rights). Recorded **[COUNSEL REQUIRED]**; **not** represented as approved.
+- **Implementation state:** P2P-CNT-1/-2 implemented (P2P-1 `9e93920`, P2P-2 `937b38b`, local, unpushed); P2P-CNT-3 **DEFERRED** (P2P-3 unbuilt, governance-blocked); P2P-CNT-4 is a documentation reconciliation.
+
+#### P2P-CNT-1 — Direct-ledger party is exactly one of User or Contact
+
+- **Decision:** Each side of `direct_ledger_entries` references **exactly one** identity — `fromUser` XOR `fromContact`, `toUser` XOR `toContact` — enforced **at the database level** (per-side `num_nonnulls`/OR CHECKs + a same-kind distinctness CHECK). `createdByUser` remains NOT NULL (a Contact never records an entry). A Contact is the existing non-user financial identity — not a `User`, not an auth principal, not a new `Person`, and no fake `User` is created. Additive migration; existing `User↔User` rows unchanged.
+- **Status:** LOCKED (arch) · **Type:** Engineering · **Reason:** Reuse the proven `ExpenseSplit`/`ExpensePayment` dual-identity model for P2P. · **Security/Privacy impact:** No new auth principal; Contact gains no access. · **Existing-fn:** **Preserved.** · **Prod-data:** Yes → additive migration `1720400000000` (nullable relax + contact FKs; guarded non-destructive `down()`). · **Rollback:** guarded down (refuses while contact-backed rows exist). · **Platform:** All · **Dependencies:** CNT-1, CNT-2, GOV-1, ADR-016, ADR-024. · **Source:** ADR-025; impl `9e93920`.
+
+#### P2P-CNT-2 — Contact claim/merge resolved at read time; history not rewritten
+
+- **Decision:** Contact→User **claim** and Contact **merge** are resolved **at ledger-read time** — a claimed Contact folds to `user:<claimedUserId>`; a merged Contact resolves via the existing `ContactsService.resolveMergeRedirect` chain (cycle-guarded; incl. `A→B→C→claimed-User`); claimed/merged history collapses into the terminal identity. Historical `DirectLedgerEntry` rows are **never** rewritten, copied, or deleted. Ledger keys are opaque (`user:`/`contact:`), so `simplifyLedgerDebts` / `calculateDeterministicSplits` and the finance-golden fixtures are **unchanged**.
+- **Status:** LOCKED (ENGINEERING REQUIRED) · **Type:** Engineering + Security · **Reason:** Financial-history immutability + single-human identity. · **Security/Privacy impact:** No write path from claim/merge into the ledger. · **Existing-fn:** **Preserved** (`User↔User` identical). · **Prod-data:** None new (read-time only). · **Migration:** None. · **Rollback:** n/a. · **Platform:** All · **Dependencies:** CNT-2, ADR-017, P2P-CNT-1. · **Source:** ADR-025; impl `937b38b`.
+
+#### P2P-CNT-3 — P2P Contact API exposure is subject to the non-user PII/privacy boundary
+
+- **Decision:** Exposing Contact-backed counterparties through the P2P API (P2P-3) MUST respect the Contact non-user PII/privacy boundary: DTOs expose only the **minimum authorized presentation data** (Contact `displayName` where authorized); **no** raw phone/email, **no** internal Contact id, **no** provenance, **no** global Contact directory, **no** name-only/partial search over private Contacts, **no** arbitrary `contactId` enumeration (IDOR). Contact access is caller-scoped (the caller's own ledger; a Contact the caller is authorized to see); exact identity resolution reuses `ContactsService.resolveOrCreateIdentity`; username remains the only globally searchable identifier where already supported.
+- **Status:** LOCKED (arch, boundary); **[COUNSEL REQUIRED]** (lawful basis to expose non-user Contact PII via API + non-user rights process) — **not approved by this entry**; **[GOVERNANCE-OWNER APPROVAL REQUIRED]** before P2P-3 build. · **Type:** Product + Security + Counsel · **Reason:** Third-party PII crosses a new egress surface (API). · **Security/Privacy impact:** Minimization + authz + IDOR resistance. · **Existing-fn:** Additive. · **Prod-data:** Reads existing Contacts. · **Migration:** None (governance). · **Rollback:** n/a. · **Platform:** All · **Dependencies:** CNT-1, GOV-4, GOV-5, ISO-4, T-30. · **Source:** ADR-025. · **Implementation:** **DEFERRED — P2P-3 not built; governance-blocked.**
+
+#### P2P-CNT-4 — DEL-1 deletion-premise reconciliation (nullable user FKs)
+
+- **Decision:** P2P-CNT-1 relaxes `direct_ledger_entries.from_user_id`/`to_user_id` to **nullable** and adds `from_contact_id`/`to_contact_id`. This **updates the stated premise** of **DEL-1** ("existing NOT-NULL user FKs on `direct_ledger_entries` … make row-DELETE impossible") **without changing its intent**: shared financial ledger rows are **not** casually deleted — anonymize/tombstone-in-place — and identity changes (claim/merge) must **not** cause destructive history rewriting. `created_by_user_id` remains NOT NULL. Contact-backed rows are treated identically: a deleted/claimed/merged Contact's direct entries are redirected/pseudonymized **at read time**, never row-DELETEd or rewritten. Deletion/audit guarantees are **not weakened**.
+- **Status:** LOCKED (arch); **[COUNSEL REQUIRED]** (retention basis, inherited from DEL-1) · **Type:** Engineering + Counsel · **Reason:** Keep DEL-1 accurate after the schema change; protect other parties' history. · **Security/Privacy impact:** Preserves anonymize-in-place. · **Existing-fn:** **Preserved.** · **Prod-data:** No new migration (documentation reconciliation; deletion service still unbuilt per DEL-1). · **Rollback:** n/a. · **Platform:** All · **Dependencies:** DEL-1, DEL-2/3, P2P-CNT-1/-2. · **Source:** ADR-025.
+
+---
+
 _End of Frozen Decision Ledger. Change control: any modification to a LOCKED item requires a new dated entry here plus an ADR. This ledger governs the documents that follow it in the stack._
