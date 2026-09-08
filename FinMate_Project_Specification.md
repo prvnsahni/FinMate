@@ -4843,3 +4843,40 @@ the anonymous endpoint (PUBLIC-1G).
   "P2P counterparty = User XOR Contact; Contact claim/merge = read-time resolution; Contact email/phone
   omitted from P2P DTOs." Not authored in this code batch — editing the frozen doc stack needs the
   freeze/back-port governance approval. Flagged as a required approval before P2P-3 exposes Contacts.
+
+## 2026-09-07 — P2P-2: read-time Contact claim + merge resolution for the direct ledger (backend)
+
+- **Summary:** Second backend batch of the P2P Contact plan. `PersonLedgerService` now resolves a
+  Contact-backed direct-ledger counterparty **at read time**: a *claimed* Contact folds to its
+  `user:<id>` identity, and a *merged* Contact follows the existing redirect chain to its terminal
+  survivor. **Historical `DirectLedgerEntry` rows are never rewritten** (immutable) — this is purely
+  ledger-assembly identity resolution. No API/frontend/claim-write/merge-write changes; FIN-002
+  calculators untouched.
+- **Reuse (no second mechanism):** follows `ContactsService.resolveMergeRedirect` (the existing
+  cycle-guarded chain resolver); `claimContactsForUser` and `mergeContacts` are **unmodified**.
+  `PeopleModule` now imports `ContactsModule` and registers the `Contact` repo.
+- **Resolution (`resolveContactIdentity`):** loads the Contact (`mergedIntoContact` + `claimedByUser`);
+  if archived→ follow redirect to terminal, reload its claim state; if terminal is `claimed`→
+  `user:<claimedByUser.id>` (surfacing the registered user's own name/email like any User counterparty),
+  else `contact:<terminalId>` (Contact email/phone still never surfaced). Handles chains A→B→C and
+  A→B→C→claimed-User.
+- **Identity collapse:** because a claimed Contact resolves to `user:<id>`, historical Contact-backed
+  rows share the SAME `CounterpartyLedger` bucket as native User↔User rows for that human — one balance
+  row, combined net (e.g. Contact ₹500 + User ₹300 → U9 ₹800), and `getOverview` surfaces the single
+  collapsed row. `getPersonDetail(userId)` includes the folded Contact history via the same key.
+- **No N+1:** each distinct counterparty Contact is resolved once per `buildLedger` (deduped map);
+  repeated rows for the same Contact reuse the cached identity. Read-only — no writes during assembly
+  (idempotent across repeated reads).
+- **Unchanged:** `simplifyLedgerDebts`/`calculateDeterministicSplits`/golden fixtures; `round2`,
+  currency bucketing, sign/direction, ordering; the group-derived V1 guards (`!info.userId` /
+  `fromGroupMember?.user?.id`) — still deferred.
+- **Files:** `backend/src/app/people/person-ledger.service.ts` (+ `.spec.ts`);
+  `backend/src/app/people/people.module.ts`.
+- **Tests (+12):** unclaimed keeps `contact:<id>`; claimed→`user:<id>` (no row mutation); claim collapse
+  into one identity + combined net (+ overview one-row); 3 entries for one claimed Contact → one identity
+  with a single lookup (no N+1); merge A→B→terminal; merge+claim; redirect chain A→B→C; chain+claim;
+  immutability (no save/softRemove/create); idempotency; multi-currency bucketing; round2 preserved.
+- **Verification:** `npx nx test backend` → **84 suites / 954 tests pass** (was 942; +12), full FIN-002
+  `finance-golden` gate unchanged. `nx lint backend` 0 errors; prettier clean. No push.
+- **Governance:** ADR + `FINMATE_DECISION_LEDGER.md` addendum still owed (frozen stack; needs
+  freeze/back-port approval) — unchanged from P2P-1; not authored here.

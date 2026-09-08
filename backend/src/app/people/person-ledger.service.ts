@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import {
+  Contact,
   CreateDirectSettlementDto,
   CreateDirectTransactionDto,
   DirectLedgerEntry,
@@ -27,6 +28,7 @@ import {
   simplifyLedgerDebts,
 } from '@finmate/data-models';
 import { resolveMemberDisplay } from '../common/member-display.util';
+import { ContactsService } from '../contacts/contacts.service';
 
 /** Per-currency accumulator for one counterparty. */
 interface CurrencyBucket {
@@ -93,7 +95,64 @@ export class PersonLedgerService {
     private readonly directLedgerRepository: Repository<DirectLedgerEntry>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Contact)
+    private readonly contactRepository: Repository<Contact>,
+    // P2P-2: reused only for its existing merge/redirect resolver — no second
+    // merge mechanism and no claim/merge write path is touched here.
+    private readonly contactsService: ContactsService,
   ) {}
+
+  /**
+   * Read-time resolution of a Contact-backed counterparty to its terminal
+   * ledger identity (P2P-2). Follows the existing Contact merge redirect chain
+   * (`ContactsService.resolveMergeRedirect`, cycle-guarded) to the surviving
+   * Contact, then folds a *claimed* Contact into its `user:<id>` identity so
+   * historical Contact-backed rows collapse into the same human as the
+   * registered User. The underlying `DirectLedgerEntry` is never mutated.
+   */
+  private async resolveContactIdentity(
+    contactId: string,
+  ): Promise<CounterpartyMeta> {
+    const contact = await this.contactRepository.findOne({
+      where: { id: contactId },
+      relations: ['mergedIntoContact', 'claimedByUser'],
+    });
+    if (!contact) {
+      // Defensive: FK guarantees the row exists, but never throw during a
+      // read-only ledger build — fall back to an opaque contact identity.
+      return { kind: 'contact', contactId, displayName: 'Contact', email: '' };
+    }
+
+    // Follow merge redirects to the terminal (surviving) Contact. Only archived
+    // rows redirect; resolveMergeRedirect handles multi-hop chains + cycles.
+    let terminal = contact;
+    if (contact.status === 'archived' && contact.mergedIntoContact) {
+      const resolved = await this.contactsService.resolveMergeRedirect(contact);
+      // resolveMergeRedirect loads only `mergedIntoContact`; reload the terminal
+      // with its claim state so a merged→claimed chain folds to the User.
+      terminal =
+        (await this.contactRepository.findOne({
+          where: { id: resolved.id },
+          relations: ['claimedByUser'],
+        })) ?? resolved;
+    }
+
+    if (terminal.status === 'claimed' && terminal.claimedByUser) {
+      const u = terminal.claimedByUser;
+      return {
+        kind: 'user',
+        userId: u.id,
+        displayName: u.displayName || u.email,
+        email: u.email,
+      };
+    }
+    return {
+      kind: 'contact',
+      contactId: terminal.id,
+      displayName: terminal.displayName || 'Contact',
+      email: '',
+    };
+  }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -670,6 +729,26 @@ export class PersonLedgerService {
       relations: ['fromUser', 'toUser', 'fromContact', 'toContact'],
     });
 
+    // P2P-2: resolve each DISTINCT counterparty Contact exactly once (claim +
+    // merge redirect), so a Contact appearing in many rows never triggers a
+    // per-row query — no N+1. Repeated resolution is idempotent and does no
+    // writes, so the ledger is stable across repeated reads.
+    const contactIds = new Set<string>();
+    for (const e of entries) {
+      const callerParty =
+        e.fromUser?.id === callerUserId || e.toUser?.id === callerUserId;
+      if (!callerParty) continue;
+      const cpContact =
+        e.toUser?.id === callerUserId ? e.fromContact : e.toContact;
+      if (cpContact) contactIds.add(cpContact.id);
+    }
+    const contactIdentity = new Map<string, CounterpartyMeta>();
+    await Promise.all(
+      [...contactIds].map(async (id) =>
+        contactIdentity.set(id, await this.resolveContactIdentity(id)),
+      ),
+    );
+
     for (const e of entries) {
       const callerIsFrom = e.fromUser?.id === callerUserId;
       const callerIsTo = e.toUser?.id === callerUserId;
@@ -690,20 +769,29 @@ export class PersonLedgerService {
           email: cpUser.email,
         };
       } else if (cpContact) {
-        cpKey = keyForContact(cpContact.id);
-        cpMeta = {
-          kind: 'contact',
-          contactId: cpContact.id,
-          // Privacy: never surface a Contact's email/phone through the ledger.
-          displayName: cpContact.displayName || 'Contact',
-          email: '',
-        };
+        // Read-time resolved identity: a claimed Contact folds to user:<id>
+        // (collapsing with any native User↔User history for the same human);
+        // a merged Contact resolves to its terminal Contact. History rows are
+        // never rewritten — only the ledger key is resolved here.
+        cpMeta =
+          contactIdentity.get(cpContact.id) ??
+          ({
+            kind: 'contact',
+            contactId: cpContact.id,
+            displayName: cpContact.displayName || 'Contact',
+            email: '',
+          } as CounterpartyMeta);
+        cpKey =
+          cpMeta.kind === 'user'
+            ? keyForUser(cpMeta.userId as string)
+            : keyForContact(cpMeta.contactId as string);
       } else {
         continue; // malformed row (DB checks forbid this) — skip defensively
       }
 
       // `onlyCounterpartyId` is a User id (P2P-1 read routes are User-only), so
-      // Contact counterparties are assembled but never match a User filter.
+      // an unclaimed Contact never matches; a CLAIMED Contact resolves to its
+      // user id and therefore correctly folds into that user's detail view.
       if (onlyCounterpartyId && cpMeta.userId !== onlyCounterpartyId) continue;
 
       let signedForCaller: number;

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import {
+  Contact,
   DirectLedgerEntry,
   Expense,
   ExpensePayment,
@@ -12,6 +13,7 @@ import {
   User,
 } from '@finmate/data-models';
 import { PersonLedgerService } from './person-ledger.service';
+import { ContactsService } from '../contacts/contacts.service';
 
 /** Minimal user stub the way userRepository.findOne resolves it. */
 const userStub = (id: string) => ({
@@ -35,6 +37,10 @@ describe('PersonLedgerService', () => {
     softRemove: jest.Mock;
   };
   let userRepo: { findOne: jest.Mock };
+  let contactRepo: { findOne: jest.Mock };
+  let contactsService: { resolveMergeRedirect: jest.Mock };
+  /** In-memory contacts store the mocked repo/resolver read from. */
+  let contacts: Record<string, any>;
 
   beforeEach(async () => {
     groupMemberRepo = { find: jest.fn().mockResolvedValue([]) };
@@ -53,6 +59,26 @@ describe('PersonLedgerService', () => {
       findOne: jest.fn(async ({ where }) => userStub(where.id)),
     };
 
+    contacts = {};
+    contactRepo = {
+      findOne: jest.fn(async ({ where }) => contacts[where.id] ?? null),
+    };
+    // Faithful stand-in for ContactsService.resolveMergeRedirect: follows
+    // `mergedIntoContact` through archived rows to the terminal, cycle-guarded.
+    contactsService = {
+      resolveMergeRedirect: jest.fn(async (c: any) => {
+        let cur = c;
+        const seen = new Set<string>([cur.id]);
+        while (cur.status === 'archived' && cur.mergedIntoContact) {
+          const next = contacts[cur.mergedIntoContact.id];
+          if (!next || seen.has(next.id)) break;
+          cur = next;
+          seen.add(cur.id);
+        }
+        return cur;
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PersonLedgerService,
@@ -66,6 +92,8 @@ describe('PersonLedgerService', () => {
           useValue: directRepo,
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getRepositoryToken(Contact), useValue: contactRepo },
+        { provide: ContactsService, useValue: contactsService },
       ],
     }).compile();
 
@@ -339,12 +367,17 @@ describe('PersonLedgerService', () => {
   // that existing User↔User external behaviour is unchanged. Contact rows are
   // NOT yet surfaced through the User API (deferred to P2P-3).
   describe('P2P-1 Contact-capable ledger', () => {
-    const contactStub = (id: string, displayName = id) => ({
-      id,
-      displayName,
-      email: `${id}@contact.example`, // must never leak into the ledger
-      phoneNumber: '+10000000000',
-    });
+    // Seeds the read-time resolution store (P2P-2) so displayName resolves from
+    // the Contact record, then returns the shallow relation the entry carries.
+    const contactStub = (id: string, displayName = id) => {
+      contacts[id] = { id, status: 'pending', displayName };
+      return {
+        id,
+        displayName,
+        email: `${id}@contact.example`, // must never leak into the ledger
+        phoneNumber: '+10000000000',
+      };
+    };
     const rd2 = (n: number) => Math.round(n * 100) / 100;
     // White-box: buildLedger is private; assemble the internal ledger directly.
     const buildLedger = (callerId: string, only?: string) =>
@@ -552,6 +585,244 @@ describe('PersonLedgerService', () => {
       const res = await service.getOverview('U1');
       expect(res.people).toHaveLength(0);
       expect(res.totalYouAreOwed).toBe(0);
+    });
+  });
+
+  // ── P2P-2 — read-time Contact claim + merge resolution ────────────────────
+  // Historical Contact-backed rows are never rewritten; ledger assembly folds a
+  // claimed Contact to its user:<id> identity and a merged Contact to its
+  // terminal survivor, collapsing the same human into ONE ledger identity.
+  describe('P2P-2 claim + merge read-time resolution', () => {
+    const rd2 = (n: number) => Math.round(n * 100) / 100;
+    const buildLedger = (callerId: string, only?: string) =>
+      (
+        service as unknown as {
+          buildLedger: (
+            c: string,
+            o?: string,
+          ) => Promise<Map<string, Record<string, any>>>;
+        }
+      ).buildLedger(callerId, only);
+    const lendFromContact = (
+      id: string,
+      contactId: string,
+      amount: string,
+    ) => ({
+      id,
+      fromContact: { id: contactId },
+      toUser: userStub('U1'),
+      entryType: 'lend',
+      amount,
+      currency: 'USD',
+      occurredOn: '2026-08-01',
+    });
+
+    it('TEST 1 — unclaimed Contact keeps a contact:<id> identity', async () => {
+      contacts['C1'] = { id: 'C1', status: 'pending', displayName: 'Priya' };
+      directRepo.find.mockResolvedValue([lendFromContact('d1', 'C1', '500')]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['contact:C1']);
+      expect(
+        rd2(ledger.get('contact:C1')!.byCurrency.get('USD').directLending),
+      ).toBe(500);
+    });
+
+    it('TEST 2 — claimed Contact resolves to user:<id> and never mutates the row', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        displayName: 'Priya',
+        claimedByUser: { id: 'U9', displayName: 'Priya R', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([lendFromContact('d1', 'C1', '500')]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U9']);
+      expect(directRepo.save).not.toHaveBeenCalled();
+      expect(directRepo.softRemove).not.toHaveBeenCalled();
+    });
+
+    it('TEST 3 — claim collapses historical Contact + native User history into ONE identity', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([
+        lendFromContact('c1', 'C1', '500'), // C1 (→U9) owes caller 500
+        {
+          id: 'u1',
+          fromUser: userStub('U9'),
+          toUser: userStub('U1'),
+          entryType: 'lend',
+          amount: '300',
+          currency: 'USD',
+          occurredOn: '2026-08-02',
+        }, // native U9 owes caller 300
+      ]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U9']); // ONE identity, not two
+      expect(
+        rd2(ledger.get('user:U9')!.byCurrency.get('USD').directLending),
+      ).toBe(800);
+      // And the public overview shows a single combined person row.
+      const res = await service.getOverview('U1');
+      expect(res.people).toHaveLength(1);
+      expect(res.people[0].counterpartyUserId).toBe('U9');
+      expect(res.people[0].netBalance).toBe(800);
+    });
+
+    it('TEST 4 — three entries for one claimed Contact resolve to one identity with a single lookup (no N+1)', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([
+        lendFromContact('e1', 'C1', '500'),
+        lendFromContact('e2', 'C1', '300'),
+        lendFromContact('e3', 'C1', '700'),
+      ]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U9']);
+      expect(
+        rd2(ledger.get('user:U9')!.byCurrency.get('USD').directLending),
+      ).toBe(1500);
+      expect(contactRepo.findOne).toHaveBeenCalledTimes(1); // resolved once, not per row
+    });
+
+    it('TEST 5 — merge A→B folds A into terminal Contact B', async () => {
+      contacts['A'] = {
+        id: 'A',
+        status: 'archived',
+        displayName: 'A',
+        mergedIntoContact: { id: 'B' },
+      };
+      contacts['B'] = { id: 'B', status: 'pending', displayName: 'B' };
+      directRepo.find.mockResolvedValue([
+        lendFromContact('a1', 'A', '500'),
+        lendFromContact('b1', 'B', '300'),
+      ]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['contact:B']);
+      expect(
+        rd2(ledger.get('contact:B')!.byCurrency.get('USD').directLending),
+      ).toBe(800);
+    });
+
+    it('TEST 6 — merge A→B then B claimed folds A to the claimed User', async () => {
+      contacts['A'] = {
+        id: 'A',
+        status: 'archived',
+        mergedIntoContact: { id: 'B' },
+      };
+      contacts['B'] = {
+        id: 'B',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([lendFromContact('a1', 'A', '500')]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U9']);
+    });
+
+    it('TEST 7 — redirect chain A→B→C resolves to terminal Contact C', async () => {
+      contacts['A'] = {
+        id: 'A',
+        status: 'archived',
+        mergedIntoContact: { id: 'B' },
+      };
+      contacts['B'] = {
+        id: 'B',
+        status: 'archived',
+        mergedIntoContact: { id: 'C' },
+      };
+      contacts['C'] = { id: 'C', status: 'pending', displayName: 'C' };
+      directRepo.find.mockResolvedValue([lendFromContact('a1', 'A', '500')]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['contact:C']);
+    });
+
+    it('TEST 8 — redirect chain A→B→C then C claimed resolves to user:<id>', async () => {
+      contacts['A'] = {
+        id: 'A',
+        status: 'archived',
+        mergedIntoContact: { id: 'B' },
+      };
+      contacts['B'] = {
+        id: 'B',
+        status: 'archived',
+        mergedIntoContact: { id: 'C' },
+      };
+      contacts['C'] = {
+        id: 'C',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([lendFromContact('a1', 'A', '500')]);
+      const ledger = await buildLedger('U1');
+      expect([...ledger.keys()]).toEqual(['user:U9']);
+    });
+
+    it('TEST 9 — immutability: no historical row is written during a ledger read', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      const entry = lendFromContact('d1', 'C1', '500');
+      directRepo.find.mockResolvedValue([entry]);
+      await buildLedger('U1');
+      expect(directRepo.save).not.toHaveBeenCalled();
+      expect(directRepo.softRemove).not.toHaveBeenCalled();
+      expect(directRepo.create).not.toHaveBeenCalled();
+      // Stored Contact FK on the row is untouched.
+      expect(entry.fromContact).toEqual({ id: 'C1' });
+    });
+
+    it('TEST 10 — idempotency: repeated reads produce identical results', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([lendFromContact('d1', 'C1', '500')]);
+      const net = async () =>
+        rd2(
+          (await buildLedger('U1')).get('user:U9')!.byCurrency.get('USD')
+            .directLending,
+        );
+      expect(await net()).toBe(500);
+      expect(await net()).toBe(500);
+      expect(await net()).toBe(500);
+    });
+
+    it('TEST 11 — a claimed Contact keeps currencies independently bucketed', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([
+        lendFromContact('u1', 'C1', '500'),
+        { ...lendFromContact('i1', 'C1', '400'), currency: 'INR' },
+      ]);
+      const cp = (await buildLedger('U1')).get('user:U9')!;
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(500);
+      expect(rd2(cp.byCurrency.get('INR').directLending)).toBe(400);
+    });
+
+    it('TEST 12 — claim fold preserves round2 semantics (0.1 + 0.2 = 0.3)', async () => {
+      contacts['C1'] = {
+        id: 'C1',
+        status: 'claimed',
+        claimedByUser: { id: 'U9', displayName: 'Priya', email: 'p@x.com' },
+      };
+      directRepo.find.mockResolvedValue([
+        lendFromContact('f1', 'C1', '0.1'),
+        lendFromContact('f2', 'C1', '0.2'),
+      ]);
+      const cp = (await buildLedger('U1')).get('user:U9')!;
+      expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(0.3);
     });
   });
 });
