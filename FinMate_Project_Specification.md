@@ -4728,8 +4728,8 @@ the anonymous endpoint (PUBLIC-1G).
   User without minting a second identity or copying history; `mergeContacts` archives (never deletes) and
   forbids LOW/name-only auto-merge; `listAddressBook` is group-scoped (no global private directory). All
   pre-existing and unit-tested (~45 cases in `contacts.service.spec.ts`).
-- **Test added:** `expenses.service.spec.ts` → new describe *"reusable non-member Contact across multiple group
-  expenses (Priya scenario)"*: creates 3 group expenses (Hotel/Dinner/Taxi) all splitting to the same
+- **Test added:** `expenses.service.spec.ts` → new describe _"reusable non-member Contact across multiple group
+  expenses (Priya scenario)"_: creates 3 group expenses (Hotel/Dinner/Taxi) all splitting to the same
   Contact-backed member "Priya"; asserts every persisted Priya split references the **identical** GroupMember
   object (one stable Person identity, not one-per-expense), exactly one underlying Contact id, `user` undefined
   (never resolved as an authenticated User), and 3 distinct Expense rows.
@@ -4768,7 +4768,7 @@ the anonymous endpoint (PUBLIC-1G).
   (no `paidByUserId`); fixed-amount split for a Contact; edit-mode round-trip; no phone/email exposure;
   badge/caption render.
 - **Verification:** `npx nx test frontend` → **79 suites / 730 tests pass** (was 721; +9); `npx nx lint
-  frontend` 0 errors (pre-existing `any` warnings only); prettier clean on changed files. No push.
+frontend` 0 errors (pre-existing `any` warnings only); prettier clean on changed files. No push.
 
 ## 2026-09-07 — Add a new non-member Contact from group Add-Expense (frontend)
 
@@ -4803,7 +4803,7 @@ the anonymous endpoint (PUBLIC-1G).
   GroupMember id on a 2nd expense; contact payer; privacy (no search, no phone/email); server-conflict
   surfaced with no duplicate.
 - **Verification:** `npx nx test frontend` → **79 suites / 737 tests pass** (was 730; +7); `npx nx lint
-  frontend` 0 errors (pre-existing warnings only); prettier clean on changed files. Backend untouched → not
+frontend` 0 errors (pre-existing warnings only); prettier clean on changed files. Backend untouched → not
   run. No push.
 
 ## 2026-09-07 — P2P-1: DirectLedgerEntry Contact identity + ledger assembly (backend)
@@ -4847,8 +4847,8 @@ the anonymous endpoint (PUBLIC-1G).
 ## 2026-09-07 — P2P-2: read-time Contact claim + merge resolution for the direct ledger (backend)
 
 - **Summary:** Second backend batch of the P2P Contact plan. `PersonLedgerService` now resolves a
-  Contact-backed direct-ledger counterparty **at read time**: a *claimed* Contact folds to its
-  `user:<id>` identity, and a *merged* Contact follows the existing redirect chain to its terminal
+  Contact-backed direct-ledger counterparty **at read time**: a _claimed_ Contact folds to its
+  `user:<id>` identity, and a _merged_ Contact follows the existing redirect chain to its terminal
   survivor. **Historical `DirectLedgerEntry` rows are never rewritten** (immutable) — this is purely
   ledger-assembly identity resolution. No API/frontend/claim-write/merge-write changes; FIN-002
   calculators untouched.
