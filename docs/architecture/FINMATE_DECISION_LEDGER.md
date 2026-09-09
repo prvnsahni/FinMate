@@ -563,6 +563,15 @@ Product · Engineering · Security · Counsel (an item may be primarily one type
 - **Decision:** P2P-CNT-1 relaxes `direct_ledger_entries.from_user_id`/`to_user_id` to **nullable** and adds `from_contact_id`/`to_contact_id`. This **updates the stated premise** of **DEL-1** ("existing NOT-NULL user FKs on `direct_ledger_entries` … make row-DELETE impossible") **without changing its intent**: shared financial ledger rows are **not** casually deleted — anonymize/tombstone-in-place — and identity changes (claim/merge) must **not** cause destructive history rewriting. `created_by_user_id` remains NOT NULL. Contact-backed rows are treated identically: a deleted/claimed/merged Contact's direct entries are redirected/pseudonymized **at read time**, never row-DELETEd or rewritten. Deletion/audit guarantees are **not weakened**.
 - **Status:** LOCKED (arch); **[COUNSEL REQUIRED]** (retention basis, inherited from DEL-1) · **Type:** Engineering + Counsel · **Reason:** Keep DEL-1 accurate after the schema change; protect other parties' history. · **Security/Privacy impact:** Preserves anonymize-in-place. · **Existing-fn:** **Preserved.** · **Prod-data:** No new migration (documentation reconciliation; deletion service still unbuilt per DEL-1). · **Rollback:** n/a. · **Platform:** All · **Dependencies:** DEL-1, DEL-2/3, P2P-CNT-1/-2. · **Source:** ADR-025.
 
+#### Approval log — P2P-CNT-3 / P2P-CNT-4 (as of 2026-09-10)
+
+Partial approval recorded from the P2P Contact API approval request. **P2P-3 remains GOVERNANCE-BLOCKED** — the counsel gate is not satisfied.
+
+- **P2P-CNT-3 · Governance-owner boundary (part B):** **APPROVED** by the FinMate governance owner (project owner) on 2026-09-10. Scope of this approval: caller-scoped Contact access; minimum disclosure = Contact `displayName` + necessary financial data only; **no** phone/email; **no** internal Contact IDs; **no** provenance; **no** global Contact directory; **no** name-only global search; IDOR protection required. This authorizes the **engineering/security boundary** for a future P2P-3 API design **only** — it is **not** a legal determination and asserts no compliance (GOV-4).
+- **P2P-CNT-3 · Lawful basis + non-user rights (part A):** **`[COUNSEL REQUIRED]` — NOT reviewed / NOT approved.** No qualified privacy-counsel determination exists yet.
+- **P2P-CNT-4 · Retention basis (inherited from DEL-1):** **`[COUNSEL REQUIRED]` — NOT reviewed / NOT approved.**
+- **Net effect:** P2P-3 (Contact-backed P2P API exposure) stays **BLOCKED** until counsel provides the lawful basis + non-user rights process (P2P-CNT-3.A) and the retention basis (P2P-CNT-4). The governance-owner boundary approval above does **not**, on its own, unblock P2P-3.
+
 ---
 
 _End of Frozen Decision Ledger. Change control: any modification to a LOCKED item requires a new dated entry here plus an ADR. This ledger governs the documents that follow it in the stack._

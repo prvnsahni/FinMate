@@ -14,15 +14,18 @@
 | **P2P-3** — Contact P2P API / DTO / authorization | ⛔ **GOVERNANCE-BLOCKED — not started** | see blockers below |
 | **P2P-4** — frontend P2P Contact UX | ⛔ **NOT STARTED** (depends on P2P-3) | — |
 
-**P2P-3 is blocked** (do not implement) until BOTH are recorded as actually granted — neither is
-satisfied by the completed engineering work or the governance package:
+**P2P-3 remains blocked** (do not implement). Approval status (Decision Ledger approval log, 2026-09-10):
 
-- **P2P-CNT-3** — `[COUNSEL REQUIRED]` lawful basis for exposing non-user Contact PII via the P2P API
-  + the non-user rights process; **and** `[GOVERNANCE-OWNER APPROVAL REQUIRED]` for the API
-  privacy/authorization boundary.
-- **P2P-CNT-4** — `[COUNSEL REQUIRED]` retention basis (inherited from DEL-1).
+- **P2P-CNT-3 · governance-owner boundary (B)** — ✅ **APPROVED** 2026-09-10 (caller-scoped access;
+  displayName + necessary financial data only; no phone/email; no internal Contact IDs; no provenance;
+  no global directory; no name-only search; IDOR required). Engineering/security boundary only — not a
+  legal determination.
+- **P2P-CNT-3 · lawful basis + non-user rights (A)** — ⛔ `[COUNSEL REQUIRED]` — not reviewed.
+- **P2P-CNT-4 · retention basis (DEL-1)** — ⛔ `[COUNSEL REQUIRED]` — not reviewed.
 
-Nothing has been pushed. Engineering design completeness is **not** governance approval (GOV-4).
+The governance-owner boundary approval does **not** unblock P2P-3 on its own — the counsel gate
+(P2P-CNT-3.A + P2P-CNT-4) is still open. Nothing has been pushed. Engineering completeness is **not**
+governance approval (GOV-4).
 
 ## Locked decisions
 
