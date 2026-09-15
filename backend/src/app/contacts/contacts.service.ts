@@ -190,7 +190,22 @@ export class ContactsService {
       return { type: 'user', user: existingUser };
     }
 
-    // 2. Resolve-or-create the Contact atomically.
+    // 2/3. A previously-known person may already exist as a CLAIMED or MERGED
+    // (archived) Contact. Resolve those to their terminal identity so re-adding
+    // the same email/phone never creates a duplicate pending Contact: a claimed
+    // Contact folds to its `claimedByUser`; a merged Contact follows
+    // `resolveMergeRedirect` to the surviving row (and, if that survivor is
+    // itself claimed, on to its User).
+    const resolvedKnown = await this.resolveKnownContactIdentity(
+      email,
+      phone,
+      manager,
+    );
+    if (resolvedKnown) {
+      return resolvedKnown;
+    }
+
+    // 4/5. Resolve-or-create the pending Contact atomically.
     const run = async (
       txManager: EntityManager,
     ): Promise<{ contact: Contact; wasCreated: boolean }> => {
@@ -257,6 +272,71 @@ export class ContactsService {
     });
 
     return { type: 'contact', contact };
+  }
+
+  /**
+   * Resolves an email/phone to an already-known person represented by a
+   * non-pending Contact — a CLAIMED Contact (→ its `claimedByUser`) or a MERGED
+   * (archived) Contact (→ `resolveMergeRedirect` to the survivor, then on to the
+   * survivor's User if that survivor is itself claimed). Returns `null` when no
+   * such Contact matches, so the caller falls through to the pending
+   * resolve-or-create path. Read-only: never writes or repoints a row.
+   *
+   * The partial unique indexes only constrain PENDING rows, so several
+   * claimed/archived rows may match one identifier; candidates are resolved in
+   * creation order and the first that folds to a terminal (User or surviving
+   * pending Contact) identity wins.
+   */
+  private async resolveKnownContactIdentity(
+    email: string | undefined,
+    phone: string | undefined,
+    manager?: EntityManager,
+  ): Promise<IdentityResolution | null> {
+    const repo = manager
+      ? manager.getRepository(Contact)
+      : this.contactRepository;
+    const idMatch = [
+      ...(email ? [{ email }] : []),
+      ...(phone ? [{ phoneNumber: phone }] : []),
+    ];
+    if (idMatch.length === 0) return null;
+
+    // Claimed first, then archived (merged) — a directly-claimed row is a more
+    // direct signal than a merge chain; both still fold to the same human.
+    const candidates = await repo.find({
+      where: idMatch.flatMap((m) => [
+        { ...m, status: 'claimed' as const },
+        { ...m, status: 'archived' as const },
+      ]),
+      relations: ['mergedIntoContact', 'claimedByUser'],
+      // status DESC puts 'claimed' before 'archived' (c > a); createdAt breaks ties.
+      order: { status: 'DESC', createdAt: 'ASC' },
+    });
+
+    for (const candidate of candidates) {
+      const survivor =
+        candidate.status === 'archived'
+          ? await this.resolveMergeRedirect(candidate, manager)
+          : candidate;
+      // resolveMergeRedirect loads only `mergedIntoContact`; reload the terminal
+      // row with its claim state so a merged→claimed chain folds to the User.
+      const terminal =
+        survivor.id === candidate.id
+          ? candidate
+          : ((await repo.findOne({
+              where: { id: survivor.id },
+              relations: ['claimedByUser'],
+            })) ?? survivor);
+
+      if (terminal.status === 'claimed' && terminal.claimedByUser) {
+        return { type: 'user', user: terminal.claimedByUser };
+      }
+      if (terminal.status === 'pending') {
+        return { type: 'contact', contact: terminal };
+      }
+      // Still archived (broken/cyclic chain) — skip and try the next candidate.
+    }
+    return null;
   }
 
   /**

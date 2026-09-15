@@ -30,7 +30,7 @@ describe('ContactsService', () => {
   beforeEach(async () => {
     contactRepository = {
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       save: jest.fn(async (data) => ({
         id: data.id ?? 'new-contact-id',
         ...data,
@@ -283,6 +283,172 @@ describe('ContactsService', () => {
       expect(result).toEqual({
         type: 'contact',
         contact: { id: 'winner-id', email: 'race@example.com' },
+      });
+    });
+
+    // ── Fix B — resolve a previously-known person (claimed / merged) before
+    // creating a fresh pending Contact, so re-adding the same email/phone never
+    // duplicates them. Order: User → claimed Contact → merged Contact → pending.
+    describe('claimed / merged resolution (Fix B)', () => {
+      const owner = { id: 'alice-id' } as User;
+      /** In-memory contact store the mocked repo walks for merge chains. */
+      let store: Record<string, any>;
+
+      beforeEach(() => {
+        userRepository.findOne.mockResolvedValue(null); // no User backstop
+        store = {};
+        contactRepository.findOne.mockImplementation(
+          async ({ where }: any) => (where.id ? (store[where.id] ?? null) : null),
+        );
+      });
+
+      it('folds a CLAIMED Contact matching the identifier to its claimedByUser (no duplicate)', async () => {
+        contactRepository.find.mockResolvedValueOnce([
+          {
+            id: 'C1',
+            status: 'claimed',
+            email: 'rahul@gmail.com',
+            claimedByUser: { id: 'U9', email: 'rahul@gmail.com' },
+            mergedIntoContact: null,
+          },
+        ]);
+
+        const result = await service.resolveOrCreateIdentity({
+          email: 'Rahul@Gmail.com',
+          createdByUser: owner,
+        });
+
+        expect(result).toEqual({
+          type: 'user',
+          user: { id: 'U9', email: 'rahul@gmail.com' },
+        });
+        expect(contactRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('follows a MERGED (archived) Contact to its surviving pending Contact', async () => {
+        store['B'] = { id: 'B', status: 'pending', mergedIntoContact: null };
+        contactRepository.find.mockResolvedValueOnce([
+          {
+            id: 'A',
+            status: 'archived',
+            phoneNumber: '+919876543210',
+            mergedIntoContact: { id: 'B' },
+            claimedByUser: null,
+          },
+        ]);
+
+        const result = await service.resolveOrCreateIdentity({
+          phone: '+91 98765-43210',
+          createdByUser: owner,
+        });
+
+        expect(result).toEqual({
+          type: 'contact',
+          contact: { id: 'B', status: 'pending', mergedIntoContact: null },
+        });
+        expect(contactRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('follows a MERGED Contact whose survivor is itself CLAIMED through to the User', async () => {
+        store['B'] = {
+          id: 'B',
+          status: 'claimed',
+          mergedIntoContact: null,
+          claimedByUser: { id: 'U9', email: 'rahul@gmail.com' },
+        };
+        contactRepository.find.mockResolvedValueOnce([
+          {
+            id: 'A',
+            status: 'archived',
+            email: 'rahul@gmail.com',
+            mergedIntoContact: { id: 'B' },
+            claimedByUser: null,
+          },
+        ]);
+
+        const result = await service.resolveOrCreateIdentity({
+          email: 'rahul@gmail.com',
+          createdByUser: owner,
+        });
+
+        expect(result).toEqual({
+          type: 'user',
+          user: { id: 'U9', email: 'rahul@gmail.com' },
+        });
+      });
+
+      it('resolves a multi-hop merge chain A→B→C to the terminal pending Contact', async () => {
+        store['B'] = {
+          id: 'B',
+          status: 'archived',
+          mergedIntoContact: { id: 'C' },
+        };
+        store['C'] = { id: 'C', status: 'pending', mergedIntoContact: null };
+        contactRepository.find.mockResolvedValueOnce([
+          {
+            id: 'A',
+            status: 'archived',
+            email: 'rahul@gmail.com',
+            mergedIntoContact: { id: 'B' },
+            claimedByUser: null,
+          },
+        ]);
+
+        const result = await service.resolveOrCreateIdentity({
+          email: 'rahul@gmail.com',
+          createdByUser: owner,
+        });
+
+        expect(result.type).toBe('contact');
+        expect(result.contact?.id).toBe('C');
+      });
+
+      it('does not hang on a merge cycle A→B→A; falls through to create a new pending Contact', async () => {
+        store['A'] = {
+          id: 'A',
+          status: 'archived',
+          mergedIntoContact: { id: 'B' },
+        };
+        store['B'] = {
+          id: 'B',
+          status: 'archived',
+          mergedIntoContact: { id: 'A' },
+        };
+        contactRepository.find.mockResolvedValueOnce([store['A']]);
+        contactRepository.save.mockResolvedValueOnce({
+          id: 'fresh-id',
+          email: 'rahul@gmail.com',
+        });
+
+        const result = await service.resolveOrCreateIdentity({
+          email: 'rahul@gmail.com',
+          createdByUser: owner,
+        });
+
+        // Unresolvable cycle → safe fallback: a brand-new pending Contact.
+        expect(result.type).toBe('contact');
+        expect(contactRepository.save).toHaveBeenCalled();
+      });
+
+      it('ignores claimed/merged rows and reuses a pending Contact when that is the only match', async () => {
+        // No non-pending match; the existing pending resolve-or-create path runs.
+        contactRepository.find.mockResolvedValueOnce([]);
+        contactRepository.findOne.mockResolvedValueOnce({
+          id: 'P1',
+          email: 'rahul@gmail.com',
+          status: 'pending',
+        });
+
+        const result = await service.resolveOrCreateIdentity({
+          email: 'rahul@gmail.com',
+          createdByUser: owner,
+        });
+
+        expect(result).toEqual({
+          type: 'contact',
+          contact: { id: 'P1', email: 'rahul@gmail.com', status: 'pending' },
+        });
+        expect(contactRepository.save).not.toHaveBeenCalled();
       });
     });
   });

@@ -4880,3 +4880,32 @@ frontend` 0 errors (pre-existing warnings only); prettier clean on changed files
   `finance-golden` gate unchanged. `nx lint backend` 0 errors; prettier clean. No push.
 - **Governance:** ADR + `FINMATE_DECISION_LEDGER.md` addendum still owed (frozen stack; needs
   freeze/back-port approval) — unchanged from P2P-1; not authored here.
+
+## 2026-09-16 — Non-registered-participant gap closure on the Contact model (backend)
+
+Closing the "non-registered participants" feature on the **existing Contact model** — ADR-025 /
+P2P-CNT-1 retained, **no Person entity introduced** (see Stage-1 audit). Additive, GOV-1 compliant;
+FIN-002 `finance-golden` re-run green after every step. Separate commit per fix.
+
+- **Fix A — `loadCallerEntry` null-safety (`person-ledger.service.ts`):** a Contact-backed
+  `DirectLedgerEntry` leaves one side's `*User` null; `loadCallerEntry` dereferenced `entry.fromUser.id`
+  / `entry.toUser.id` unguarded (latent NPE for future Contact-backed writes). Now loads
+  `fromContact`/`toContact` and authorises via optional chaining on the User sides (`createdByUser` is
+  always one of them). **Tests (+3):** update/delete a Contact-backed entry (`fromUser`/`toUser` null);
+  forbid a non-party caller without an NPE. Commit `5f8881a`.
+- **Fix B — resolution order in `resolveOrCreateIdentity` (`contacts.service.ts`):** before creating a
+  fresh pending Contact, resolve a previously-known person represented by a **claimed** Contact (→ its
+  `claimedByUser`) or a **merged/archived** Contact (→ `resolveMergeRedirect` to the survivor, then on to
+  the survivor's User if it is itself claimed). New read-only helper `resolveKnownContactIdentity`;
+  reuses the existing cycle-guarded redirect resolver and `normalizeEmail`/`normalizePhone`. Closes the
+  Stage-1 gap where re-adding a merged-away identifier created a duplicate. **Tests (+6):**
+  claimed→User; merged→surviving pending Contact; merged→claimed-survivor→User; multi-hop A→B→C; cycle
+  A→B→A (no hang → safe create); pending-only still reused. Order preserved: User → claimed → merged →
+  pending → create.
+- **Unchanged:** `simplifyLedgerDebts`/`calculateDeterministicSplits`/golden fixtures; authorization
+  logic; all existing identity/ledger behaviour (User↔User byte-for-byte).
+- **Verification:** `npx nx test backend` → **84 suites / 963 tests pass** (was 954; +9), full FIN-002
+  `finance-golden` gate green. No push.
+- **In progress (this batch):** Fix C (claim only on verified email; phone claiming deferred to V2),
+  Fix D (import null guard). Item-4 dual-row edge investigated before Fix C. Decision-Ledger entry for
+  the claim-gating change drafted for approval before commit.
