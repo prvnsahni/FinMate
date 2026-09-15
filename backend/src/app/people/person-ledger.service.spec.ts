@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import {
   Contact,
   DirectLedgerEntry,
@@ -823,6 +823,71 @@ describe('PersonLedgerService', () => {
       ]);
       const cp = (await buildLedger('U1')).get('user:U9')!;
       expect(rd2(cp.byCurrency.get('USD').directLending)).toBe(0.3);
+    });
+  });
+
+  // ── Fix A — loadCallerEntry null-safety on Contact-backed direct entries ───
+  // A Contact-backed entry leaves one side's `*User` null. loadCallerEntry must
+  // authorise via the User side without dereferencing the null side (regression
+  // for the unguarded `entry.fromUser.id`/`entry.toUser.id` NPE).
+  describe('Fix A — loadCallerEntry null-safety (Contact-backed entries)', () => {
+    it('updates a Contact-backed entry whose fromUser is null (caller is the toUser side)', async () => {
+      const entry = {
+        id: 'x1',
+        fromUser: null,
+        fromContact: { id: 'C1' },
+        toUser: userStub('U1'),
+        toContact: null,
+        entryType: 'lend',
+        amount: '500',
+        currency: 'USD',
+        occurredOn: '2026-08-01',
+        version: 1,
+      };
+      directRepo.findOne.mockResolvedValue(entry);
+      await service.updateDirectTransaction('U1', 'x1', {
+        version: 1,
+        amount: 400,
+      });
+      expect(directRepo.save).toHaveBeenCalled();
+      expect(directRepo.save.mock.calls[0][0].amount).toBe(400);
+    });
+
+    it('soft-deletes a Contact-backed entry whose toUser is null (caller is the fromUser side)', async () => {
+      const entry = {
+        id: 'x2',
+        fromUser: userStub('U1'),
+        fromContact: null,
+        toUser: null,
+        toContact: { id: 'C1' },
+        entryType: 'borrow',
+        amount: '300',
+        currency: 'USD',
+        occurredOn: '2026-08-02',
+        version: 1,
+      };
+      directRepo.findOne.mockResolvedValue(entry);
+      await service.deleteDirectTransaction('U1', 'x2');
+      expect(directRepo.softRemove).toHaveBeenCalledWith(entry);
+    });
+
+    it('forbids a non-party caller on a Contact-backed entry without an NPE on the null user side', async () => {
+      const entry = {
+        id: 'x3',
+        fromUser: null,
+        fromContact: { id: 'C1' },
+        toUser: userStub('U1'),
+        toContact: null,
+        entryType: 'lend',
+        amount: '500',
+        currency: 'USD',
+        occurredOn: '2026-08-01',
+        version: 1,
+      };
+      directRepo.findOne.mockResolvedValue(entry);
+      await expect(
+        service.deleteDirectTransaction('U-other', 'x3'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });

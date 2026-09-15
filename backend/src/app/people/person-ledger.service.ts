@@ -430,12 +430,16 @@ export class PersonLedgerService {
   ): Promise<DirectLedgerEntry> {
     const entry = await this.directLedgerRepository.findOne({
       where: { id: entryId },
-      relations: ['fromUser', 'toUser', 'createdByUser'],
+      relations: ['fromUser', 'toUser', 'fromContact', 'toContact', 'createdByUser'],
     });
     if (!entry) throw new NotFoundException('Transaction not found');
+    // A Contact-backed entry leaves one side's `*User` null (a Contact never
+    // records/queries), so guard both sides — the caller is authorised iff they
+    // are the registered User on either side. `createdByUser` is always one of
+    // the User sides (entity invariant), so this also covers the recorder.
     if (
-      entry.fromUser.id !== callerUserId &&
-      entry.toUser.id !== callerUserId
+      entry.fromUser?.id !== callerUserId &&
+      entry.toUser?.id !== callerUserId
     ) {
       throw new ForbiddenException('You are not a party to this transaction');
     }
