@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -989,29 +990,65 @@ describe('ContactsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('closes the losing membership instead of violating the group-uniqueness constraint when the survivor is already in that group', async () => {
+    it('rejects a same-group merge (409) and changes no data, instead of closing out the losing membership (Fix M.1)', async () => {
       contactRepository.findOne
         .mockResolvedValueOnce({ id: 'surviving', email: 'a@x.com' })
         .mockResolvedValueOnce({ id: 'losing', email: 'a@x.com' });
       groupMemberRepository.find
         .mockResolvedValueOnce([
-          { id: 'gm-losing-family', group: { id: 'group-family' } },
+          { id: 'gm-losing-family', group: { id: 'group-family', name: 'Family' } },
         ]) // losing's memberships
         .mockResolvedValueOnce([
-          { id: 'gm-surviving-family', group: { id: 'group-family' } },
-        ]); // surviving already has a membership in the SAME group
+          {
+            id: 'gm-surviving-family',
+            group: { id: 'group-family', name: 'Family' },
+          },
+        ]); // surviving already in the SAME group → merge unsupported
 
-      await service.mergeContacts({
+      await expect(
+        service.mergeContacts({
+          survivingContactId: 'surviving',
+          losingContactId: 'losing',
+          mergedByUser: admin,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // Rejected BEFORE any write: loser not archived, no membership touched,
+      // no audit — so no balance is stranded on a `removed` row.
+      expect(contactRepository.save).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+      expect(auditLogRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('still merges across DIFFERENT groups, repointing the losing membership (no close-out, balances preserved)', async () => {
+      contactRepository.findOne
+        .mockResolvedValueOnce({ id: 'surviving', email: 'a@x.com' })
+        .mockResolvedValueOnce({ id: 'losing', email: 'a@x.com' });
+      groupMemberRepository.find
+        .mockResolvedValueOnce([
+          { id: 'gm-losing-trip', group: { id: 'group-trip', name: 'Trip' } },
+        ]) // losing is in group-trip
+        .mockResolvedValueOnce([
+          { id: 'gm-surviving-flat', group: { id: 'group-flat', name: 'Flat' } },
+        ]); // surviving is in a DIFFERENT group → no clash
+
+      const result = await service.mergeContacts({
         survivingContactId: 'surviving',
         losingContactId: 'losing',
         mergedByUser: admin,
       });
 
+      expect(result.id).toBe('surviving');
+      // The losing membership is repointed to the survivor (never closed out),
+      // so its historical splits/settlements keep resolving to a live member.
       expect(groupMemberRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: 'gm-losing-family',
-          joinStatus: 'removed',
+          id: 'gm-losing-trip',
+          contact: expect.objectContaining({ id: 'surviving' }),
         }),
+      );
+      expect(groupMemberRepository.save).not.toHaveBeenCalledWith(
+        expect.objectContaining({ joinStatus: 'removed' }),
       );
     });
   });

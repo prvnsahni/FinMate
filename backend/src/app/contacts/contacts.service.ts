@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -625,25 +626,15 @@ export class ContactsService {
               });
             }
 
-            // Archive the loser, never delete it — the timeline and every
-            // historical reference stay readable (hardening item D/E +
-            // Review 05).
-            losing.status = 'archived';
-            losing.mergedIntoContact = surviving;
-            losing.mergedAt = new Date();
-            losing.mergedByUser = opts.mergedByUser;
-            await contactRepo.save(losing);
-
-            // Re-point every GroupMember from the loser to the survivor —
-            // except where the survivor is already a member of that same
-            // group (both Contact rows were independently added to the
-            // same group before anyone noticed they were the same
-            // person). The GroupMember unique constraint on (group,
-            // contact) forbids two rows for one Contact in one group, so
-            // that specific losing membership is closed out instead of
-            // repointed — its historical Expense/ExpenseSplit/Settlement
-            // rows remain intact and still resolve via the surviving
-            // membership.
+            // Same-group guard (Fix M.1): if the losing and surviving Contacts
+            // both back a GroupMember in the SAME group, merging cannot proceed.
+            // Closing out the losing membership would strand its historical
+            // Expense/ExpenseSplit/ExpensePayment/Settlement rows on a `removed`
+            // GroupMember that the balance engine surfaces under the stale
+            // losing identity and that `proposeSettlement` refuses as a
+            // recipient (unsettleable) — see tracked bug "mergeContacts
+            // close-out strands balances". Reject up-front for ALL confidence
+            // levels, BEFORE any write, so no data changes on this path.
             const memberRepo = manager.getRepository(GroupMember);
             const [losingMembers, survivorMembers] = await Promise.all([
               memberRepo.find({
@@ -658,14 +649,35 @@ export class ContactsService {
             const survivorGroupIds = new Set(
               survivorMembers.map((m) => m.group.id),
             );
+            const clash = losingMembers.find((m) =>
+              survivorGroupIds.has(m.group.id),
+            );
+            if (clash) {
+              throw new ConflictException({
+                errorCode: 'CONTACT_MERGE_SAME_GROUP',
+                message: `These contacts are both members of ${clash.group.name}; merge not supported yet`,
+              });
+            }
+
+            // Archive the loser, never delete it — the timeline and every
+            // historical reference stay readable (hardening item D/E +
+            // Review 05).
+            losing.status = 'archived';
+            losing.mergedIntoContact = surviving;
+            losing.mergedAt = new Date();
+            losing.mergedByUser = opts.mergedByUser;
+            await contactRepo.save(losing);
+
+            // Re-point every GroupMember from the loser to the survivor. The
+            // same-group guard above guarantees the survivor is never already a
+            // member of any of these groups, so every losing membership is
+            // repointed — its historical Expense/ExpenseSplit/ExpensePayment/
+            // Settlement rows keep referencing this same (now survivor-backed)
+            // GroupMember row and continue to resolve correctly. No membership
+            // is ever closed out here, so no balance is stranded.
             for (const member of losingMembers) {
-              if (survivorGroupIds.has(member.group.id)) {
-                member.joinStatus = 'removed';
-                await memberRepo.save(member);
-              } else {
-                member.contact = surviving;
-                await memberRepo.save(member);
-              }
+              member.contact = surviving;
+              await memberRepo.save(member);
             }
 
             await manager
