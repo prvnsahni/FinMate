@@ -574,4 +574,35 @@ Partial approval recorded from the P2P Contact API approval request. **P2P-3 rem
 
 ---
 
+### Addendum — Contact claim gating & merge safety (2026-09-16)
+
+**Context:** The "non-registered participants" feature was closed on the **Contact model** (branch `feature/contact-claim-hardening`). **ADR-025 / P2P-CNT-1 retained — no `Person` entity introduced.** All changes are additive (GOV-1); FIN-002 `finance-golden` is unchanged and green. **No compliance claim (GOV-4):** these are engineering/security controls and assert no legal determination about non-user Contact PII — the P2P-CNT-3.A / P2P-CNT-4 counsel gate is untouched.
+
+#### CLAIM-1 — Claiming requires a verified email; token possession is not proof
+
+- **Decision:** `claimContactsForUser` connects third-party financial history to an account, so it runs **only** when `user.emailVerified`. **Token possession is explicitly NOT accepted as identity proof**, because group invite links are shareable/reusable (the token is returned to the inviter, and Contact invitees receive the generic reusable group token — there is no contact-scoped per-invite token).
+- **Status:** LOCKED · **Type:** Security + Engineering · **Existing-fn:** Tightens claim (was ungated on the join path). · **Prod-data:** None. · **Migration/Rollback:** n/a. · **Platform:** All · **Source:** impl `df01c11`.
+
+#### CLAIM-2 — Phone claiming removed until phone-OTP exists
+
+- **Decision:** Contacts are matched for claiming by **email only**; phone matching is removed (no phone-verification flow exists). Deferred to V2 alongside phone OTP.
+- **Status:** LOCKED (interim) · **Type:** Security · **Existing-fn:** Phone-matched auto-claim no longer happens. · **Prod-data:** None. · **Platform:** All · **Follow-up:** [contact-claim-v2.md](../follow-ups/contact-claim-v2.md) ("Phone OTP + phone claiming"). · **Source:** impl `df01c11`.
+
+#### CLAIM-3 — Generic-link join gate (403 GROUP_JOIN_EMAIL_UNVERIFIED)
+
+- **Decision:** `joinGroupByToken` rejects an **unverified** user with **`403 GROUP_JOIN_EMAIL_UNVERIFIED`** when a **pending Contact-backed member matching their normalized email** exists in that group; they are auto-added on verification (claim activates the membership). Verified users claim-first (email-only) — no duplicate row.
+- **Status:** LOCKED · **Type:** Security + Product · **Existing-fn:** New reject path on join; verified path unchanged. · **Prod-data:** None. · **Platform:** All · **Frontend dep:** surface the 403 message + resend. · **Source:** impl `df01c11`.
+
+#### CLAIM-4 — Skip-and-flag collision guard
+
+- **Decision:** When claiming a Contact would repoint a membership into a group where the user already holds a `(group,user)` membership, the Contact is **skipped** (left pending, **no row changes**) and a structured warning is logged — **never thrown, never closed out** (closing out strands balances; see MERGE-1). **Known limitation:** the same person may appear twice in a group until the V2 real fix.
+- **Status:** LOCKED (interim) · **Type:** Engineering · **Existing-fn:** Prevents a `uq(group,user)` crash during claim. · **Prod-data:** None. · **Platform:** All · **Follow-up:** [contact-claim-v2.md](../follow-ups/contact-claim-v2.md) ("Collision guard — real fix"). · **Source:** impl `df01c11`.
+
+#### MERGE-1 — Same-group Contact merge blocked
+
+- **Decision:** `mergeContacts` rejects **`409 CONTACT_MERGE_SAME_GROUP`** when the losing and surviving Contacts both back a member of the same group, for all confidence levels, before any write — pending the stranded-balance fix. Cross-group merges still repoint (no close-out path remains).
+- **Status:** LOCKED (interim) · **Type:** Engineering · **Existing-fn:** Blocks a merge shape that stranded balances. · **Prod-data:** None (no data changed on the rejected path). · **Platform:** All · **Follow-up:** [mergecontacts-close-out-strands-balances.md](../follow-ups/mergecontacts-close-out-strands-balances.md) (bug + fix-design comparison + detection SQL). · **Source:** impl `a973eae`.
+
+---
+
 _End of Frozen Decision Ledger. Change control: any modification to a LOCKED item requires a new dated entry here plus an ADR. This ledger governs the documents that follow it in the stack._
