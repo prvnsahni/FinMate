@@ -355,6 +355,43 @@ describe('ImportService', () => {
       );
     });
 
+    it('does not NPE when the group has a Contact-backed (user=null) active member; imports rows referencing registered members', async () => {
+      const csvContent =
+        'date,title,amount,currency,category,payer_email,split_type,shares_data,description\n' +
+        '2026-06-10,Dinner,10.00,USD,Food,a@ex.com,equal,a@ex.com:1;b@ex.com:1,Goa dinner\n';
+      const file = createMockFile(csvContent, 'test.csv', 'text/csv');
+
+      const userA = { id: 'aaaa', email: 'a@ex.com' };
+      const userB = { id: 'bbbb', email: 'b@ex.com' };
+      // A pending Contact-backed member (no `user`) sits in the group — the
+      // pre-fix code did `m.user.email` unguarded and threw here.
+      const mockMembers = [
+        { user: userA, joinStatus: 'active' },
+        { user: userB, joinStatus: 'active' },
+        { user: null, contact: { id: 'contact-x' }, joinStatus: 'active' },
+      ];
+
+      mockManager.findOne.mockResolvedValueOnce({
+        id: 'group-1',
+        isArchived: false,
+      }); // group
+      mockManager.findOne.mockResolvedValueOnce({
+        id: 'member-1',
+        role: 'member',
+      }); // callerMember
+      mockManager.find.mockResolvedValueOnce(mockMembers); // active members (incl. Contact-backed)
+      mockManager.findOne.mockResolvedValueOnce(userA); // caller user details
+
+      const result = await service.importExpenses('aaaa', 'group-1', file);
+
+      expect(result.successCount).toBe(1);
+      expect(result.errorCount).toBe(0);
+      expect(mockManager.create).toHaveBeenCalledWith(
+        Expense,
+        expect.objectContaining({ title: 'Dinner', amountTotal: 10.0 }),
+      );
+    });
+
     it('imports a refund row (transaction_type=refund) as a refund expense', async () => {
       const csvContent =
         'date,title,amount,currency,category,transaction_type,payer_email,split_type,shares_data,description\n' +
