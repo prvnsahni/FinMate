@@ -456,7 +456,11 @@ describe('ContactsService', () => {
 
   describe('claimContactsForUser', () => {
     it('links every GroupMember across every group referencing a matching pending Contact, in one transaction', async () => {
-      const newUser = { id: 'new-user-id', email: 'rahul@gmail.com' } as User;
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: true,
+      } as User;
       const pendingContact = {
         id: 'contact-1',
         email: 'rahul@gmail.com',
@@ -507,7 +511,11 @@ describe('ContactsService', () => {
     });
 
     it('writes a contact.claimed audit event for each claimed Contact', async () => {
-      const newUser = { id: 'new-user-id', email: 'rahul@gmail.com' } as User;
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: true,
+      } as User;
       contactRepository.find.mockResolvedValueOnce([
         { id: 'contact-1', email: 'rahul@gmail.com', status: 'pending' },
       ]);
@@ -525,31 +533,74 @@ describe('ContactsService', () => {
       );
     });
 
-    it('matches by phone when the email does not match any pending Contact', async () => {
+    it('NEVER claims by phone — looks up pending Contacts by the verified email only (Fix C: phone claiming removed)', async () => {
       const newUser = {
         id: 'new-user-id',
         email: 'unrelated@example.com',
         phoneNumber: '+919876543210',
+        emailVerified: true,
       } as User;
-      contactRepository.find.mockResolvedValueOnce([
-        {
-          id: 'contact-by-phone',
-          phoneNumber: '+919876543210',
-          status: 'pending',
-        },
-      ]);
-      groupMemberRepository.find.mockResolvedValueOnce([
-        {
-          id: 'member-office',
-          group: { id: 'group-office' },
-          joinStatus: 'invited',
-        },
-      ]);
+      contactRepository.find.mockResolvedValueOnce([]); // no email match
 
       const result = await service.claimContactsForUser(newUser);
 
-      expect(result.claimedContactIds).toEqual(['contact-by-phone']);
-      expect(result.linkedGroupIds).toEqual(['group-office']);
+      // The Contact lookup is by email + pending only — phone is never queried.
+      const whereArg = contactRepository.find.mock.calls[0][0].where;
+      expect(whereArg).toEqual({
+        email: 'unrelated@example.com',
+        status: 'pending',
+      });
+      expect(JSON.stringify(whereArg).toLowerCase()).not.toContain('phone');
+      expect(result.claimedContactIds).toEqual([]);
+      expect(contactRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op (queries nothing) when the user email is UNVERIFIED (Fix C: claim gated on verified email)', async () => {
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: false,
+      } as User;
+
+      const result = await service.claimContactsForUser(newUser);
+
+      expect(contactRepository.find).not.toHaveBeenCalled();
+      expect(contactRepository.save).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      });
+    });
+
+    it('SKIP-AND-FLAG: skips a Contact (leaves it pending, no row changes) when claiming it would collide with an existing (group,user) membership, and warns', async () => {
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => undefined);
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: true,
+      } as User;
+      contactRepository.find.mockResolvedValueOnce([
+        { id: 'contact-1', email: 'rahul@gmail.com', status: 'pending' },
+      ]);
+      groupMemberRepository.find
+        // the Contact's memberships
+        .mockResolvedValueOnce([
+          { id: 'gm-contact', group: { id: 'group-family' } },
+        ])
+        // the user is ALREADY a member of group-family → collision
+        .mockResolvedValueOnce([{ id: 'gm-existing-user' }]);
+
+      const result = await service.claimContactsForUser(newUser);
+
+      expect(result.skippedContactIds).toEqual(['contact-1']);
+      expect(result.claimedContactIds).toEqual([]);
+      // Not closed out, not repointed, not archived — nothing written.
+      expect(contactRepository.save).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing and creates no rows when no pending Contact matches', async () => {
@@ -558,11 +609,98 @@ describe('ContactsService', () => {
       const result = await service.claimContactsForUser({
         id: 'new-user-id',
         email: 'nobody-added-me@example.com',
+        emailVerified: true,
       } as User);
 
       expect(contactRepository.save).not.toHaveBeenCalled();
       expect(groupMemberRepository.save).not.toHaveBeenCalled();
-      expect(result).toEqual({ linkedGroupIds: [], claimedContactIds: [] });
+      expect(result).toEqual({
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      });
+    });
+
+    it('is idempotent: a second run finds no pending Contact and changes nothing', async () => {
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: true,
+      } as User;
+      // First run claims contact-1; second run finds nothing pending.
+      contactRepository.find
+        .mockResolvedValueOnce([
+          { id: 'contact-1', email: 'rahul@gmail.com', status: 'pending' },
+        ])
+        .mockResolvedValueOnce([]);
+      groupMemberRepository.find.mockResolvedValueOnce([]); // contact has no members
+
+      const first = await service.claimContactsForUser(newUser);
+      expect(first.claimedContactIds).toEqual(['contact-1']);
+
+      contactRepository.save.mockClear();
+      groupMemberRepository.save.mockClear();
+
+      const second = await service.claimContactsForUser(newUser);
+      expect(second.claimedContactIds).toEqual([]);
+      expect(contactRepository.save).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('never touches a Contact already claimed/merged by someone else (excluded by the pending filter) — no claim, no crash', async () => {
+      const newUser = {
+        id: 'new-user-id',
+        email: 'rahul@gmail.com',
+        emailVerified: true,
+      } as User;
+      // The only Contact for this email was already claimed by another user, so
+      // the status='pending' lookup returns nothing.
+      contactRepository.find.mockResolvedValueOnce([]);
+
+      const result = await service.claimContactsForUser(newUser);
+
+      expect(result).toEqual({
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      });
+      expect(contactRepository.save).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('AFTER VERIFICATION: activates the invitee’s existing Contact-backed membership IN PLACE (same GroupMember id), so a previously-rejected unverified user is auto-added with no duplicate row', async () => {
+      const verifiedUser = {
+        id: 'joiner-id',
+        email: 'joiner@example.com',
+        emailVerified: true,
+      } as User;
+      contactRepository.find.mockResolvedValueOnce([
+        { id: 'contact-1', email: 'joiner@example.com', status: 'pending' },
+      ]);
+      groupMemberRepository.find
+        .mockResolvedValueOnce([
+          {
+            id: 'existing-contact-backed-member',
+            group: { id: 'group-1' },
+            joinStatus: 'invited',
+          },
+        ]) // the Contact's existing membership
+        .mockResolvedValueOnce([]); // no (group,user) collision
+
+      const result = await service.claimContactsForUser(verifiedUser);
+
+      // The SAME membership row is activated & linked — not a new one.
+      expect(groupMemberRepository.save).toHaveBeenCalledTimes(1);
+      expect(groupMemberRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'existing-contact-backed-member',
+          user: verifiedUser,
+          joinStatus: 'active',
+        }),
+      );
+      expect(result.linkedGroupIds).toEqual(['group-1']);
+      expect(result.claimedContactIds).toEqual(['contact-1']);
+      expect(result.skippedContactIds).toEqual([]);
     });
   });
 

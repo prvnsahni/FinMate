@@ -1201,6 +1201,7 @@ export class GroupsService {
     let groupKeyVersionId: string | null = null;
     let groupKeyVersion: number | null = null;
 
+    let inviteToConsume: GroupInvite | null = null;
     if (invite) {
       if (this.isInviteExpired(invite)) {
         invite.status = 'expired';
@@ -1212,8 +1213,9 @@ export class GroupsService {
       wrappedGroupKey = invite.wrappedGroupKey || null;
       groupKeyVersionId = invite.groupKeyVersion?.id ?? null;
       groupKeyVersion = invite.groupKeyVersion?.version ?? null;
-      invite.status = 'accepted';
-      await this.groupInviteRepository.save(invite);
+      // Consume the token only after the Option-C gate below passes, so a
+      // rejected unverified join does not burn the invite.
+      inviteToConsume = invite;
     } else {
       // 2. Fallback to groups.inviteToken
       const g = await this.groupRepository.findOne({
@@ -1232,18 +1234,44 @@ export class GroupsService {
       throw new NotFoundException('User not found');
     }
 
-    // Claim any pending Contact-backed membership(s) for this user's email/
-    // phone before resolving by user id. An invitee who was invited by
-    // email/phone before they had an account (GroupsService.inviteMember's
-    // Contact-backed path) has a GroupMember row with `contact` set and
-    // `user` still null — the user-id lookup below would miss it entirely
-    // and fall through to creating a brand-new row, duplicating the
-    // membership, resetting their role to 'member', and orphaning any
-    // history already attached to the Contact-backed row. This reuses the
-    // same claim ContactsService already runs on email verification
-    // (AuthService.verifyEmail) — idempotent (only touches 'pending'
-    // Contacts), safe to call unconditionally here.
-    await this.contactsService.claimContactsForUser(user);
+    // Fix C (Option C): a group invite link is shareable/reusable, so token
+    // possession is NOT accepted as proof of identity — claiming a pending
+    // Contact (which connects third-party financial history) requires a
+    // VERIFIED email.
+    //  - Verified user: claim-first (email-only). This links any pending
+    //    Contact-backed membership for this group to the user before the
+    //    user-id lookup below, so no duplicate membership is created.
+    //  - Unverified user who matches a pending Contact-backed member in THIS
+    //    group: reject with 403 GROUP_JOIN_EMAIL_UNVERIFIED. They are added
+    //    automatically once they verify (claimContactsForUser activates the
+    //    membership), so no second, unlinked row is created here.
+    if (user.emailVerified) {
+      await this.contactsService.claimContactsForUser(user);
+    } else {
+      const userEmail = this.contactsService.normalizeEmail(user.email);
+      if (userEmail) {
+        const pendingMatch = await this.groupMemberRepository
+          .createQueryBuilder('member')
+          .innerJoin('member.contact', 'contact')
+          .where('member.group_id = :groupId', { groupId: group.id })
+          .andWhere('member.user_id IS NULL')
+          .andWhere("contact.status = 'pending'")
+          .andWhere('LOWER(contact.email) = :email', { email: userEmail })
+          .getOne();
+        if (pendingMatch) {
+          throw new ForbiddenException({
+            errorCode: 'GROUP_JOIN_EMAIL_UNVERIFIED',
+            message: 'Please verify your email to join this group',
+          });
+        }
+      }
+    }
+
+    // Gate passed — now consume the per-invite token (if any).
+    if (inviteToConsume) {
+      inviteToConsume.status = 'accepted';
+      await this.groupInviteRepository.save(inviteToConsume);
+    }
 
     const existingMember = await this.groupMemberRepository
       .createQueryBuilder('member')

@@ -4902,10 +4902,34 @@ FIN-002 `finance-golden` re-run green after every step. Separate commit per fix.
   claimed→User; merged→surviving pending Contact; merged→claimed-survivor→User; multi-hop A→B→C; cycle
   A→B→A (no hang → safe create); pending-only still reused. Order preserved: User → claimed → merged →
   pending → create.
+- **Fix M.1 — reject same-group Contact merge (`contacts.service.ts`):** the Step-1 audit found
+  `mergeContacts`' close-out branch (`joinStatus='removed'` when the survivor is already in that group)
+  stranded the losing member's split/payment/settlement balances on a `removed` row — surfaced under the
+  stale identity and **unsettleable**. Guarded up-front: a same-group merge is rejected `409
+  CONTACT_MERGE_SAME_GROUP` for all confidence levels, **before any write**; cross-group merges still
+  repoint (no close-out path remains). Tracked bug + read-only detection SQL + fix-design comparison
+  filed in `docs/follow-ups/mergecontacts-close-out-strands-balances.md`. **Tests (+2 −1).** Commits
+  `a973eae`, `37b4543`.
+- **Fix C — claiming requires a verified email; phone claiming removed; Option-C join gate
+  (`contacts.service.ts`, `groups.service.ts`):** `claimContactsForUser` now (a) no-ops unless
+  `user.emailVerified`, (b) matches pending Contacts by **email only** (phone matching removed — deferred
+  to a V2 phone-OTP flow), and (c) applies a **skip-and-flag collision guard** — if claiming a Contact
+  would repoint a membership into a group where the user already has a `(group,user)` row, the Contact is
+  **skipped** (left pending, no row changes) and a structured warning is logged; never thrown, never
+  closed out (avoids the M.1 stranding bug). `joinGroupByToken` no longer claims on token possession
+  (invite links are shareable/reusable): a **verified** user claims-first (email-only, no duplicate row);
+  an **unverified** user matching a pending Contact-backed member in that group is rejected **403
+  `GROUP_JOIN_EMAIL_UNVERIFIED`** and auto-added on later verification. Per-invite tokens are consumed
+  only after the gate passes. Read-only pre-checks confirmed: no email-change path exists (email
+  immutable), no OAuth (only JWT; `emailVerified` set solely by the emailed-token flow), and claim
+  activates memberships (auto-add after verification). **Tests (+~12):** phone never claims; unverified
+  no-op; skip-and-flag collision (no rows, warning); idempotent; claimed-by-other no-op; in-place
+  activation; join 403 vs normal-join branches. Frontend follow-up (not implemented here): surface
+  `GROUP_JOIN_EMAIL_UNVERIFIED` as "Verify your email and you'll be added to this group" + resend button.
 - **Unchanged:** `simplifyLedgerDebts`/`calculateDeterministicSplits`/golden fixtures; authorization
   logic; all existing identity/ledger behaviour (User↔User byte-for-byte).
-- **Verification:** `npx nx test backend` → **84 suites / 963 tests pass** (was 954; +9), full FIN-002
-  `finance-golden` gate green. No push.
-- **In progress (this batch):** Fix C (claim only on verified email; phone claiming deferred to V2),
-  Fix D (import null guard). Item-4 dual-row edge investigated before Fix C. Decision-Ledger entry for
-  the claim-gating change drafted for approval before commit.
+- **Verification:** `npx nx test backend` → **84 suites / 971 tests pass** (was 954; +17), full FIN-002
+  `finance-golden` gate green after each commit. No push.
+- **Governance:** a Decision-Ledger entry recording the Fix C claim-gating rules is **drafted, pending
+  owner approval** (frozen-stack change control) — not yet written to `FINMATE_DECISION_LEDGER.md`.
+- **Remaining this batch:** Fix D (import null guard), then Stage 3 close-out.

@@ -66,6 +66,7 @@ describe('GroupsService', () => {
       createQueryBuilder: jest.fn(() => ({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         getOne: jest
           .fn()
@@ -159,11 +160,18 @@ describe('GroupsService', () => {
     const mockContactsService = {
       resolveOrCreateIdentity: jest.fn(),
       // Default: no pending Contact matches this user — a safe no-op so
-      // every existing test that reaches joinGroupByToken (which now always
-      // calls this before resolving membership) keeps working unchanged.
-      claimContactsForUser: jest
-        .fn()
-        .mockResolvedValue({ linkedGroupIds: [], claimedContactIds: [] }),
+      // every existing test that reaches joinGroupByToken (which now calls
+      // this only on the verified-email path) keeps working unchanged.
+      claimContactsForUser: jest.fn().mockResolvedValue({
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      }),
+      // Real normalizer behaviour (lowercase/trim) for the Option-C gate.
+      normalizeEmail: jest.fn((email?: string | null) => {
+        const t = email?.trim().toLowerCase();
+        return t ? t : undefined;
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -657,6 +665,7 @@ describe('GroupsService', () => {
     const registeredUser = {
       id: 'joining-user-id',
       email: 'joiner@example.com',
+      emailVerified: true,
     } as any;
 
     beforeEach(() => {
@@ -814,6 +823,63 @@ describe('GroupsService', () => {
         expect.objectContaining({ role: 'member', joinStatus: 'active' }),
       );
       expect((result as any).member.id).toBe('brand-new-member-id');
+    });
+
+    // ── Fix C (Option C) — unverified joins ──────────────────────────────────
+    it('rejects an UNVERIFIED user with 403 GROUP_JOIN_EMAIL_UNVERIFIED when a matching pending Contact-backed member exists in the group, creating no rows and never claiming', async () => {
+      const unverifiedUser = {
+        id: 'unverified-user-id',
+        email: 'Joiner@Example.com',
+        emailVerified: false,
+      } as any;
+      userRepository.findOne.mockResolvedValue(unverifiedUser);
+      // Option-C gate query: a pending Contact-backed member matches this email.
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'pending-contact-member',
+      } as any);
+
+      const err = await service
+        .joinGroupByToken(unverifiedUser.id, 'the-invite-token')
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err.getResponse()).toMatchObject({
+        errorCode: 'GROUP_JOIN_EMAIL_UNVERIFIED',
+      });
+
+      expect(contactsService.claimContactsForUser).not.toHaveBeenCalled();
+      expect(groupMemberRepository.create).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('lets an UNVERIFIED user join normally (no claim) when NO matching pending Contact exists in the group', async () => {
+      const unverifiedUser = {
+        id: 'unverified-user-id',
+        email: 'newcomer@example.com',
+        emailVerified: false,
+      } as any;
+      userRepository.findOne.mockResolvedValue(unverifiedUser);
+      // First getOne → Option-C gate: no pending match. Second getOne →
+      // existing-membership lookup: none → create a fresh user-backed member.
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      groupMemberRepository.save.mockResolvedValueOnce({
+        id: 'fresh-member-id',
+        role: 'member',
+        joinStatus: 'active',
+        user: unverifiedUser,
+      } as any);
+
+      const result = await service.joinGroupByToken(
+        unverifiedUser.id,
+        'the-invite-token',
+      );
+
+      expect(contactsService.claimContactsForUser).not.toHaveBeenCalled();
+      expect(groupMemberRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'member', joinStatus: 'active' }),
+      );
+      expect((result as any).member.id).toBe('fresh-member-id');
     });
   });
 

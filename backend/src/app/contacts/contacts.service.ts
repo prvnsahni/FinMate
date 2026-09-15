@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
@@ -42,6 +43,8 @@ export interface ContactAddressBookEntry {
 
 @Injectable()
 export class ContactsService {
+  private readonly logger = new Logger(ContactsService.name);
+
   constructor(
     @InjectRepository(Contact)
     private readonly contactRepository: Repository<Contact>,
@@ -341,48 +344,89 @@ export class ContactsService {
   }
 
   /**
-   * Registration/verification-time claim: finds every unclaimed Contact
-   * matching the now-verified email (or phone), links every GroupMember row
-   * referencing it to the new User (keeping `contact` populated for audit),
-   * activates the membership, and marks the Contact claimed — all inside one
-   * transaction. Creates zero new Expense/ExpenseSplit/Settlement rows;
-   * historical rows already reference the GroupMember and simply resolve
-   * correctly the moment `GroupMember.user` is set.
+   * Verification-time claim: finds every unclaimed Contact matching the user's
+   * **verified email**, links every GroupMember row referencing it to the user
+   * (keeping `contact` populated for audit), activates the membership, and marks
+   * the Contact claimed — all inside one transaction. Creates zero new
+   * Expense/ExpenseSplit/Settlement rows; historical rows already reference the
+   * GroupMember and simply resolve correctly the moment `GroupMember.user` is
+   * set.
+   *
+   * Fix C invariants:
+   * - **Verified email only.** Claiming connects third-party history to an
+   *   account, so it must never run on an unverified identifier — the method is
+   *   a no-op unless `user.emailVerified`. Token possession is NOT accepted as
+   *   proof (invite links are shareable/reusable); the join path enforces that
+   *   separately.
+   * - **No phone claiming.** Deferred until a phone-verification (OTP) flow
+   *   exists; phone is never used to match a Contact here.
+   * - **Skip-and-flag collision guard.** If claiming a Contact would repoint one
+   *   of its memberships into a group where the user is ALREADY a member
+   *   (`uq(group,user)`), the Contact is skipped entirely (left pending, no row
+   *   changes) and a structured warning is logged — never thrown, never closed
+   *   out (closing out strands balances; see the tracked bug). The person may
+   *   appear twice in that group until the V2 collision fix.
    */
   async claimContactsForUser(
     user: User,
-    opts: { email?: string; phone?: string } = {},
-  ): Promise<{ linkedGroupIds: string[]; claimedContactIds: string[] }> {
+    opts: { email?: string } = {},
+  ): Promise<{
+    linkedGroupIds: string[];
+    claimedContactIds: string[];
+    skippedContactIds: string[];
+  }> {
+    // Gate: only a verified email may claim.
+    if (!user.emailVerified) {
+      return { linkedGroupIds: [], claimedContactIds: [], skippedContactIds: [] };
+    }
     const email = this.normalizeEmail(opts.email ?? user.email);
-    const phone = this.normalizePhone(opts.phone ?? user.phoneNumber);
+    if (!email) {
+      return { linkedGroupIds: [], claimedContactIds: [], skippedContactIds: [] };
+    }
 
     const result = await this.dataSource.transaction(async (manager) => {
       const contactRepo = manager.getRepository(Contact);
       const memberRepo = manager.getRepository(GroupMember);
 
       const matches = await contactRepo.find({
-        where: [
-          ...(email ? [{ email, status: 'pending' as const }] : []),
-          ...(phone
-            ? [{ phoneNumber: phone, status: 'pending' as const }]
-            : []),
-        ],
+        where: { email, status: 'pending' as const },
       });
 
       const linkedGroupIds = new Set<string>();
       const claimedContactIds: string[] = [];
+      const skippedContactIds: string[] = [];
 
       for (const contact of matches) {
+        const members = await memberRepo.find({
+          where: { contact: { id: contact.id } },
+          relations: ['group'],
+        });
+        const groupIds = members.map((m) => m.group.id);
+
+        // Skip-and-flag collision guard: if the user already backs a membership
+        // in ANY group this Contact is in, repointing would violate
+        // uq(group,user). Leave the Contact fully untouched and warn.
+        if (groupIds.length > 0) {
+          const existing = await memberRepo.find({
+            where: { user: { id: user.id }, group: In(groupIds) },
+          });
+          if (existing.length > 0) {
+            skippedContactIds.push(contact.id);
+            this.logger.warn(
+              `claimContactsForUser: skipped Contact ${contact.id} for user ` +
+                `${user.id} — (group,user) membership collision; Contact left ` +
+                `pending (V2 collision guard). No rows changed.`,
+            );
+            continue;
+          }
+        }
+
         contact.status = 'claimed';
         contact.claimedByUser = user;
         contact.claimedAt = new Date();
         await contactRepo.save(contact);
         claimedContactIds.push(contact.id);
 
-        const members = await memberRepo.find({
-          where: { contact: { id: contact.id } },
-          relations: ['group'],
-        });
         for (const member of members) {
           member.user = user;
           member.joinStatus = 'active';
@@ -399,6 +443,7 @@ export class ContactsService {
       return {
         linkedGroupIds: Array.from(linkedGroupIds),
         claimedContactIds,
+        skippedContactIds,
       };
     });
 
