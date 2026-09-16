@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -35,7 +36,10 @@ import {
 } from '../common/pagination.util';
 import { simplifyLedgerDebts } from '../common/ledger-debt-simplifier';
 import { resolveMemberDisplay } from '../common/member-display.util';
-import { lockGroupMembersForShare } from '../common/member-lock.util';
+import {
+  lockGroupMembersByIdsForUpdate,
+  lockGroupMembersForShare,
+} from '../common/member-lock.util';
 import { calculateDeterministicSplits } from './split-calculator.util';
 import { ExpenseEditPolicyService } from './services/expense-edit-policy.service';
 import {
@@ -939,6 +943,104 @@ export class ExpensesService {
       savedSplits.push(savedSplit);
     }
     return savedSplits;
+  }
+
+  private isMoneyAffectingExpenseUpdate(
+    expense: Expense,
+    dto: UpdateExpenseDto,
+  ): boolean {
+    // Drafts do not participate in balances; only publishing a draft can start
+    // affecting balances.
+    if (expense.status === 'draft') {
+      return dto.status === 'posted';
+    }
+
+    return (
+      dto.splits !== undefined ||
+      dto.payments !== undefined ||
+      dto.amountTotal !== undefined ||
+      dto.currency !== undefined ||
+      dto.paidByUserId !== undefined ||
+      dto.paidByGroupMemberId !== undefined ||
+      dto.transactionType !== undefined ||
+      dto.status !== undefined
+    );
+  }
+
+  private async getDepartedMembersReferencedByExpense(
+    manager: EntityManager,
+    expense: Expense,
+  ): Promise<GroupMember[]> {
+    if (!expense.group?.id) return [];
+
+    const memberIds = new Set<string>();
+    if (expense.paidByGroupMember?.id) {
+      memberIds.add(expense.paidByGroupMember.id);
+    }
+
+    const [splits, payments] = await Promise.all([
+      manager.getRepository(ExpenseSplit).find({
+        where: { expense: { id: expense.id } },
+        relations: ['participantGroupMember'],
+      }),
+      manager.getRepository(ExpensePayment).find({
+        where: { expense: { id: expense.id } },
+        relations: ['paidByGroupMember'],
+      }),
+    ]);
+
+    for (const split of splits) {
+      if (split.participantGroupMember?.id) {
+        memberIds.add(split.participantGroupMember.id);
+      }
+    }
+    for (const payment of payments) {
+      if (payment.paidByGroupMember?.id) {
+        memberIds.add(payment.paidByGroupMember.id);
+      }
+    }
+
+    if (!memberIds.size) return [];
+
+    return manager.getRepository(GroupMember).find({
+      where: {
+        id: In([...memberIds]),
+        group: { id: expense.group.id },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+  }
+
+  private async assertExpenseReferenceDoesNotTouchDepartedMember(
+    manager: EntityManager,
+    expense: Expense,
+  ): Promise<void> {
+    const departed = await this.getDepartedMembersReferencedByExpense(
+      manager,
+      expense,
+    );
+    if (!departed.length) return;
+
+    await lockGroupMembersByIdsForUpdate(
+      manager,
+      departed.map((m) => m.id),
+    );
+
+    const stillDeparted = await this.getDepartedMembersReferencedByExpense(
+      manager,
+      expense,
+    );
+    if (!stillDeparted.length) return;
+
+    const blocked = stillDeparted[0];
+    const display = resolveMemberDisplay(blocked);
+    throw new ConflictException({
+      errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+      memberId: blocked.id,
+      displayName: display.displayName,
+      message: `${display.displayName} has left this group. To change this, add ${display.displayName} back to the group first.`,
+    });
   }
 
   /**
@@ -2101,6 +2203,16 @@ export class ExpensesService {
     }
 
     const saved = await this.dataSource.transaction(async (manager) => {
+      if (
+        expense.group?.id &&
+        this.isMoneyAffectingExpenseUpdate(expense, dto)
+      ) {
+        await this.assertExpenseReferenceDoesNotTouchDepartedMember(
+          manager,
+          expense,
+        );
+      }
+
       const replacedSplits =
         dto.splits !== undefined
           ? await manager.getRepository(ExpenseSplit).find({
@@ -2376,6 +2488,13 @@ export class ExpensesService {
     }
 
     await this.dataSource.transaction(async (manager) => {
+      if (expense.group?.id) {
+        await this.assertExpenseReferenceDoesNotTouchDepartedMember(
+          manager,
+          expense,
+        );
+      }
+
       const splits = await manager.getRepository(ExpenseSplit).find({
         where: { expense: { id: expense.id } },
         relations: ['participantUser', 'participantGroupMember'],

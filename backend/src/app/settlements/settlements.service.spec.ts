@@ -16,6 +16,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   PreconditionFailedException,
 } from '@nestjs/common';
 
@@ -36,7 +37,7 @@ describe('SettlementsService', () => {
 
     const mockGroupMemberRepository = {
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn(() => ({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -115,6 +116,14 @@ describe('SettlementsService', () => {
     const mockEntityManager = {
       // Raw FOR SHARE member lock (member-lock.util) — no-op in unit tests.
       query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entityClass) => {
+        if (entityClass === GroupMember) {
+          return {
+            find: mockGroupMemberRepository.find,
+          };
+        }
+        return { find: jest.fn().mockResolvedValue([]) };
+      }),
       findOne: jest.fn(async (entityClass, options: any) => {
         if (entityClass === GroupMember) {
           const res = await mockGroupMemberRepository.findOne(options);
@@ -1638,6 +1647,101 @@ describe('SettlementsService', () => {
 
       expect(mockSettlement.status).toBe('cancelled');
       expect(result).toBeDefined();
+    });
+
+    it('blocks confirming a proposed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      settlementRepository.findOne.mockResolvedValueOnce({
+        id: 'settlement-id',
+        version: 1,
+        status: 'proposed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-a',
+          joinStatus: 'left',
+          user: { id: 'debtor-id', email: 'debtor@example.com' },
+        },
+      ] as any);
+
+      await expect(
+        service.updateSettlement('creditor-id', 'group-id', 'settlement-id', {
+          status: 'confirmed',
+          version: 1,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('blocks cancelling a confirmed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      settlementRepository.findOne.mockResolvedValueOnce({
+        id: 'settlement-id',
+        version: 1,
+        status: 'confirmed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-b',
+          joinStatus: 'removed',
+          user: { id: 'creditor-id', email: 'creditor@example.com' },
+        },
+      ] as any);
+
+      await expect(
+        service.updateSettlement('debtor-id', 'group-id', 'settlement-id', {
+          status: 'cancelled',
+          version: 1,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows cancelling a proposed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+
+      const mockSettlement = {
+        id: 'settlement-id',
+        version: 1,
+        status: 'proposed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any;
+      settlementRepository.findOne.mockResolvedValueOnce(mockSettlement);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-a',
+          joinStatus: 'left',
+          user: { id: 'debtor-id', email: 'debtor@example.com' },
+        },
+      ] as any);
+      settlementRepository.save.mockResolvedValueOnce(mockSettlement);
+
+      const result = await service.updateSettlement(
+        'debtor-id',
+        'group-id',
+        'settlement-id',
+        {
+          status: 'cancelled',
+          version: 1,
+        },
+      );
+
+      expect(result.status).toBe('cancelled');
     });
   });
 });

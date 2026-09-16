@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -33,7 +34,10 @@ import {
   MemberDisplay,
   resolveMemberDisplay,
 } from '../common/member-display.util';
-import { lockGroupMembersForShare } from '../common/member-lock.util';
+import {
+  lockGroupMembersByIdsForUpdate,
+  lockGroupMembersForShare,
+} from '../common/member-lock.util';
 
 export interface MemberBalance {
   userId: string;
@@ -197,6 +201,59 @@ export class SettlementsService {
   /** Resolves display info for a GroupMember, whichever identity backs it. */
   private memberDisplay(m: GroupMember): MemberDisplay {
     return resolveMemberDisplay(m);
+  }
+
+  private async assertSettlementTransitionAllowedForDepartedMembers(
+    manager: EntityManager,
+    groupId: string,
+    settlement: Settlement,
+    nextStatus: 'confirmed' | 'cancelled',
+  ): Promise<void> {
+    const currentStatus = settlement.status;
+    const changesBalances =
+      (currentStatus === 'proposed' && nextStatus === 'confirmed') ||
+      (currentStatus === 'confirmed' && nextStatus === 'cancelled');
+    if (!changesBalances) return;
+
+    const memberIds = [
+      settlement.fromGroupMember?.id,
+      settlement.toGroupMember?.id,
+    ].filter((id): id is string => !!id);
+    if (!memberIds.length) return;
+
+    const departed = await manager.getRepository(GroupMember).find({
+      where: {
+        id: In(memberIds),
+        group: { id: groupId },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+    if (!departed?.length) return;
+
+    await lockGroupMembersByIdsForUpdate(
+      manager,
+      departed.map((m) => m.id),
+    );
+
+    const stillDeparted = await manager.getRepository(GroupMember).find({
+      where: {
+        id: In(memberIds),
+        group: { id: groupId },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+    if (!stillDeparted?.length) return;
+
+    const blocked = stillDeparted[0];
+    const display = this.memberDisplay(blocked);
+    throw new ConflictException({
+      errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+      memberId: blocked.id,
+      displayName: display.displayName,
+      message: `${display.displayName} has left this group. To change this, add ${display.displayName} back to the group first.`,
+    });
   }
 
   /** Resolve group-member ids to {groupMemberId, userId} pairs for the filter. */
@@ -958,6 +1015,13 @@ export class SettlementsService {
         if (!settlement) {
           throw new NotFoundException('Settlement not found');
         }
+
+        await this.assertSettlementTransitionAllowedForDepartedMembers(
+          manager,
+          groupId,
+          settlement,
+          dto.status,
+        );
 
         // Concurrency control: verify version matches
         if (settlement.version !== dto.version) {

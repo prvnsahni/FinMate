@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
   PreconditionFailedException,
@@ -611,6 +612,181 @@ describe('ExpensesService', () => {
     await service.deleteExpense('caller-id', 'exp-1');
 
     expect(expenseRepository.delete).toHaveBeenCalledWith({ id: 'exp-1' });
+  });
+
+  it('allows non-financial edits when a posted expense references a departed member', async () => {
+    const expense = {
+      id: 'exp-1',
+      version: 1,
+      title: 'cipher:old',
+      description: null,
+      amountTotal: 50,
+      currency: 'USD',
+      category: 'Food',
+      paidByGroupMember: { id: 'member-departed' },
+      ownerUser: { id: 'caller-id' },
+      group: { id: 'group-id' },
+      expenseDate: '2026-06-10',
+      status: 'posted',
+      encryptionScope: 'group',
+    } as any;
+    expenseRepository.findOne.mockResolvedValue(expense);
+    userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+    groupMemberRepository.findOne.mockResolvedValue({
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+    } as any);
+    groupRepository.findOne.mockResolvedValue({
+      id: 'group-id',
+      currency: 'USD',
+      isArchived: false,
+    } as any);
+    splitRepository.find.mockResolvedValue([]);
+    attachmentRepository.find.mockResolvedValue([]);
+
+    const result = await service.updateExpense('caller-id', 'exp-1', {
+      version: 1,
+      title: 'cipher:new',
+    } as any);
+
+    expect(result).toBeDefined();
+    expect(groupMemberRepository.find).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ joinStatus: expect.anything() }),
+      }),
+    );
+  });
+
+  it('blocks money-affecting edits when expense references a departed member', async () => {
+    const expense = {
+      id: 'exp-1',
+      version: 1,
+      title: 'cipher:old',
+      description: null,
+      amountTotal: 50,
+      currency: 'USD',
+      category: 'Food',
+      paidByGroupMember: { id: 'member-departed' },
+      ownerUser: { id: 'caller-id' },
+      group: { id: 'group-id' },
+      expenseDate: '2026-06-10',
+      status: 'posted',
+      encryptionScope: 'group',
+    } as any;
+    expenseRepository.findOne.mockResolvedValue(expense);
+    userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+    groupMemberRepository.findOne
+      .mockResolvedValueOnce({
+        id: 'membership-id',
+        role: 'member',
+        joinStatus: 'active',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'membership-other',
+        role: 'member',
+        joinStatus: 'active',
+      } as any);
+    groupRepository.findOne.mockResolvedValue({
+      id: 'group-id',
+      currency: 'USD',
+      isArchived: false,
+    } as any);
+    splitRepository.find.mockResolvedValue([]);
+    attachmentRepository.find.mockResolvedValue([]);
+    groupMemberRepository.find.mockResolvedValue([
+      {
+        id: 'member-departed',
+        joinStatus: 'left',
+        user: { id: 'u1', displayName: 'Alice Left', email: 'a@example.com' },
+      },
+    ] as any);
+
+    await expect(
+      service.updateExpense('caller-id', 'exp-1', {
+        version: 1,
+        paidByUserId: 'other-user-id',
+      } as any),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('blocks publishing a draft that references a departed member', async () => {
+    const expense = {
+      id: 'exp-1',
+      version: 1,
+      title: 'cipher:draft',
+      description: null,
+      amountTotal: 50,
+      currency: 'USD',
+      category: 'Food',
+      paidByGroupMember: { id: 'member-departed' },
+      ownerUser: { id: 'caller-id' },
+      group: { id: 'group-id' },
+      expenseDate: '2026-06-10',
+      status: 'draft',
+      encryptionScope: 'group',
+    } as any;
+    expenseRepository.findOne.mockResolvedValue(expense);
+    userRepository.findOne.mockResolvedValue({ id: 'caller-id' } as any);
+    groupMemberRepository.findOne.mockResolvedValue({
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+    } as any);
+    groupRepository.findOne.mockResolvedValue({
+      id: 'group-id',
+      currency: 'USD',
+      isArchived: false,
+    } as any);
+    splitRepository.find.mockResolvedValue([]);
+    attachmentRepository.find.mockResolvedValue([]);
+    groupMemberRepository.find.mockResolvedValue([
+      {
+        id: 'member-departed',
+        joinStatus: 'removed',
+        user: { id: 'u1', displayName: 'Bob Removed', email: 'b@example.com' },
+      },
+    ] as any);
+
+    await expect(
+      service.updateExpense('caller-id', 'exp-1', {
+        version: 1,
+        status: 'posted',
+      } as any),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('blocks deleting a posted expense that references a departed member', async () => {
+    const expense = {
+      id: 'exp-1',
+      status: 'posted',
+      group: { id: 'group-id' },
+      ownerUser: { id: 'caller-id' },
+      paidByGroupMember: { id: 'member-departed' },
+    } as any;
+
+    expenseRepository.findOne.mockResolvedValue(expense);
+    groupMemberRepository.findOne.mockResolvedValue({
+      id: 'membership-id',
+      role: 'member',
+      joinStatus: 'active',
+    } as any);
+    groupRepository.findOne.mockResolvedValue({
+      id: 'group-id',
+      isArchived: false,
+    } as any);
+    groupMemberRepository.find.mockResolvedValue([
+      {
+        id: 'member-departed',
+        joinStatus: 'left',
+        user: { id: 'u1', displayName: 'Alice Left', email: 'a@example.com' },
+      },
+    ] as any);
+
+    await expect(service.deleteExpense('caller-id', 'exp-1')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(expenseRepository.softRemove).not.toHaveBeenCalled();
   });
 
   it('should build paginated list for caller', async () => {

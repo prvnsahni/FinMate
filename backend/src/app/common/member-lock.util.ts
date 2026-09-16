@@ -45,3 +45,18 @@ export async function lockGroupMemberForUpdate(
     [memberId],
   );
 }
+
+/**
+ * Takes a `FOR UPDATE` lock on a specific set of member rows. Used when a
+ * balance-affecting write must fail if any referenced member is departed.
+ */
+export async function lockGroupMembersByIdsForUpdate(
+  manager: EntityManager,
+  memberIds: string[],
+): Promise<void> {
+  if (!memberIds.length) return;
+  await manager.query(
+    `SELECT id FROM group_members WHERE id = ANY($1::uuid[]) FOR UPDATE`,
+    [memberIds],
+  );
+}
