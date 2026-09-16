@@ -35,6 +35,7 @@ import {
 } from '../common/pagination.util';
 import { simplifyLedgerDebts } from '../common/ledger-debt-simplifier';
 import { resolveMemberDisplay } from '../common/member-display.util';
+import { lockGroupMembersForShare } from '../common/member-lock.util';
 import { calculateDeterministicSplits } from './split-calculator.util';
 import { ExpenseEditPolicyService } from './services/expense-edit-policy.service';
 import {
@@ -234,6 +235,10 @@ export class ExpensesService {
     groupMemberById: Map<string, GroupMember>;
     activeOrInvitedByUserId: Map<string, GroupMember>;
   }> {
+    // Serialize this write against a concurrent member remove/leave: FOR SHARE
+    // on the group's member rows conflicts with the remove's FOR UPDATE, so a
+    // removed member can never gain a new split/payment (see member-lock.util).
+    await lockGroupMembersForShare(manager, groupId);
     const members = await manager.getRepository(GroupMember).find({
       where: { group: { id: groupId }, joinStatus: In(['active', 'invited']) },
       relations: ['user'],

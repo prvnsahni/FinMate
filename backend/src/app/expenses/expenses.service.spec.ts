@@ -228,6 +228,8 @@ describe('ExpensesService', () => {
       // used directly by closeMonth()'s carry-forward rollover write path.
       create: jest.fn((_entity, data) => data),
       save: jest.fn((_entity, data) => Promise.resolve(data)),
+      // Raw FOR SHARE member lock (member-lock.util) — no-op in unit tests.
+      query: jest.fn().mockResolvedValue([]),
     };
 
     const mockDataSource = {

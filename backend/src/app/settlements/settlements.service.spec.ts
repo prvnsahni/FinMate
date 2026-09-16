@@ -27,6 +27,7 @@ describe('SettlementsService', () => {
   let expenseSplitRepository: jest.Mocked<Repository<ExpenseSplit>>;
   let settlementRepository: jest.Mocked<Repository<Settlement>>;
   let settlementVersionRepository: jest.Mocked<Repository<SettlementVersion>>;
+  let managerQuery: jest.Mock;
 
   beforeEach(async () => {
     const mockGroupRepository = {
@@ -112,6 +113,8 @@ describe('SettlementsService', () => {
     };
 
     const mockEntityManager = {
+      // Raw FOR SHARE member lock (member-lock.util) — no-op in unit tests.
+      query: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(async (entityClass, options: any) => {
         if (entityClass === GroupMember) {
           const res = await mockGroupMemberRepository.findOne(options);
@@ -147,6 +150,8 @@ describe('SettlementsService', () => {
         return data;
       }),
     };
+
+    managerQuery = mockEntityManager.query as jest.Mock;
 
     const mockDataSource = {
       transaction: jest.fn((cb) => cb(mockEntityManager)),
@@ -1365,6 +1370,27 @@ describe('SettlementsService', () => {
           currency: 'EUR',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('acquires a FOR SHARE member lock inside the write transaction (serializes vs member removal)', async () => {
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember)
+        .mockResolvedValueOnce(contactMember)
+        .mockResolvedValueOnce(callerMember);
+      groupRepository.findOne.mockResolvedValueOnce(group);
+      wireSave();
+
+      await service.recordPayment('caller-id', 'group-id', {
+        fromMemberId: 'contact-member',
+        toMemberId: 'caller-member',
+        amount: 40,
+        currency: 'USD',
+      });
+
+      expect(managerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('FOR SHARE'),
+        ['group-id'],
+      );
     });
   });
 

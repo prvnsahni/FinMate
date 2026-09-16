@@ -33,6 +33,7 @@ import {
   MemberDisplay,
   resolveMemberDisplay,
 } from '../common/member-display.util';
+import { lockGroupMembersForShare } from '../common/member-lock.util';
 
 export interface MemberBalance {
   userId: string;
@@ -685,6 +686,9 @@ export class SettlementsService {
 
     const savedSettlement = await this.dataSource.transaction(
       async (manager) => {
+        // Serialize against a concurrent member remove/leave (see
+        // member-lock.util): a settlement is balance-affecting.
+        await lockGroupMembersForShare(manager, groupId);
         // Frozen group-ledger identity rule: both settlement parties always
         // resolve via GroupMember, never User — including the caller, who
         // is always a real registered member but is referenced by their
@@ -831,6 +835,7 @@ export class SettlementsService {
 
     const actorUser = callerMember.user;
     const saved = await this.dataSource.transaction(async (manager) => {
+      await lockGroupMembersForShare(manager, groupId);
       const settlement = manager.create(Settlement, {
         group,
         fromGroupMember: fromMember,
@@ -923,6 +928,9 @@ export class SettlementsService {
   ): Promise<Settlement> {
     const { savedSettlement, callerUser, action } =
       await this.dataSource.transaction(async (manager) => {
+        // Confirming/cancelling a settlement changes balances — serialize
+        // against a concurrent member remove/leave (see member-lock.util).
+        await lockGroupMembersForShare(manager, groupId);
         // Validate caller active membership
         const callerMember = await manager.findOne(GroupMember, {
           where: {
