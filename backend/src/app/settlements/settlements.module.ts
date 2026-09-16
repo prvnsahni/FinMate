@@ -11,6 +11,7 @@ import {
   AuditLog,
 } from '@finmate/data-models';
 import { SettlementsService } from './settlements.service';
+import { BalancesService } from './balances.service';
 import { SettlementsController } from './settlements.controller';
 import { FriendsController } from './friends.controller';
 import { GroupRolesGuard } from '../auth/guards/group-roles.guard';
@@ -29,7 +30,7 @@ import { GroupRolesGuard } from '../auth/guards/group-roles.guard';
     ]),
   ],
   controllers: [SettlementsController, FriendsController],
-  providers: [SettlementsService, GroupRolesGuard],
-  exports: [SettlementsService],
+  providers: [SettlementsService, BalancesService, GroupRolesGuard],
+  exports: [SettlementsService, BalancesService],
 })
 export class SettlementsModule {}

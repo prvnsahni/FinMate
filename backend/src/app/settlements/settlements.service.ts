@@ -296,6 +296,36 @@ export class SettlementsService {
   }
 
   /**
+   * Caller-agnostic all-time balances for every member of a group, keyed by
+   * GroupMember.id (one row per member per currency). Unlike
+   * `calculateGroupBalances` this performs no caller access check or breakdown —
+   * it is an internal computation used by `BalancesService` to gate identity
+   * changes. Includes confirmed settlements (all-time overall view).
+   */
+  async getOverallBalances(groupId: string): Promise<
+    Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>
+  > {
+    const allMembers = await this.groupMemberRepository.find({
+      where: { group: { id: groupId }, joinStatus: In(['active', 'invited']) },
+      relations: ['user', 'contact'],
+    });
+    const { balances } = await this.computeBalancesCore(
+      groupId,
+      allMembers,
+      undefined,
+      true,
+    );
+    return balances;
+  }
+
+  /**
    * Core balance computation over a (optionally filtered) set of expenses.
    * `includeSettlements` folds confirmed settlements into the balance (only
    * meaningful for the all-time overall view).
