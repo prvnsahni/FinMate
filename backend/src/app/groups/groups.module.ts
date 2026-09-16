@@ -18,6 +18,7 @@ import { GroupRolesGuard } from '../auth/guards/group-roles.guard';
 import { ExpensesModule } from '../expenses/expenses.module';
 import { EmailModule } from '../email/email.module';
 import { ContactsModule } from '../contacts/contacts.module';
+import { SettlementsModule } from '../settlements/settlements.module';
 import {
   GroupsAuditService,
   GroupsContributionsService,
@@ -40,6 +41,7 @@ import {
     ExpensesModule,
     EmailModule,
     ContactsModule,
+    SettlementsModule,
   ],
   controllers: [GroupsController, MembersController, InviteController],
   providers: [

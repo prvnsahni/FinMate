@@ -32,6 +32,8 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { ContactsService } from '../contacts/contacts.service';
+import { BalancesService } from '../settlements/balances.service';
+import { lockGroupMemberForUpdate } from '../common/member-lock.util';
 
 @Injectable()
 export class GroupsService {
@@ -52,7 +54,30 @@ export class GroupsService {
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
     private readonly contactsService: ContactsService,
+    private readonly balancesService: BalancesService,
   ) {}
+
+  /**
+   * Zero-balance-before-identity-change guard. Takes a FOR UPDATE lock on the
+   * member row (serializing against balance-affecting writes that hold FOR
+   * SHARE), recomputes the member's balance, and refuses the change with 409
+   * MEMBER_BALANCE_NONZERO if any currency is outstanding — then persists the
+   * (already-mutated) member row in the same transaction. History is never
+   * rewritten; the member's existing split/settlement rows are untouched.
+   */
+  private async assertZeroBalanceAndSave(
+    groupId: string,
+    member: GroupMember,
+    displayName?: string,
+  ): Promise<GroupMember> {
+    return this.dataSource.transaction(async (manager) => {
+      await lockGroupMemberForUpdate(manager, member.id);
+      await this.balancesService.assertZeroBalance(groupId, member.id, {
+        displayName,
+      });
+      return manager.save(GroupMember, member);
+    });
+  }
 
   private getIpHash(ip?: string): string | undefined {
     if (!ip) return undefined;
@@ -837,6 +862,7 @@ export class GroupsService {
     }
 
     // Handle join status updates
+    let requiresZeroBalance = false;
     if (dto.joinStatus) {
       // A pending (Contact-backed) target has no account and can never be
       // the caller — `isSelf` correctly evaluates false for them.
@@ -856,6 +882,7 @@ export class GroupsService {
           }
           targetMember.joinStatus = 'left';
           targetMember.leftAt = new Date();
+          requiresZeroBalance = true;
         } else {
           throw new BadRequestException(
             'Invalid join status transition for self',
@@ -883,6 +910,7 @@ export class GroupsService {
           }
           targetMember.joinStatus = 'removed';
           targetMember.leftAt = new Date();
+          requiresZeroBalance = true;
         } else {
           throw new BadRequestException(
             'Can only transition status to removed',
@@ -891,7 +919,16 @@ export class GroupsService {
       }
     }
 
-    const savedMember = await this.groupMemberRepository.save(targetMember);
+    // Rule: a member's balance must be zero before they leave/are removed.
+    const savedMember = requiresZeroBalance
+      ? await this.assertZeroBalanceAndSave(
+          groupId,
+          targetMember,
+          targetMember.nickname ||
+            targetMember.user?.displayName ||
+            targetMember.user?.email,
+        )
+      : await this.groupMemberRepository.save(targetMember);
 
     const actorUser = await this.dataSource
       .getRepository(User)
@@ -960,7 +997,14 @@ export class GroupsService {
       }
       targetMember.joinStatus = 'left';
       targetMember.leftAt = new Date();
-      const savedMember = await this.groupMemberRepository.save(targetMember);
+      // Rule: a member's balance must be zero before they leave.
+      const savedMember = await this.assertZeroBalanceAndSave(
+        groupId,
+        targetMember,
+        targetMember.nickname ||
+          targetMember.user?.displayName ||
+          targetMember.user?.email,
+      );
 
       void this.writeAuditLog({
         actorUser: targetMember.user!,
@@ -994,7 +1038,15 @@ export class GroupsService {
 
       targetMember.joinStatus = 'removed';
       targetMember.leftAt = new Date();
-      const savedMember = await this.groupMemberRepository.save(targetMember);
+      // Rule: a member's balance must be zero before they are removed.
+      const savedMember = await this.assertZeroBalanceAndSave(
+        groupId,
+        targetMember,
+        targetMember.nickname ||
+          targetMember.user?.displayName ||
+          targetMember.user?.email ||
+          targetMember.contact?.displayName,
+      );
 
       const actorUser = await this.dataSource
         .getRepository(User)
