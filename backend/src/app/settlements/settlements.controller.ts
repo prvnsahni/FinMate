@@ -16,6 +16,7 @@ import { GroupRolesGuard } from '../auth/guards/group-roles.guard';
 import { GroupRoles } from '../auth/decorators/group-roles.decorator';
 import {
   ProposeSettlementDto,
+  RecordPaymentDto,
   UpdateSettlementDto,
 } from '@finmate/data-models';
 import { SuccessResponse } from '../common/response.util';
@@ -65,6 +66,29 @@ export class SettlementsController {
       context,
     );
     return new SuccessResponse('Settlement proposed successfully', result);
+  }
+
+  @Post('record')
+  @GroupRoles('owner', 'admin', 'member')
+  async record(
+    @Param('groupId', ParseUUIDPipe) groupId: string,
+    @Body() recordPaymentDto: RecordPaymentDto,
+    @Req() req: any,
+  ) {
+    const context = {
+      ip:
+        req.ip ||
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'] as string,
+    };
+    const result = await this.settlementsService.recordPayment(
+      req.user.id,
+      groupId,
+      recordPaymentDto,
+      context,
+    );
+    return new SuccessResponse('Payment recorded successfully', result);
   }
 
   @Get()

@@ -21,6 +21,7 @@ import {
   Settlement,
   SettlementVersion,
   ProposeSettlementDto,
+  RecordPaymentDto,
   UpdateSettlementDto,
   AuditLog,
   User,
@@ -696,6 +697,145 @@ export class SettlementsService {
     });
 
     return savedSettlement;
+  }
+
+  /**
+   * One-step "record a cash payment" between two group members, created
+   * directly as `confirmed`. This exists because a non-registered
+   * (Contact-backed) member cannot log in to accept a proposed settlement, so
+   * their balance could otherwise never be brought to zero.
+   *
+   * Rules:
+   * - Both members must be active/invited in the group; `amount > 0`; currency
+   *   must match the group's base currency.
+   * - The caller must be one of the two parties OR a group owner/admin.
+   * - Allowed only when at least one party is an **unclaimed** (Contact-backed,
+   *   `user`-less) member. If both are registered users the propose/accept flow
+   *   must be used so both sides consent.
+   * - Overpayment is intentionally NOT capped here (Splitwise-style); the client
+   *   warns.
+   */
+  async recordPayment(
+    userId: string,
+    groupId: string,
+    dto: RecordPaymentDto,
+    context?: { ip?: string; userAgent?: string },
+  ): Promise<Settlement> {
+    const callerMember = await this.groupMemberRepository.findOne({
+      where: {
+        group: { id: groupId },
+        user: { id: userId },
+        joinStatus: 'active',
+      },
+      relations: ['user'],
+    });
+    if (!callerMember) {
+      throw new ForbiddenException('You do not have access to this group');
+    }
+
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId },
+    });
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+    if (
+      group.currency &&
+      dto.currency.toUpperCase() !== group.currency.toUpperCase()
+    ) {
+      throw new BadRequestException({
+        errorCode: 'SETTLE_CURRENCY_MISMATCH',
+        message: `Settlement currency must match the group's base currency (${group.currency})`,
+      });
+    }
+    if (dto.fromMemberId === dto.toMemberId) {
+      throw new BadRequestException('Payer and payee must be different members');
+    }
+
+    const [fromMember, toMember] = await Promise.all([
+      this.groupMemberRepository.findOne({
+        where: {
+          id: dto.fromMemberId,
+          group: { id: groupId },
+          joinStatus: In(['active', 'invited']),
+        },
+        relations: ['user', 'contact'],
+      }),
+      this.groupMemberRepository.findOne({
+        where: {
+          id: dto.toMemberId,
+          group: { id: groupId },
+          joinStatus: In(['active', 'invited']),
+        },
+        relations: ['user', 'contact'],
+      }),
+    ]);
+    if (!fromMember || !toMember) {
+      throw new BadRequestException(
+        'Both payer and payee must be active members of this group',
+      );
+    }
+
+    // Authorization: a party to the payment, or a group owner/admin.
+    const callerIsParty =
+      callerMember.id === fromMember.id || callerMember.id === toMember.id;
+    const callerIsAdmin =
+      callerMember.role === 'owner' || callerMember.role === 'admin';
+    if (!callerIsParty && !callerIsAdmin) {
+      throw new ForbiddenException({
+        errorCode: 'RES_FORBIDDEN',
+        message:
+          'You must be a party to this payment or a group admin to record it',
+      });
+    }
+
+    // One-step confirmed is only for a non-registered counterparty. If BOTH
+    // sides are registered users, both can consent — require propose/accept.
+    if (fromMember.user && toMember.user) {
+      throw new BadRequestException({
+        errorCode: 'SETTLE_USE_PROPOSE_ACCEPT',
+        message:
+          'Both members are registered users — use the propose/accept flow so both sides confirm the payment',
+      });
+    }
+
+    const actorUser = callerMember.user;
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const settlement = manager.create(Settlement, {
+        group,
+        fromGroupMember: fromMember,
+        toGroupMember: toMember,
+        amount: dto.amount,
+        currency: dto.currency.toUpperCase(),
+        status: 'confirmed',
+        settledOn: new Date().toISOString().split('T')[0],
+        note: dto.note,
+        recordedByUser: actorUser,
+      });
+      const s = await manager.save(Settlement, settlement);
+      await this.recordSettlementVersion(manager, s, 'confirmed', actorUser);
+      return s;
+    });
+
+    void this.writeAuditLog({
+      actorUser,
+      action: 'settlement.recorded',
+      entityId: saved.id,
+      groupId,
+      metadata: {
+        fromGroupMemberId: fromMember.id,
+        toGroupMemberId: toMember.id,
+        fromContactId: fromMember.contact?.id ?? null,
+        toContactId: toMember.contact?.id ?? null,
+        amount: Number(saved.amount),
+        currency: saved.currency,
+        recordedByUserId: actorUser.id,
+      },
+      ip: context?.ip,
+      userAgent: context?.userAgent,
+    });
+
+    return saved;
   }
 
   async listSettlements(
