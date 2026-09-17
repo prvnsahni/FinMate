@@ -654,6 +654,18 @@ describe('SettlementsService', () => {
             s.toGroupMemberId === 'member-b',
         ),
       ).toBe(false);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-a',
+            settled: true,
+          }),
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: true,
+          }),
+        ]),
+      );
     });
 
     it('keeps departed members visible in live balances when non-zero', async () => {
@@ -696,6 +708,20 @@ describe('SettlementsService', () => {
         result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
       ).toBe(true);
       expect(result.overall.suggestedSettlements.length).toBeGreaterThan(0);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+            byCurrency: expect.arrayContaining([
+              expect.objectContaining({
+                currency: 'USD',
+                settled: false,
+              }),
+            ]),
+          }),
+        ]),
+      );
     });
 
     it('period view hides departed members at period-net zero even when overall net is non-zero', async () => {
@@ -757,6 +783,85 @@ describe('SettlementsService', () => {
       expect(
         result.filtered.balances.some((b) => b.groupMemberId === 'member-b'),
       ).toBe(false);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+            byCurrency: expect.arrayContaining([
+              expect.objectContaining({
+                currency: 'USD',
+                settled: false,
+              }),
+            ]),
+          }),
+        ]),
+      );
+    });
+
+    it('keeps a departed cross-currency member visible when each currency is non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([
+        {
+          id: 'usd-exp',
+          amountTotal: 100,
+          currency: 'USD',
+          paidByUser: userA,
+          transactionType: 'expense',
+        },
+        {
+          id: 'inr-exp',
+          amountTotal: 100,
+          currency: 'INR',
+          paidByUser: userB,
+          transactionType: 'expense',
+        },
+      ] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([
+        {
+          expense: { id: 'usd-exp', currency: 'USD', transactionType: 'expense' },
+          participantUser: userB,
+          amountOwed: 100,
+        },
+        {
+          expense: { id: 'inr-exp', currency: 'INR', transactionType: 'expense' },
+          participantUser: userA,
+          amountOwed: 100,
+        },
+      ] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      const memberBBalances = result.overall.balances.filter(
+        (b) => b.groupMemberId === 'member-b',
+      );
+      expect(memberBBalances.length).toBeGreaterThan(0);
+      expect(memberBBalances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ currency: 'USD', netBalance: -100 }),
+          expect.objectContaining({ currency: 'INR', netBalance: 100 }),
+        ]),
+      );
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ groupMemberId: 'member-b', settled: false }),
+        ]),
+      );
     });
   });
 

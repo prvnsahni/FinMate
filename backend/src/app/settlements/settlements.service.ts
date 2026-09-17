@@ -309,8 +309,8 @@ export class SettlementsService {
 
     const hiddenIds = new Set<string>();
     for (const memberId of departedIds) {
-      const absNet = Math.round((absByDeparted.get(memberId) ?? 0) * 100) / 100;
-      if (absNet === 0) hiddenIds.add(memberId);
+      const absNet = absByDeparted.get(memberId) ?? 0;
+      if (this.isCentZero(absNet)) hiddenIds.add(memberId);
     }
     if (!hiddenIds.size) {
       return { balances, suggestedSettlements };
@@ -322,6 +322,59 @@ export class SettlementsService {
         (s) => !hiddenIds.has(s.fromGroupMemberId) && !hiddenIds.has(s.toGroupMemberId),
       ),
     };
+  }
+
+  private isCentZero(amount: number): boolean {
+    return Math.round(Math.abs(amount) * 100) / 100 === 0;
+  }
+
+  private buildMemberSettledStatus(
+    groupMembers: GroupMember[],
+    overallBalances: Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>,
+  ): Array<{
+    groupMemberId: string;
+    settled: boolean;
+    byCurrency: Array<{ currency: string; netBalance: number; settled: boolean }>;
+  }> {
+    const byMember = new Map<string, Map<string, number>>();
+    for (const member of groupMembers) {
+      byMember.set(member.id, new Map<string, number>());
+    }
+    for (const b of overallBalances) {
+      const curr = byMember.get(b.groupMemberId) ?? new Map<string, number>();
+      curr.set(b.currency, b.netBalance);
+      byMember.set(b.groupMemberId, curr);
+    }
+
+    const result: Array<{
+      groupMemberId: string;
+      settled: boolean;
+      byCurrency: Array<{ currency: string; netBalance: number; settled: boolean }>;
+    }> = [];
+
+    for (const [groupMemberId, currencyMap] of byMember.entries()) {
+      const byCurrency = [...currencyMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([currency, netBalance]) => ({
+          currency,
+          netBalance,
+          settled: this.isCentZero(netBalance),
+        }));
+      result.push({
+        groupMemberId,
+        settled: byCurrency.every((c) => c.settled),
+        byCurrency,
+      });
+    }
+
+    return result.sort((a, b) => a.groupMemberId.localeCompare(b.groupMemberId));
   }
 
   /**
@@ -384,6 +437,10 @@ export class SettlementsService {
       filteredRaw.balances,
       filteredRaw.suggestedSettlements,
     );
+    const memberSettledStatus = this.buildMemberSettledStatus(
+      allMembers,
+      overallRaw.balances,
+    );
 
     // Decompose the *caller's* balance for the Balance Breakdown UI. The
     // backend stays the single source of truth: Opening is derived here as
@@ -413,7 +470,7 @@ export class SettlementsService {
       closingBalance,
     };
 
-    return { overall, filtered, breakdown };
+    return { overall, filtered, breakdown, memberSettledStatus };
   }
 
   /**
