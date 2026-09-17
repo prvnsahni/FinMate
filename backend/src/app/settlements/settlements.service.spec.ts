@@ -697,6 +697,67 @@ describe('SettlementsService', () => {
       ).toBe(true);
       expect(result.overall.suggestedSettlements.length).toBeGreaterThan(0);
     });
+
+    it('period view hides departed members at period-net zero even when overall net is non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      // First compute (overall): departed member has non-zero net due to historical spend.
+      // Second compute (filtered period): no in-period rows, so member is period-net zero.
+      expenseRepository.find
+        .mockResolvedValueOnce([
+          {
+            id: 'hist-exp-1',
+            amountTotal: 100,
+            currency: 'USD',
+            paidByUser: userA,
+            transactionType: 'expense',
+          },
+        ] as any[])
+        .mockResolvedValueOnce([] as any[]);
+
+      expenseSplitRepository.find
+        .mockResolvedValueOnce([
+          {
+            expense: {
+              id: 'hist-exp-1',
+              currency: 'USD',
+              transactionType: 'expense',
+            },
+            participantUser: userB,
+            amountOwed: 100,
+          },
+        ] as any[])
+        .mockResolvedValueOnce([] as any[]);
+
+      settlementRepository.find.mockResolvedValueOnce([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id', {
+        from: '2026-09-01',
+        to: '2026-09-30',
+      });
+
+      // Overall keeps departed member visible (non-zero all-time net).
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(true);
+      // Period view hides departed member (period-net zero).
+      expect(
+        result.filtered.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(false);
+    });
   });
 
   // ── Phase 3: Friends Balance (registered-user-only aggregation) ─────────
