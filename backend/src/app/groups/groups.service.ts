@@ -72,11 +72,92 @@ export class GroupsService {
   ): Promise<GroupMember> {
     return this.dataSource.transaction(async (manager) => {
       await lockGroupMemberForUpdate(manager, member.id);
+      await this.assertNoBlockingReferencesBeforeDeparture(
+        manager,
+        groupId,
+        member,
+        displayName,
+      );
       await this.balancesService.assertZeroBalance(groupId, member.id, {
         displayName,
       });
       return manager.save(GroupMember, member);
     });
+  }
+
+  private async assertNoBlockingReferencesBeforeDeparture(
+    manager: EntityManager,
+    groupId: string,
+    member: GroupMember,
+    displayName?: string,
+  ): Promise<void> {
+    const rows1 = await manager.query(
+      `SELECT COUNT(*)::int AS count
+         FROM settlements s
+        WHERE s.group_id = $1
+          AND s.status = 'proposed'
+          AND (s.from_group_member_id = $2 OR s.to_group_member_id = $2)`,
+      [groupId, member.id],
+    );
+    const pendingSettlements = Number(rows1?.[0]?.count ?? 0);
+    if (pendingSettlements > 0) {
+      throw new ConflictException({
+        errorCode: 'MEMBER_BALANCE_NONZERO',
+        message: `${displayName ?? 'This member'} still has pending settlements that must be resolved before this change`,
+        details: { reason: 'PENDING_SETTLEMENTS', count: pendingSettlements },
+      });
+    }
+
+    const rows2 = await manager.query(
+      `SELECT COUNT(DISTINCT re.id)::int AS count
+         FROM recurring_expenses re
+    LEFT JOIN recurring_expense_splits rs
+           ON rs.recurring_expense_id = re.id
+        WHERE re.group_id = $1
+          AND re.status = 'active'
+          AND (
+            re.paid_by_group_member_id = $2
+            OR rs.participant_group_member_id = $2
+          )`,
+      [groupId, member.id],
+    );
+    const activeRecurringRefs = Number(rows2?.[0]?.count ?? 0);
+    if (activeRecurringRefs > 0) {
+      throw new ConflictException({
+        errorCode: 'MEMBER_BALANCE_NONZERO',
+        message: `${displayName ?? 'This member'} is referenced by active recurring templates that must be resolved before this change`,
+        details: { reason: 'ACTIVE_RECURRING', count: activeRecurringRefs },
+      });
+    }
+
+    // Drafts do not count toward balances, but publishing a draft would.
+    const rows3 = await manager.query(
+      `SELECT COUNT(DISTINCT e.id)::int AS count
+         FROM expenses e
+    LEFT JOIN expense_splits es
+           ON es.expense_id = e.id
+          AND es.deleted_at IS NULL
+    LEFT JOIN expense_payments ep
+           ON ep.expense_id = e.id
+          AND ep.deleted_at IS NULL
+        WHERE e.group_id = $1
+          AND e.status = 'draft'
+          AND e.deleted_at IS NULL
+          AND (
+            e.paid_by_group_member_id = $2
+            OR es.participant_group_member_id = $2
+            OR ep.paid_by_group_member_id = $2
+          )`,
+      [groupId, member.id],
+    );
+    const draftRefs = Number(rows3?.[0]?.count ?? 0);
+    if (draftRefs > 0) {
+      throw new ConflictException({
+        errorCode: 'MEMBER_BALANCE_NONZERO',
+        message: `${displayName ?? 'This member'} is referenced by unpublished drafts that must be resolved before this change`,
+        details: { reason: 'DRAFT_REFERENCES', count: draftRefs },
+      });
+    }
   }
 
   private getIpHash(ip?: string): string | undefined {

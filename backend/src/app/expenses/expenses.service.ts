@@ -3105,6 +3105,7 @@ export class ExpensesService {
     userId: string,
     groupId: string,
     ledgerMonth: string,
+    opts?: { manager?: EntityManager; skipAccessCheck?: boolean },
   ): Promise<
     {
       groupMemberId: string;
@@ -3122,9 +3123,28 @@ export class ExpensesService {
       overallBalance: number;
     }[]
   > {
-    await this.assertGroupAccess(userId, groupId);
+    if (!opts?.skipAccessCheck) {
+      await this.assertGroupAccess(userId, groupId);
+    }
 
-    const group = await this.groupRepository.findOne({
+    const manager = opts?.manager;
+    const groupRepo = manager
+      ? manager.getRepository(Group)
+      : this.groupRepository;
+    const expenseRepo = manager
+      ? manager.getRepository(Expense)
+      : this.expenseRepository;
+    const memberRepo = manager
+      ? manager.getRepository(GroupMember)
+      : this.groupMemberRepository;
+    const splitRepo = manager
+      ? manager.getRepository(ExpenseSplit)
+      : this.expenseSplitRepository;
+    const contributionRepo = manager
+      ? manager.getRepository(GroupMemberContribution)
+      : this.dataSource.getRepository(GroupMemberContribution);
+
+    const group = await groupRepo.findOne({
       where: { id: groupId },
     });
     if (!group) throw new NotFoundException('Group not found');
@@ -3136,13 +3156,13 @@ export class ExpensesService {
     }
 
     // Get all posted expenses for the ledger month
-    const expenses = await this.expenseRepository.find({
+    const expenses = await expenseRepo.find({
       where: { group: { id: groupId }, ledgerMonth, status: 'posted' },
       relations: ['paidByUser', 'paidByGroupMember', 'ownerUser'],
       withDeleted: false,
     });
 
-    const activeMembers = await this.groupMemberRepository.find({
+    const activeMembers = await memberRepo.find({
       where: { group: { id: groupId }, joinStatus: 'active' },
       relations: ['user', 'contact'],
     });
@@ -3196,8 +3216,7 @@ export class ExpensesService {
     }
 
     // Look up monthly contribution percentages
-    const contributions = await this.dataSource
-      .getRepository(GroupMemberContribution)
+    const contributions = await contributionRepo
       .createQueryBuilder('contribution')
       .innerJoinAndSelect('contribution.groupMember', 'groupMember')
       .where('groupMember.group_id = :groupId', { groupId })
@@ -3218,7 +3237,7 @@ export class ExpensesService {
     // Load splits for carry forward expenses to adjust targets
     const carryExpenseIds = carryExpenses.map((e) => e.id);
     const carrySplits = carryExpenseIds.length
-      ? await this.expenseSplitRepository.find({
+      ? await splitRepo.find({
           where: { expense: { id: In(carryExpenseIds) } },
           relations: ['expense', 'participantUser', 'participantGroupMember'],
         })
@@ -3270,14 +3289,13 @@ export class ExpensesService {
     const openingByMember = new Map<string, number>();
     const overallByMember = new Map<string, number>();
     {
-      const allExpenses = await this.expenseRepository.find({
+      const allExpenses = await expenseRepo.find({
         where: { group: { id: groupId }, status: 'posted' },
         relations: ['paidByUser', 'paidByGroupMember'],
       });
       const allNormalExpenses = allExpenses.filter((e) => !e.isCarryForward);
 
-      const allContributions = await this.dataSource
-        .getRepository(GroupMemberContribution)
+      const allContributions = await contributionRepo
         .createQueryBuilder('contribution')
         .innerJoinAndSelect('contribution.groupMember', 'groupMember')
         .where('groupMember.group_id = :groupId', { groupId })
@@ -3665,79 +3683,113 @@ export class ExpensesService {
     const nextDate = new Date(year, month, 1);
     const nextLedgerMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
 
-    // Verify duplicate closure
-    const existingCarryForward = await this.expenseRepository.count({
-      where: {
-        group: { id: groupId },
-        ledgerMonth: nextLedgerMonth,
-        isCarryForward: true,
-      },
-    });
-    if (existingCarryForward > 0) {
-      throw new BadRequestException({
-        errorCode: 'VAL_INVALID_INPUT',
-        message: `Month ${ledgerMonth} is already closed/rolled over`,
-      });
-    }
+    const carryForwardExpenseCount = await this.dataSource.transaction(
+      async (manager) => {
+        await manager.query(
+          `SELECT id FROM group_members ` +
+            `WHERE group_id = $1 AND join_status IN ('active','invited') FOR SHARE`,
+          [groupId],
+        );
 
-    let carryForwardExpenseCount = 0;
-
-    if (group.carryForwardEnabled) {
-      const summary = await this.getCarryForwardSummary(
-        userId,
-        groupId,
-        ledgerMonth,
-      );
-      const balances = summary.map((s) => ({
-        groupMemberId: s.groupMemberId,
-        balance: s.netBalance,
-      }));
-
-      const simplified = this.simplifyDebts(balances, group.currency);
-      carryForwardExpenseCount = simplified.length;
-
-      if (simplified.length > 0) {
-        await this.dataSource.transaction(async (manager) => {
-          for (const tx of simplified) {
-            const debtorMember = await manager
-              .getRepository(GroupMember)
-              .findOne({ where: { id: tx.fromGroupMemberId } });
-            const creditorMember = await manager
-              .getRepository(GroupMember)
-              .findOne({ where: { id: tx.toGroupMemberId } });
-            if (!debtorMember || !creditorMember) continue;
-
-            // Frozen rule: inside a group ledger, payer/participant always
-            // resolve to GroupMember — mirrors createExpense()'s write path.
-            const expense = manager.create(Expense, {
-              title: `Carry-Forward from ${ledgerMonth}`,
-              description: `System-generated carry-forward balance rollover`,
-              amountTotal: tx.amount,
-              currency: group.currency,
-              category: 'Other',
-              paidByGroupMember: creditorMember,
-              ownerUser: callerMember.user,
-              group,
-              expenseDate: `${nextLedgerMonth}-01`,
-              ledgerMonth: nextLedgerMonth,
-              isCarryForward: true,
-              status: 'posted',
-            });
-            const savedExpense = await manager.save(Expense, expense);
-
-            const split = manager.create(ExpenseSplit, {
-              expense: savedExpense,
-              participantGroupMember: debtorMember,
-              splitType: 'fixed',
-              shareValue: tx.amount,
-              amountOwed: tx.amount,
-              isSettled: false,
-            });
-            await manager.save(ExpenseSplit, split);
-          }
+        const existingCarryForward = await manager.getRepository(Expense).count({
+          where: {
+            group: { id: groupId },
+            ledgerMonth: nextLedgerMonth,
+            isCarryForward: true,
+          },
         });
-      }
-    }
+        if (existingCarryForward > 0) {
+          throw new BadRequestException({
+            errorCode: 'VAL_INVALID_INPUT',
+            message: `Month ${ledgerMonth} is already closed/rolled over`,
+          });
+        }
+
+        if (!group.carryForwardEnabled) {
+          return 0;
+        }
+
+        const summary = await this.getCarryForwardSummary(
+          userId,
+          groupId,
+          ledgerMonth,
+          { manager, skipAccessCheck: true },
+        );
+        const balances = summary.map((s) => ({
+          groupMemberId: s.groupMemberId,
+          balance: s.netBalance,
+        }));
+        const simplified = this.simplifyDebts(balances, group.currency);
+
+        for (const tx of simplified) {
+          const [debtorMember, creditorMember] = await Promise.all([
+            manager.getRepository(GroupMember).findOne({
+              where: {
+                id: tx.fromGroupMemberId,
+                group: { id: groupId },
+                joinStatus: In(['active', 'invited']),
+              },
+              relations: ['user', 'contact'],
+            }),
+            manager.getRepository(GroupMember).findOne({
+              where: {
+                id: tx.toGroupMemberId,
+                group: { id: groupId },
+                joinStatus: In(['active', 'invited']),
+              },
+              relations: ['user', 'contact'],
+            }),
+          ]);
+
+          if (!debtorMember || !creditorMember) {
+            const missingId = debtorMember
+              ? tx.toGroupMemberId
+              : tx.fromGroupMemberId;
+            const departed = await manager.getRepository(GroupMember).findOne({
+              where: { id: missingId, group: { id: groupId } },
+              relations: ['user', 'contact'],
+            });
+            const displayName = departed
+              ? resolveMemberDisplay(departed).displayName
+              : 'This member';
+            throw new ConflictException({
+              errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+              memberId: missingId,
+              displayName,
+              message: `${displayName} has left this group. To change this, add ${displayName} back to the group first.`,
+            });
+          }
+
+          const expense = manager.create(Expense, {
+            title: `Carry-Forward from ${ledgerMonth}`,
+            description: `System-generated carry-forward balance rollover`,
+            amountTotal: tx.amount,
+            currency: group.currency,
+            category: 'Other',
+            paidByGroupMember: creditorMember,
+            ownerUser: callerMember.user,
+            group,
+            expenseDate: `${nextLedgerMonth}-01`,
+            ledgerMonth: nextLedgerMonth,
+            isCarryForward: true,
+            status: 'posted',
+          });
+          const savedExpense = await manager.save(Expense, expense);
+
+          const split = manager.create(ExpenseSplit, {
+            expense: savedExpense,
+            participantGroupMember: debtorMember,
+            splitType: 'fixed',
+            shareValue: tx.amount,
+            amountOwed: tx.amount,
+            isSettled: false,
+          });
+          await manager.save(ExpenseSplit, split);
+        }
+
+        return simplified.length;
+      },
+    );
 
     // Write audit log
     void this.writeAuditLog({

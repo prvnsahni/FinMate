@@ -22,6 +22,7 @@ import {
   Group,
   GroupKeyVersion,
   GroupMember,
+  GroupMemberContribution,
   ReceiptVersion,
   User,
 } from '@finmate/data-models';
@@ -31,6 +32,7 @@ import { ExpenseEditPolicyService } from './services/expense-edit-policy.service
 
 describe('ExpensesService', () => {
   let service: ExpensesService;
+  let managerQuery: jest.Mock;
   let expenseRepository: jest.Mocked<Repository<Expense>>;
   let splitRepository: jest.Mocked<Repository<ExpenseSplit>>;
   let groupRepository: jest.Mocked<Repository<Group>>;
@@ -48,7 +50,12 @@ describe('ExpensesService', () => {
   >;
   let attachmentVersionRepository: jest.Mocked<Repository<AttachmentVersion>>;
   let receiptVersionRepository: jest.Mocked<Repository<ReceiptVersion>>;
-  let entityManagerMock: { create: jest.Mock; save: jest.Mock };
+  let entityManagerMock: {
+    create: jest.Mock;
+    save: jest.Mock;
+    query: jest.Mock;
+    getRepository: jest.Mock;
+  };
   let expenseTagRepositoryMock: {
     create: jest.Mock;
     save: jest.Mock;
@@ -239,6 +246,8 @@ describe('ExpensesService', () => {
         mockEntityManager.getRepository(entity),
       ),
     };
+
+    managerQuery = mockEntityManager.query as jest.Mock;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1858,6 +1867,171 @@ describe('ExpensesService', () => {
 
         expect(result.nextLedgerMonth).toBe('2026-07');
         expect(result.carryForwardExpenseCount).toBe(1);
+        expect(managerQuery).toHaveBeenCalledWith(
+          expect.stringContaining('FOR SHARE'),
+          ['group-id'],
+        );
+      });
+
+      it('should abort closeMonth with MEMBER_DEPARTED_BALANCE_LOCKED when a carry-forward party is departed', async () => {
+        groupMemberRepository.findOne.mockResolvedValue({
+          id: 'membership-id',
+          role: 'admin',
+          user: { id: 'caller-id', displayName: 'Admin User' },
+          joinStatus: 'active',
+        } as any);
+
+        groupRepository.findOne.mockResolvedValue({
+          id: 'group-id',
+          groupType: 'household',
+          currency: 'USD',
+          carryForwardEnabled: true,
+        } as any);
+
+        expenseRepository.count = jest.fn().mockResolvedValue(0);
+
+        groupMemberRepository.find
+          .mockResolvedValueOnce([
+            {
+              id: 'member-a',
+              user: {
+                id: 'user-a',
+                displayName: 'User A',
+                email: 'a@finmate.com',
+              },
+              joinStatus: 'active',
+            },
+            {
+              id: 'member-b',
+              user: {
+                id: 'user-b',
+                displayName: 'User B',
+                email: 'b@finmate.com',
+              },
+              joinStatus: 'active',
+            },
+          ] as any)
+          // closeMonth write-time verification: one party is no longer active/invited
+          .mockResolvedValueOnce([] as any);
+        groupMemberRepository.findOne.mockImplementation((opts: any) => {
+          const memberId = opts?.where?.id;
+          const joinStatus = opts?.where?.joinStatus;
+          if (memberId === 'member-a' && joinStatus) return Promise.resolve(null);
+          if (memberId === 'member-a') {
+            return Promise.resolve({
+              id: 'member-a',
+              joinStatus: 'left',
+              user: { id: 'user-a', displayName: 'User A', email: 'a@finmate.com' },
+            } as any);
+          }
+          if (memberId === 'member-b') {
+            return Promise.resolve({
+              id: 'member-b',
+              joinStatus: 'active',
+              user: { id: 'user-b', displayName: 'User B', email: 'b@finmate.com' },
+            } as any);
+          }
+          return Promise.resolve({
+            id: 'membership-id',
+            role: 'admin',
+            user: { id: 'caller-id', displayName: 'Admin User' },
+            joinStatus: 'active',
+          } as any);
+        });
+
+        expenseRepository.find.mockResolvedValue([
+          {
+            id: 'exp-1',
+            amountTotal: 100,
+            currency: 'USD',
+            isCarryForward: false,
+            paidByUser: { id: 'user-a', displayName: 'User A' },
+            ownerUser: { id: 'user-a' },
+            expenseDate: '2026-06-10',
+            ledgerMonth: '2026-06',
+            status: 'posted',
+          },
+        ] as any);
+
+        // Monthly contributions force an imbalanced summary that produces a
+        // non-empty simplified carry-forward graph.
+        const contributionQb = {
+          innerJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest
+            .fn()
+            .mockResolvedValueOnce([
+              { groupMember: { id: 'member-a' }, percentage: 100, ledgerMonth: '2026-06' },
+              { groupMember: { id: 'member-b' }, percentage: 0, ledgerMonth: '2026-06' },
+            ])
+            .mockResolvedValueOnce([
+              { groupMember: { id: 'member-a' }, percentage: 100, ledgerMonth: '2026-06' },
+              { groupMember: { id: 'member-b' }, percentage: 0, ledgerMonth: '2026-06' },
+            ]),
+        };
+        entityManagerMock.getRepository.mockImplementation((entity: any) => {
+          if (entity === GroupMemberContribution) {
+            return { createQueryBuilder: jest.fn(() => contributionQb) };
+          }
+          if (entity === Expense) return expenseRepository;
+          if (entity === ExpenseSplit) return splitRepository;
+          if (entity === GroupMember) return groupMemberRepository;
+          if (entity === Group) return groupRepository;
+          if (entity === User) return userRepository;
+          if (entity === Attachment) return attachmentRepository;
+          if (entity === GroupKeyVersion) return groupKeyVersionRepository;
+          if (entity === ExpenseVersion) return expenseVersionRepository;
+          if (entity === ExpenseSplitVersion) return expenseSplitVersionRepository;
+          if (entity === AttachmentVersion) return attachmentVersionRepository;
+          if (entity === ReceiptVersion) return receiptVersionRepository;
+          if (entity === EncryptedExpenseKey) return { find: jest.fn(), save: jest.fn(), create: jest.fn(), delete: jest.fn() };
+          return null;
+        });
+
+        const summarySpy = jest
+          .spyOn(service, 'getCarryForwardSummary')
+          .mockResolvedValue([
+            {
+              groupMemberId: 'member-a',
+              userId: 'user-a',
+              displayName: 'User A',
+              netBalance: -50,
+              currency: 'USD',
+              paid: 0,
+              expected: 50,
+              percentage: 50,
+              currentMonthNet: -50,
+              carryForwardNet: 0,
+              openingBalance: 0,
+              closingBalance: -50,
+              overallBalance: -50,
+            },
+            {
+              groupMemberId: 'member-b',
+              userId: 'user-b',
+              displayName: 'User B',
+              netBalance: 50,
+              currency: 'USD',
+              paid: 100,
+              expected: 50,
+              percentage: 50,
+              currentMonthNet: 50,
+              carryForwardNet: 0,
+              openingBalance: 0,
+              closingBalance: 50,
+              overallBalance: 50,
+            },
+          ] as any);
+
+        await expect(
+          service.closeMonth('caller-id', 'group-id', '2026-06'),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+          }),
+        });
+        summarySpy.mockRestore();
       });
     });
   });

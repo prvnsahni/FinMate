@@ -1297,6 +1297,108 @@ describe('GroupsService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(groupMemberRepository.save).not.toHaveBeenCalled();
     });
+
+    it('rejects removal when member has pending proposed settlements', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'PENDING_SETTLEMENTS' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
+    });
+
+    it('rejects removal when member is referenced by active recurring templates', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '0' }];
+        if (sql.includes('FROM recurring_expenses')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'ACTIVE_RECURRING' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
+    });
+
+    it('rejects removal when member is referenced by unpublished drafts', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '0' }];
+        if (sql.includes('FROM recurring_expenses')) return [{ count: '0' }];
+        if (sql.includes('FROM expenses')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'DRAFT_REFERENCES' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
+    });
   });
 
   describe('group key versioning', () => {
