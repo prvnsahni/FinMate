@@ -1990,7 +1990,7 @@ describe('ExpensesService', () => {
         });
 
         const summarySpy = jest
-          .spyOn(service, 'getCarryForwardSummary')
+          .spyOn(service, 'getCarryForwardSummaryInTransaction')
           .mockResolvedValue([
             {
               groupMemberId: 'member-a',

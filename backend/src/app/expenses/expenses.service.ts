@@ -3105,7 +3105,65 @@ export class ExpensesService {
     userId: string,
     groupId: string,
     ledgerMonth: string,
-    opts?: { manager?: EntityManager; skipAccessCheck?: boolean },
+  ): Promise<
+    {
+      groupMemberId: string;
+      userId: string | null;
+      displayName: string | null;
+      netBalance: number;
+      currency: string;
+      paid: number;
+      expected: number;
+      percentage: number;
+      currentMonthNet: number;
+      carryForwardNet: number;
+      openingBalance: number;
+      closingBalance: number;
+      overallBalance: number;
+    }[]
+  > {
+    return this.getCarryForwardSummaryInternal(userId, groupId, ledgerMonth, {
+      skipAccessCheck: false,
+    });
+  }
+
+  /**
+   * Transaction-bound carry-forward summary for month-close flow.
+   * Requires a manager so reads participate in the same lock scope.
+   */
+  async getCarryForwardSummaryInTransaction(
+    userId: string,
+    groupId: string,
+    ledgerMonth: string,
+    manager: EntityManager,
+  ): Promise<
+    {
+      groupMemberId: string;
+      userId: string | null;
+      displayName: string | null;
+      netBalance: number;
+      currency: string;
+      paid: number;
+      expected: number;
+      percentage: number;
+      currentMonthNet: number;
+      carryForwardNet: number;
+      openingBalance: number;
+      closingBalance: number;
+      overallBalance: number;
+    }[]
+  > {
+    return this.getCarryForwardSummaryInternal(userId, groupId, ledgerMonth, {
+      manager,
+      skipAccessCheck: true,
+    });
+  }
+
+  private async getCarryForwardSummaryInternal(
+    userId: string,
+    groupId: string,
+    ledgerMonth: string,
+    opts: { manager?: EntityManager; skipAccessCheck: boolean },
   ): Promise<
     {
       groupMemberId: string;
@@ -3709,11 +3767,11 @@ export class ExpensesService {
           return 0;
         }
 
-        const summary = await this.getCarryForwardSummary(
+        const summary = await this.getCarryForwardSummaryInTransaction(
           userId,
           groupId,
           ledgerMonth,
-          { manager, skipAccessCheck: true },
+          manager,
         );
         const balances = summary.map((s) => ({
           groupMemberId: s.groupMemberId,
