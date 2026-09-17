@@ -273,6 +273,58 @@ export class SettlementsService {
   }
 
   /**
+   * Live balances/suggestions UX rule: hide departed members only once they are
+   * fully settled across all currencies. Non-zero departed members remain
+   * visible until brought to zero.
+   */
+  private filterDepartedZeroNetMembers(
+    groupMembers: GroupMember[],
+    balances: Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>,
+    suggestedSettlements: SuggestedSettlement[],
+  ) {
+    const departedIds = new Set(
+      groupMembers
+        .filter((m) => m.joinStatus === 'left' || m.joinStatus === 'removed')
+        .map((m) => m.id),
+    );
+    if (!departedIds.size) {
+      return { balances, suggestedSettlements };
+    }
+
+    const absByDeparted = new Map<string, number>();
+    for (const b of balances) {
+      if (!departedIds.has(b.groupMemberId)) continue;
+      absByDeparted.set(
+        b.groupMemberId,
+        (absByDeparted.get(b.groupMemberId) ?? 0) + Math.abs(b.netBalance),
+      );
+    }
+
+    const hiddenIds = new Set<string>();
+    for (const memberId of departedIds) {
+      const absNet = Math.round((absByDeparted.get(memberId) ?? 0) * 100) / 100;
+      if (absNet === 0) hiddenIds.add(memberId);
+    }
+    if (!hiddenIds.size) {
+      return { balances, suggestedSettlements };
+    }
+
+    return {
+      balances: balances.filter((b) => !hiddenIds.has(b.groupMemberId)),
+      suggestedSettlements: suggestedSettlements.filter(
+        (s) => !hiddenIds.has(s.fromGroupMemberId) && !hiddenIds.has(s.toGroupMemberId),
+      ),
+    };
+  }
+
+  /**
    * Returns both the all-time `overall` balances (with settlements + carry
    * forward intact) and the `filtered` balances for the supplied unified filter.
    * Filtered balances reflect only the matching expenses (settlements are not
@@ -310,7 +362,7 @@ export class SettlementsService {
       relations: ['user', 'contact'],
     });
 
-    const overall = await this.computeBalancesCore(
+    const overallRaw = await this.computeBalancesCore(
       groupId,
       allMembers,
       undefined,
@@ -318,9 +370,20 @@ export class SettlementsService {
     );
     // Only compute a separate filtered view when a filter was actually supplied
     // (internal callers like Friends pass none and just want the overall picture).
-    const filtered = filter
+    const filteredRaw = filter
       ? await this.computeBalancesCore(groupId, allMembers, filter, false)
-      : overall;
+      : overallRaw;
+
+    const overall = this.filterDepartedZeroNetMembers(
+      allMembers,
+      overallRaw.balances,
+      overallRaw.suggestedSettlements,
+    );
+    const filtered = this.filterDepartedZeroNetMembers(
+      allMembers,
+      filteredRaw.balances,
+      filteredRaw.suggestedSettlements,
+    );
 
     // Decompose the *caller's* balance for the Balance Breakdown UI. The
     // backend stays the single source of truth: Opening is derived here as

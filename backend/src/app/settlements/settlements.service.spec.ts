@@ -621,6 +621,82 @@ describe('SettlementsService', () => {
       // Opening therefore carries the 40 rollover.
       expect(result.breakdown.openingBalance).toBe(40.0);
     });
+
+    it('hides departed members from live balances when they are net-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(false);
+      expect(
+        result.overall.suggestedSettlements.some(
+          (s) =>
+            s.fromGroupMemberId === 'member-b' ||
+            s.toGroupMemberId === 'member-b',
+        ),
+      ).toBe(false);
+    });
+
+    it('keeps departed members visible in live balances when non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'removed' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([
+        {
+          id: 'exp-1',
+          amountTotal: 100,
+          currency: 'USD',
+          paidByUser: userA,
+          transactionType: 'expense',
+        },
+      ] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([
+        {
+          expense: { id: 'exp-1', currency: 'USD', transactionType: 'expense' },
+          participantUser: userB,
+          amountOwed: 100,
+        },
+      ] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(true);
+      expect(result.overall.suggestedSettlements.length).toBeGreaterThan(0);
+    });
   });
 
   // ── Phase 3: Friends Balance (registered-user-only aggregation) ─────────
