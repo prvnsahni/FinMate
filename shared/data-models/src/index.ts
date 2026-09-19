@@ -32,6 +32,7 @@ export * from './lib/audit-log.entity';
 export * from './lib/encryption.transformer';
 export * from './lib/encrypted-envelope';
 export * from './lib/api-responses';
+export * from './lib/currency-minor-units';
 export * from './lib/ledger-debt-simplifier';
 
 // DOC-5 shared canonical taxonomy + deterministic classifier (pure, browser-safe).

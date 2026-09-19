@@ -25,6 +25,9 @@ import {
   RecordPaymentDto,
   UpdateSettlementDto,
   AuditLog,
+  CURRENCY_MINOR_UNITS,
+  isSupportedCurrencyCode,
+  normalizeCurrencyCode,
   User,
 } from '@finmate/data-models';
 import { createHash } from 'crypto';
@@ -799,6 +802,15 @@ export class SettlementsService {
     dto: ProposeSettlementDto,
     context?: { ip?: string; userAgent?: string },
   ): Promise<Settlement> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
     // 1. Validate caller active membership in group
     const callerMember = await this.groupMemberRepository.findOne({
       where: {
@@ -853,7 +865,7 @@ export class SettlementsService {
     // Currency check
     if (
       group.currency &&
-      dto.currency.toUpperCase() !== group.currency.toUpperCase()
+      normalizedCurrency !== group.currency.toUpperCase()
     ) {
       throw new BadRequestException({
         errorCode: 'SETTLE_CURRENCY_MISMATCH',
@@ -875,7 +887,7 @@ export class SettlementsService {
           fromGroupMember: callerMember,
           toGroupMember: recipientMember,
           amount: dto.amount,
-          currency: dto.currency.toUpperCase(),
+          currency: normalizedCurrency,
           status: 'proposed',
           note: dto.note,
         });
@@ -932,6 +944,15 @@ export class SettlementsService {
     dto: RecordPaymentDto,
     context?: { ip?: string; userAgent?: string },
   ): Promise<Settlement> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
     const callerMember = await this.groupMemberRepository.findOne({
       where: {
         group: { id: groupId },
@@ -952,7 +973,7 @@ export class SettlementsService {
     }
     if (
       group.currency &&
-      dto.currency.toUpperCase() !== group.currency.toUpperCase()
+      normalizedCurrency !== group.currency.toUpperCase()
     ) {
       throw new BadRequestException({
         errorCode: 'SETTLE_CURRENCY_MISMATCH',
@@ -1018,7 +1039,7 @@ export class SettlementsService {
         fromGroupMember: fromMember,
         toGroupMember: toMember,
         amount: dto.amount,
-        currency: dto.currency.toUpperCase(),
+        currency: normalizedCurrency,
         status: 'confirmed',
         settledOn: new Date().toISOString().split('T')[0],
         note: dto.note,

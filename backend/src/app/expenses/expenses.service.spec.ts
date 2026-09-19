@@ -338,6 +338,16 @@ describe('ExpensesService', () => {
     expect(service).toBeDefined();
   });
 
+  it('rejects unsupported currency (JPY) with CURRENCY_UNSUPPORTED', async () => {
+    await expect(
+      service.createExpense('caller-id', { currency: 'JPY' } as any),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+      }),
+    });
+  });
+
   it('should reject personal expense if paidByUserId is not caller', async () => {
     userRepository.findOne
       .mockResolvedValueOnce({ id: 'caller-id' } as any)

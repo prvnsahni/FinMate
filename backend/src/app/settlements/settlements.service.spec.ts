@@ -1293,6 +1293,20 @@ describe('SettlementsService', () => {
   });
 
   describe('proposeSettlement', () => {
+    it('rejects unsupported currency (JPY) with CURRENCY_UNSUPPORTED', async () => {
+      await expect(
+        service.proposeSettlement('caller-id', 'group-id', {
+          toUserId: 'target-id',
+          amount: 10,
+          currency: 'JPY',
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'CURRENCY_UNSUPPORTED',
+        }),
+      });
+    });
+
     it('should throw ForbiddenException if caller is not an active member', async () => {
       groupMemberRepository.findOne.mockResolvedValueOnce(null);
 

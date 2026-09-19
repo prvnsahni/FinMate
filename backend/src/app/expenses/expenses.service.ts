@@ -23,8 +23,11 @@ import {
   GroupMember,
   GroupMemberContribution,
   CustomTag,
+  CURRENCY_MINOR_UNITS,
   getActiveCanonicalTag,
+  isSupportedCurrencyCode,
   materializeConfirmedExpenseTags,
+  normalizeCurrencyCode,
   ReceiptVersion,
   User,
 } from '@finmate/data-models';
@@ -1165,6 +1168,15 @@ export class ExpensesService {
     userId: string,
     dto: CreateExpenseDto,
   ): Promise<Record<string, unknown>> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
     if (!dto.splits || !Array.isArray(dto.splits) || dto.splits.length === 0) {
       throw new BadRequestException({
         errorCode: 'VAL_INVALID_INPUT',
@@ -1244,7 +1256,7 @@ export class ExpensesService {
       // ── Currency validation ─────────────────────────────────────────────
       if (
         group.currency &&
-        dto.currency.toUpperCase() !== group.currency.toUpperCase()
+        normalizedCurrency !== group.currency.toUpperCase()
       ) {
         throw new BadRequestException({
           errorCode: 'EXP_CURRENCY_MISMATCH',
@@ -1342,7 +1354,7 @@ export class ExpensesService {
           title: dto.title,
           description: dto.description,
           amountTotal: dto.amountTotal,
-          currency: dto.currency.toUpperCase(),
+          currency: normalizedCurrency,
           category: dto.category,
           transactionType: dto.transactionType ?? 'expense',
           paidByUser,
