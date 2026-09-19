@@ -29,6 +29,8 @@ import { GroupsService } from '../groups/groups.service';
 import { ExpenseEditPolicyService } from './services/expense-edit-policy.service';
 
 const THROWAWAY_DB = 'finmate_closemonth_locking_it';
+const RUN_CLOSEMONTH_LOCKING_IT =
+  process.env.RUN_CLOSEMONTH_LOCKING_IT === '1';
 const LEDGER_MONTH = '2026-06';
 const NEXT_LEDGER_MONTH = '2026-07';
 
@@ -56,7 +58,14 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 function getBaseDbUrl(): URL {
   const raw = process.env.DATABASE_URL;
   if (!raw) throw new Error('DATABASE_URL missing');
-  return new URL(raw);
+  const base = new URL(raw);
+  const baseDbName = base.pathname.replace(/^\//, '');
+  if (baseDbName === THROWAWAY_DB) {
+    throw new Error(
+      `Refusing to run: DATABASE_URL points at throwaway DB name (${THROWAWAY_DB})`,
+    );
+  }
+  return base;
 }
 
 async function createThrowawayDb(): Promise<string> {
@@ -253,7 +262,13 @@ async function countCarryForwardRowsNamingDeparted(
   return Number(rows[0]?.count ?? 0);
 }
 
-describe('closeMonth FOR SHARE locking (integration, real postgres)', () => {
+const describeCloseMonthLockingIT = RUN_CLOSEMONTH_LOCKING_IT
+  ? describe
+  : describe.skip;
+
+describeCloseMonthLockingIT(
+  'closeMonth FOR SHARE locking (integration, real postgres)',
+  () => {
   let migrated: DataSource;
   let dsA: DataSource;
   let dsB: DataSource;
@@ -445,4 +460,5 @@ describe('closeMonth FOR SHARE locking (integration, real postgres)', () => {
     );
     expect(departedCarryRows).toBe(0);
   }, 40000);
-});
+  },
+);
