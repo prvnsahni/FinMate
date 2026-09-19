@@ -3755,6 +3755,13 @@ export class ExpensesService {
 
     const carryForwardExpenseCount = await this.dataSource.transaction(
       async (manager) => {
+        // Serialize month-close per group: FOR SHARE member locks are compatible
+        // with each other, so we also take a group-row FOR UPDATE lock to ensure
+        // exactly one closeMonth transaction evaluates/writes rollover at once.
+        await manager.query(`SELECT id FROM groups WHERE id = $1 FOR UPDATE`, [
+          groupId,
+        ]);
+
         await manager.query(
           `SELECT id FROM group_members ` +
             `WHERE group_id = $1 AND join_status IN ('active','invited') FOR SHARE`,
