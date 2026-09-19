@@ -28,6 +28,23 @@ import { ExpensesService } from './expenses.service';
 import { GroupsService } from '../groups/groups.service';
 import { ExpenseEditPolicyService } from './services/expense-edit-policy.service';
 
+/**
+ * Integration proof for closeMonth/remove-member concurrency invariants on real
+ * Postgres using two independent connections.
+ *
+ * What this proves:
+ * - no carry-forward row is ever written naming a departed member;
+ * - concurrent closeMonth calls for the same group/month do not double-roll.
+ *
+ * Opt-in execution:
+ * - this suite is intentionally gated; run with RUN_CLOSEMONTH_LOCKING_IT=1.
+ * - convenience command: npm run test:integration.
+ *
+ * Load-bearing regression check:
+ * - weakening member FOR SHARE must fail race (a);
+ * - removing the group-row FOR UPDATE must fail race (c).
+ */
+
 const THROWAWAY_DB = 'finmate_closemonth_locking_it';
 const RUN_CLOSEMONTH_LOCKING_IT =
   process.env.RUN_CLOSEMONTH_LOCKING_IT === '1';
