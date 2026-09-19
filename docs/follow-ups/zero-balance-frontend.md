@@ -48,6 +48,34 @@ UI requirements:
 - Secondary action: `Cancel`
 - Re-add action should route to the group member management flow with `memberId` preselected when possible.
 
+## Response Contract: memberSettledStatus
+
+Balance responses from settlements include `memberSettledStatus` and clients must treat it as the source of truth for settled/unsettled identity state.
+
+Field name and shape (as implemented in `settlements.service.ts`):
+- `memberSettledStatus`: array of objects
+- each item:
+  - `groupMemberId`: string
+  - `settled`: boolean
+  - `byCurrency`: array of objects
+    - `currency`: string
+    - `netBalance`: number
+    - `settled`: boolean
+
+Computation source:
+- `memberSettledStatus` is computed from **unfiltered overall balances** (`overallRaw.balances`) and evaluated **per currency**.
+- It is not derived from the period/category/member filtered balance view.
+
+Client rule (mandatory):
+- Clients must read settled state from `memberSettledStatus`.
+- Clients must **never** infer settled/unsettled from filtered/period balances.
+- Hazard example: a departed member can be period-net zero (hidden in `filtered`) while still non-zero overall and therefore unsettled.
+
+Confirming test (Task B):
+- `backend/src/app/settlements/settlements.service.spec.ts`
+  - test: `period view hides departed members at period-net zero even when overall net is non-zero`
+  - This test demonstrates exactly why settled status must come from `memberSettledStatus` and not `filtered` rows.
+
 ## Record-Payment Guidance (Contact-Backed Members)
 
 For contact-backed members in record-payment flows:
