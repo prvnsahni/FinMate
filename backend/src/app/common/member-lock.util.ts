@@ -40,10 +40,9 @@ export async function lockGroupMemberForUpdate(
   manager: EntityManager,
   memberId: string,
 ): Promise<void> {
-  await manager.query(
-    `SELECT id FROM group_members WHERE id = $1 FOR UPDATE`,
-    [memberId],
-  );
+  await manager.query(`SELECT id FROM group_members WHERE id = $1 FOR UPDATE`, [
+    memberId,
+  ]);
 }
 
 /**

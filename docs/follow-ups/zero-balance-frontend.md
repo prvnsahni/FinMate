@@ -6,6 +6,7 @@ Status: Follow-up required
 ## Scope
 
 Frontend behavior to align with backend zero-balance and departed-member invariants:
+
 - Member identity changes (remove, leave, merge) are blocked until net balance is zero.
 - History is never rewritten.
 - Departed members cannot be used in balance-affecting mutations unless re-added.
@@ -15,6 +16,7 @@ Frontend behavior to align with backend zero-balance and departed-member invaria
 When remove/leave/merge is blocked, backend returns `MEMBER_BALANCE_NONZERO`.
 
 Expected payload fields:
+
 - `errorCode`: `MEMBER_BALANCE_NONZERO`
 - `memberId`: string
 - `displayName`: string
@@ -25,6 +27,7 @@ Expected payload fields:
 - `message`: user-friendly fallback text
 
 UI requirements:
+
 - Show `displayName` in the headline/body.
 - Show reason-specific guidance:
   - `PENDING_SETTLEMENTS`: "Settle outstanding balances before removing this member."
@@ -37,12 +40,14 @@ UI requirements:
 When a departed member is referenced in a balance-affecting write (expense/settlement update/delete, etc.), backend returns `MEMBER_DEPARTED_BALANCE_LOCKED`.
 
 Expected payload fields:
+
 - `errorCode`: `MEMBER_DEPARTED_BALANCE_LOCKED`
 - `memberId`: string
 - `displayName`: string
 - `message`: user-friendly text
 
 UI requirements:
+
 - Show message: "<displayName> has left this group. Add them back to the group to make this change."
 - Primary action: `Re-add member`
 - Secondary action: `Cancel`
@@ -53,6 +58,7 @@ UI requirements:
 Balance responses from settlements include `memberSettledStatus` and clients must treat it as the source of truth for settled/unsettled identity state.
 
 Field name and shape (as implemented in `settlements.service.ts`):
+
 - `memberSettledStatus`: array of objects
 - each item:
   - `groupMemberId`: string
@@ -63,15 +69,18 @@ Field name and shape (as implemented in `settlements.service.ts`):
     - `settled`: boolean
 
 Computation source:
+
 - `memberSettledStatus` is computed from **unfiltered overall balances** (`overallRaw.balances`) and evaluated **per currency**.
 - It is not derived from the period/category/member filtered balance view.
 
 Client rule (mandatory):
+
 - Clients must read settled state from `memberSettledStatus`.
 - Clients must **never** infer settled/unsettled from filtered/period balances.
 - Hazard example: a departed member can be period-net zero (hidden in `filtered`) while still non-zero overall and therefore unsettled.
 
 Confirming test (Task B):
+
 - `backend/src/app/settlements/settlements.service.spec.ts`
   - test: `period view hides departed members at period-net zero even when overall net is non-zero`
   - This test demonstrates exactly why settled status must come from `memberSettledStatus` and not `filtered` rows.
@@ -79,6 +88,7 @@ Confirming test (Task B):
 ## Record-Payment Guidance (Contact-Backed Members)
 
 For contact-backed members in record-payment flows:
+
 - Always show payer/payee using resolved display names from API responses.
 - Keep user/contact identity transparent in selectors (label, optional sublabel).
 - Before submit, show overpayment warning if payment amount exceeds current owed amount for the pair/currency.
@@ -87,6 +97,7 @@ For contact-backed members in record-payment flows:
 ## Archive Warning
 
 When archiving a group/member with unsettled balances:
+
 - Show blocking warning if unsettled net is non-zero.
 - Provide CTA to open balances/suggested-settlements view.
 - Do not imply that archive/removal clears balances automatically.
@@ -94,9 +105,11 @@ When archiving a group/member with unsettled balances:
 ## Recurring Template Pause Notice
 
 When recurring processing auto-pauses an invalid template due to departed-member reference, surface:
+
 - "Recurring template paused: departed member."
 
 Display points:
+
 - recurring template list row status badge
 - recurring template details banner
 - optional toast on first load after detection
@@ -106,6 +119,7 @@ Display points:
 Live balances and suggested settlements may hide members with `joinStatus` in (`left`, `removed`) only when their all-currency net is exactly zero.
 
 Frontend implications:
+
 - Do not assume departed members always appear in live balance lists.
 - Keep historical views (expense detail/history/export) showing original participant names.
 - Empty-state copy should avoid suggesting data loss; use wording like "No active unsettled balances."

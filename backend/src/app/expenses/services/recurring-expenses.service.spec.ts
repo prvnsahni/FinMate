@@ -124,7 +124,9 @@ describe('RecurringExpenses Service & Scheduler', () => {
 
     it('rejects unsupported currency (KWD) with CURRENCY_UNSUPPORTED', async () => {
       await expect(
-        service.createRecurringExpense('user-owner', { currency: 'KWD' } as any),
+        service.createRecurringExpense('user-owner', {
+          currency: 'KWD',
+        } as any),
       ).rejects.toMatchObject({
         response: expect.objectContaining({
           errorCode: 'CURRENCY_UNSUPPORTED',

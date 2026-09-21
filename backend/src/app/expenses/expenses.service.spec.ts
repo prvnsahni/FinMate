@@ -1926,19 +1926,28 @@ describe('ExpensesService', () => {
         groupMemberRepository.findOne.mockImplementation((opts: any) => {
           const memberId = opts?.where?.id;
           const joinStatus = opts?.where?.joinStatus;
-          if (memberId === 'member-a' && joinStatus) return Promise.resolve(null);
+          if (memberId === 'member-a' && joinStatus)
+            return Promise.resolve(null);
           if (memberId === 'member-a') {
             return Promise.resolve({
               id: 'member-a',
               joinStatus: 'left',
-              user: { id: 'user-a', displayName: 'User A', email: 'a@finmate.com' },
+              user: {
+                id: 'user-a',
+                displayName: 'User A',
+                email: 'a@finmate.com',
+              },
             } as any);
           }
           if (memberId === 'member-b') {
             return Promise.resolve({
               id: 'member-b',
               joinStatus: 'active',
-              user: { id: 'user-b', displayName: 'User B', email: 'b@finmate.com' },
+              user: {
+                id: 'user-b',
+                displayName: 'User B',
+                email: 'b@finmate.com',
+              },
             } as any);
           }
           return Promise.resolve({
@@ -1972,12 +1981,28 @@ describe('ExpensesService', () => {
           getMany: jest
             .fn()
             .mockResolvedValueOnce([
-              { groupMember: { id: 'member-a' }, percentage: 100, ledgerMonth: '2026-06' },
-              { groupMember: { id: 'member-b' }, percentage: 0, ledgerMonth: '2026-06' },
+              {
+                groupMember: { id: 'member-a' },
+                percentage: 100,
+                ledgerMonth: '2026-06',
+              },
+              {
+                groupMember: { id: 'member-b' },
+                percentage: 0,
+                ledgerMonth: '2026-06',
+              },
             ])
             .mockResolvedValueOnce([
-              { groupMember: { id: 'member-a' }, percentage: 100, ledgerMonth: '2026-06' },
-              { groupMember: { id: 'member-b' }, percentage: 0, ledgerMonth: '2026-06' },
+              {
+                groupMember: { id: 'member-a' },
+                percentage: 100,
+                ledgerMonth: '2026-06',
+              },
+              {
+                groupMember: { id: 'member-b' },
+                percentage: 0,
+                ledgerMonth: '2026-06',
+              },
             ]),
         };
         entityManagerMock.getRepository.mockImplementation((entity: any) => {
@@ -1992,10 +2017,17 @@ describe('ExpensesService', () => {
           if (entity === Attachment) return attachmentRepository;
           if (entity === GroupKeyVersion) return groupKeyVersionRepository;
           if (entity === ExpenseVersion) return expenseVersionRepository;
-          if (entity === ExpenseSplitVersion) return expenseSplitVersionRepository;
+          if (entity === ExpenseSplitVersion)
+            return expenseSplitVersionRepository;
           if (entity === AttachmentVersion) return attachmentVersionRepository;
           if (entity === ReceiptVersion) return receiptVersionRepository;
-          if (entity === EncryptedExpenseKey) return { find: jest.fn(), save: jest.fn(), create: jest.fn(), delete: jest.fn() };
+          if (entity === EncryptedExpenseKey)
+            return {
+              find: jest.fn(),
+              save: jest.fn(),
+              create: jest.fn(),
+              delete: jest.fn(),
+            };
           return null;
         });
 

@@ -298,8 +298,8 @@ describe('ContactsService', () => {
       beforeEach(() => {
         userRepository.findOne.mockResolvedValue(null); // no User backstop
         store = {};
-        contactRepository.findOne.mockImplementation(
-          async ({ where }: any) => (where.id ? (store[where.id] ?? null) : null),
+        contactRepository.findOne.mockImplementation(async ({ where }: any) =>
+          where.id ? (store[where.id] ?? null) : null,
         );
       });
 
@@ -1134,7 +1134,10 @@ describe('ContactsService', () => {
         .mockResolvedValueOnce({ id: 'losing', email: 'a@x.com' });
       groupMemberRepository.find
         .mockResolvedValueOnce([
-          { id: 'gm-losing-family', group: { id: 'group-family', name: 'Family' } },
+          {
+            id: 'gm-losing-family',
+            group: { id: 'group-family', name: 'Family' },
+          },
         ]) // losing's memberships
         .mockResolvedValueOnce([
           {
@@ -1167,7 +1170,10 @@ describe('ContactsService', () => {
           { id: 'gm-losing-trip', group: { id: 'group-trip', name: 'Trip' } },
         ]) // losing is in group-trip
         .mockResolvedValueOnce([
-          { id: 'gm-surviving-flat', group: { id: 'group-flat', name: 'Flat' } },
+          {
+            id: 'gm-surviving-flat',
+            group: { id: 'group-flat', name: 'Flat' },
+          },
         ]); // surviving is in a DIFFERENT group → no clash
 
       const result = await service.mergeContacts({

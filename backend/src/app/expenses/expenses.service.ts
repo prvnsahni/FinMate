@@ -3769,13 +3769,15 @@ export class ExpensesService {
           [groupId],
         );
 
-        const existingCarryForward = await manager.getRepository(Expense).count({
-          where: {
-            group: { id: groupId },
-            ledgerMonth: nextLedgerMonth,
-            isCarryForward: true,
-          },
-        });
+        const existingCarryForward = await manager
+          .getRepository(Expense)
+          .count({
+            where: {
+              group: { id: groupId },
+              ledgerMonth: nextLedgerMonth,
+              isCarryForward: true,
+            },
+          });
         if (existingCarryForward > 0) {
           throw new BadRequestException({
             errorCode: 'VAL_INVALID_INPUT',

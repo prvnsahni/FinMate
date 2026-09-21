@@ -833,12 +833,20 @@ describe('SettlementsService', () => {
       ] as any[]);
       expenseSplitRepository.find.mockResolvedValue([
         {
-          expense: { id: 'usd-exp', currency: 'USD', transactionType: 'expense' },
+          expense: {
+            id: 'usd-exp',
+            currency: 'USD',
+            transactionType: 'expense',
+          },
           participantUser: userB,
           amountOwed: 100,
         },
         {
-          expense: { id: 'inr-exp', currency: 'INR', transactionType: 'expense' },
+          expense: {
+            id: 'inr-exp',
+            currency: 'INR',
+            transactionType: 'expense',
+          },
           participantUser: userA,
           amountOwed: 100,
         },
@@ -859,7 +867,10 @@ describe('SettlementsService', () => {
       );
       expect(result.memberSettledStatus).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ groupMemberId: 'member-b', settled: false }),
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+          }),
         ]),
       );
     });

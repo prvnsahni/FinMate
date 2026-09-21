@@ -46,8 +46,7 @@ import { ExpenseEditPolicyService } from './services/expense-edit-policy.service
  */
 
 const THROWAWAY_DB = 'finmate_closemonth_locking_it';
-const RUN_CLOSEMONTH_LOCKING_IT =
-  process.env.RUN_CLOSEMONTH_LOCKING_IT === '1';
+const RUN_CLOSEMONTH_LOCKING_IT = process.env.RUN_CLOSEMONTH_LOCKING_IT === '1';
 const LEDGER_MONTH = '2026-06';
 const NEXT_LEDGER_MONTH = '2026-07';
 
@@ -60,7 +59,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+async function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
   let t: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     t = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms);
@@ -221,7 +224,15 @@ async function seedScenario(ds: DataSource): Promise<SeedRefs> {
      ($1, $4, $5, 'owner', 'active', now()),
      ($2, $4, $6, 'member', 'active', now()),
      ($3, $4, $7, 'member', 'active', now())`,
-    [ownerMemberId, peerMemberId, targetMemberId, groupId, ownerUserId, peerUserId, targetUserId],
+    [
+      ownerMemberId,
+      peerMemberId,
+      targetMemberId,
+      groupId,
+      ownerUserId,
+      peerUserId,
+      targetUserId,
+    ],
   );
 
   await ds.query(
@@ -286,196 +297,217 @@ const describeCloseMonthLockingIT = RUN_CLOSEMONTH_LOCKING_IT
 describeCloseMonthLockingIT(
   'closeMonth FOR SHARE locking (integration, real postgres)',
   () => {
-  let migrated: DataSource;
-  let dsA: DataSource;
-  let dsB: DataSource;
+    let migrated: DataSource;
+    let dsA: DataSource;
+    let dsB: DataSource;
 
-  beforeAll(async () => {
-    const throwawayUrl = await createThrowawayDb();
-    migrated = createDataSource(throwawayUrl);
-    await migrated.initialize();
-    await migrated.runMigrations();
+    beforeAll(async () => {
+      const throwawayUrl = await createThrowawayDb();
+      migrated = createDataSource(throwawayUrl);
+      await migrated.initialize();
+      await migrated.runMigrations();
 
-    dsA = createDataSource(throwawayUrl);
-    dsB = createDataSource(throwawayUrl);
-    await dsA.initialize();
-    await dsB.initialize();
-  }, 120000);
+      dsA = createDataSource(throwawayUrl);
+      dsB = createDataSource(throwawayUrl);
+      await dsA.initialize();
+      await dsB.initialize();
+    }, 120000);
 
-  afterAll(async () => {
-    if (dsA?.isInitialized) await dsA.destroy();
-    if (dsB?.isInitialized) await dsB.destroy();
-    if (migrated?.isInitialized) await migrated.destroy();
-    await dropThrowawayDb();
-  }, 120000);
+    afterAll(async () => {
+      if (dsA?.isInitialized) await dsA.destroy();
+      if (dsB?.isInitialized) await dsB.destroy();
+      if (migrated?.isInitialized) await migrated.destroy();
+      await dropThrowawayDb();
+    }, 120000);
 
-  beforeEach(async () => {
-    await resetDatabase(dsA);
-  });
-
-  it('race (a): closeMonth lock then remove mid-flight blocks until closeMonth advances', async () => {
-    const refs = await seedScenario(dsA);
-
-    const closeSvc = makeExpensesService(dsA);
-    const groupsSvc = makeGroupsService(dsB, {
-      assertZeroBalance: async () => undefined,
+    beforeEach(async () => {
+      await resetDatabase(dsA);
     });
 
-    const original = closeSvc.getCarryForwardSummaryInTransaction.bind(closeSvc);
-    let reachedWindow!: () => void;
-    const reachedWindowP = new Promise<void>((resolve) => {
-      reachedWindow = resolve;
-    });
-    let releaseWindow!: () => void;
-    const releaseWindowP = new Promise<void>((resolve) => {
-      releaseWindow = resolve;
-    });
+    it('race (a): closeMonth lock then remove mid-flight blocks until closeMonth advances', async () => {
+      const refs = await seedScenario(dsA);
 
-    jest
-      .spyOn(closeSvc, 'getCarryForwardSummaryInTransaction')
-      .mockImplementation(async (...args: any[]) => {
-        reachedWindow();
-        await releaseWindowP;
-        return original(...(args as [string, string, string, any]));
+      const closeSvc = makeExpensesService(dsA);
+      const groupsSvc = makeGroupsService(dsB, {
+        assertZeroBalance: async () => undefined,
       });
 
-    const closeP = closeSvc.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH);
-    await withTimeout(reachedWindowP, 10000, 'reach between lock and reread');
+      const original =
+        closeSvc.getCarryForwardSummaryInTransaction.bind(closeSvc);
+      let reachedWindow!: () => void;
+      const reachedWindowP = new Promise<void>((resolve) => {
+        reachedWindow = resolve;
+      });
+      let releaseWindow!: () => void;
+      const releaseWindowP = new Promise<void>((resolve) => {
+        releaseWindow = resolve;
+      });
 
-    const removeP = groupsSvc.removeMember(
-      refs.ownerUserId,
-      refs.groupId,
-      refs.targetMemberId,
-    );
+      jest
+        .spyOn(closeSvc, 'getCarryForwardSummaryInTransaction')
+        .mockImplementation(async (...args: any[]) => {
+          reachedWindow();
+          await releaseWindowP;
+          return original(...(args as [string, string, string, any]));
+        });
 
-    try {
-      const removeState = await Promise.race([
-        removeP.then(() => 'done'),
+      const closeP = closeSvc.closeMonth(
+        refs.ownerUserId,
+        refs.groupId,
+        LEDGER_MONTH,
+      );
+      await withTimeout(reachedWindowP, 10000, 'reach between lock and reread');
+
+      const removeP = groupsSvc.removeMember(
+        refs.ownerUserId,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+
+      try {
+        const removeState = await Promise.race([
+          removeP.then(() => 'done'),
+          delay(400).then(() => 'pending'),
+        ]);
+        expect(removeState).toBe('pending');
+      } finally {
+        releaseWindow();
+      }
+
+      await withTimeout(closeP, 15000, 'closeMonth completion');
+      await withTimeout(removeP, 15000, 'remove completion');
+
+      const departedCarryRows = await countCarryForwardRowsNamingDeparted(
+        dsA,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+      expect(departedCarryRows).toBe(0);
+    }, 40000);
+
+    it('race (b): remove first then closeMonth mid-flight preserves invariant', async () => {
+      const refs = await seedScenario(dsA);
+
+      let holdZeroBalance!: () => void;
+      const holdZeroBalanceP = new Promise<void>((resolve) => {
+        holdZeroBalance = resolve;
+      });
+      let releaseZeroBalance!: () => void;
+      const releaseZeroBalanceP = new Promise<void>((resolve) => {
+        releaseZeroBalance = resolve;
+      });
+
+      const groupsSvc = makeGroupsService(dsA, {
+        assertZeroBalance: async () => {
+          holdZeroBalance();
+          await releaseZeroBalanceP;
+        },
+      });
+      const closeSvc = makeExpensesService(dsB);
+
+      const removeP = groupsSvc.removeMember(
+        refs.ownerUserId,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+      await withTimeout(
+        holdZeroBalanceP,
+        10000,
+        'remove reaches zero-balance gate',
+      );
+
+      const closeP = closeSvc.closeMonth(
+        refs.ownerUserId,
+        refs.groupId,
+        LEDGER_MONTH,
+      );
+      const closeState = await Promise.race([
+        closeP.then(() => 'done'),
         delay(400).then(() => 'pending'),
       ]);
-      expect(removeState).toBe('pending');
-    } finally {
-      releaseWindow();
-    }
+      expect(closeState).toBe('pending');
 
-    await withTimeout(closeP, 15000, 'closeMonth completion');
-    await withTimeout(removeP, 15000, 'remove completion');
+      releaseZeroBalance();
 
-    const departedCarryRows = await countCarryForwardRowsNamingDeparted(
-      dsA,
-      refs.groupId,
-      refs.targetMemberId,
-    );
-    expect(departedCarryRows).toBe(0);
-  }, 40000);
+      await withTimeout(removeP, 15000, 'remove completion');
+      await withTimeout(closeP, 15000, 'close completion');
 
-  it('race (b): remove first then closeMonth mid-flight preserves invariant', async () => {
-    const refs = await seedScenario(dsA);
+      const departedCarryRows = await countCarryForwardRowsNamingDeparted(
+        dsA,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+      expect(departedCarryRows).toBe(0);
+    }, 40000);
 
-    let holdZeroBalance!: () => void;
-    const holdZeroBalanceP = new Promise<void>((resolve) => {
-      holdZeroBalance = resolve;
-    });
-    let releaseZeroBalance!: () => void;
-    const releaseZeroBalanceP = new Promise<void>((resolve) => {
-      releaseZeroBalance = resolve;
-    });
+    it('race (c): two concurrent closeMonth calls for same group/month -> exactly one succeeds', async () => {
+      const refs = await seedScenario(dsA);
 
-    const groupsSvc = makeGroupsService(dsA, {
-      assertZeroBalance: async () => {
-        holdZeroBalance();
-        await releaseZeroBalanceP;
-      },
-    });
-    const closeSvc = makeExpensesService(dsB);
+      const closeA = makeExpensesService(dsA);
+      const closeB = makeExpensesService(dsB);
 
-    const removeP = groupsSvc.removeMember(
-      refs.ownerUserId,
-      refs.groupId,
-      refs.targetMemberId,
-    );
-    await withTimeout(holdZeroBalanceP, 10000, 'remove reaches zero-balance gate');
+      const [r1, r2] = await withTimeout(
+        Promise.allSettled([
+          closeA.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH),
+          closeB.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH),
+        ]),
+        30000,
+        'concurrent closeMonth race',
+      );
 
-    const closeP = closeSvc.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH);
-    const closeState = await Promise.race([
-      closeP.then(() => 'done'),
-      delay(400).then(() => 'pending'),
-    ]);
-    expect(closeState).toBe('pending');
+      const fulfilled = [r1, r2].filter((r) => r.status === 'fulfilled');
+      const rejected = [r1, r2].filter((r) => r.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
 
-    releaseZeroBalance();
+      const rejection = rejected[0] as PromiseRejectedResult;
+      expect(rejection.reason).toBeInstanceOf(BadRequestException);
 
-    await withTimeout(removeP, 15000, 'remove completion');
-    await withTimeout(closeP, 15000, 'close completion');
-
-    const departedCarryRows = await countCarryForwardRowsNamingDeparted(
-      dsA,
-      refs.groupId,
-      refs.targetMemberId,
-    );
-    expect(departedCarryRows).toBe(0);
-  }, 40000);
-
-  it('race (c): two concurrent closeMonth calls for same group/month -> exactly one succeeds', async () => {
-    const refs = await seedScenario(dsA);
-
-    const closeA = makeExpensesService(dsA);
-    const closeB = makeExpensesService(dsB);
-
-    const [r1, r2] = await withTimeout(
-      Promise.allSettled([
-        closeA.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH),
-        closeB.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH),
-      ]),
-      30000,
-      'concurrent closeMonth race',
-    );
-
-    const fulfilled = [r1, r2].filter((r) => r.status === 'fulfilled');
-    const rejected = [r1, r2].filter((r) => r.status === 'rejected');
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-
-    const rejection = rejected[0] as PromiseRejectedResult;
-    expect(rejection.reason).toBeInstanceOf(BadRequestException);
-
-    const cfRows = await dsA.query(
-      `SELECT COUNT(*)::int AS count
+      const cfRows = await dsA.query(
+        `SELECT COUNT(*)::int AS count
        FROM expenses
        WHERE group_id = $1
          AND ledger_month = $2
          AND is_carry_forward = true`,
-      [refs.groupId, NEXT_LEDGER_MONTH],
-    );
-    expect(Number(cfRows[0]?.count ?? 0)).toBe(1);
-  }, 40000);
+        [refs.groupId, NEXT_LEDGER_MONTH],
+      );
+      expect(Number(cfRows[0]?.count ?? 0)).toBe(1);
+    }, 40000);
 
-  it('race (d): remove-member expense scans + closeMonth writes complete without deadlock', async () => {
-    const refs = await seedScenario(dsA);
+    it('race (d): remove-member expense scans + closeMonth writes complete without deadlock', async () => {
+      const refs = await seedScenario(dsA);
 
-    const groupsSvc = makeGroupsService(dsA, {
-      assertZeroBalance: async () => {
-        await delay(250);
-      },
-    });
-    const closeSvc = makeExpensesService(dsB);
+      const groupsSvc = makeGroupsService(dsA, {
+        assertZeroBalance: async () => {
+          await delay(250);
+        },
+      });
+      const closeSvc = makeExpensesService(dsB);
 
-    const removeP = groupsSvc.removeMember(
-      refs.ownerUserId,
-      refs.groupId,
-      refs.targetMemberId,
-    );
-    await delay(40);
-    const closeP = closeSvc.closeMonth(refs.ownerUserId, refs.groupId, LEDGER_MONTH);
+      const removeP = groupsSvc.removeMember(
+        refs.ownerUserId,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+      await delay(40);
+      const closeP = closeSvc.closeMonth(
+        refs.ownerUserId,
+        refs.groupId,
+        LEDGER_MONTH,
+      );
 
-    await withTimeout(Promise.all([removeP, closeP]), 30000, 'remove/close interleaving');
+      await withTimeout(
+        Promise.all([removeP, closeP]),
+        30000,
+        'remove/close interleaving',
+      );
 
-    const departedCarryRows = await countCarryForwardRowsNamingDeparted(
-      dsA,
-      refs.groupId,
-      refs.targetMemberId,
-    );
-    expect(departedCarryRows).toBe(0);
-  }, 40000);
+      const departedCarryRows = await countCarryForwardRowsNamingDeparted(
+        dsA,
+        refs.groupId,
+        refs.targetMemberId,
+      );
+      expect(departedCarryRows).toBe(0);
+    }, 40000);
   },
 );

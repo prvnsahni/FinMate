@@ -322,7 +322,9 @@ export class SettlementsService {
     return {
       balances: balances.filter((b) => !hiddenIds.has(b.groupMemberId)),
       suggestedSettlements: suggestedSettlements.filter(
-        (s) => !hiddenIds.has(s.fromGroupMemberId) && !hiddenIds.has(s.toGroupMemberId),
+        (s) =>
+          !hiddenIds.has(s.fromGroupMemberId) &&
+          !hiddenIds.has(s.toGroupMemberId),
       ),
     };
   }
@@ -344,7 +346,11 @@ export class SettlementsService {
   ): Array<{
     groupMemberId: string;
     settled: boolean;
-    byCurrency: Array<{ currency: string; netBalance: number; settled: boolean }>;
+    byCurrency: Array<{
+      currency: string;
+      netBalance: number;
+      settled: boolean;
+    }>;
   }> {
     const byMember = new Map<string, Map<string, number>>();
     for (const member of groupMembers) {
@@ -359,7 +365,11 @@ export class SettlementsService {
     const result: Array<{
       groupMemberId: string;
       settled: boolean;
-      byCurrency: Array<{ currency: string; netBalance: number; settled: boolean }>;
+      byCurrency: Array<{
+        currency: string;
+        netBalance: number;
+        settled: boolean;
+      }>;
     }> = [];
 
     for (const [groupMemberId, currencyMap] of byMember.entries()) {
@@ -377,7 +387,9 @@ export class SettlementsService {
       });
     }
 
-    return result.sort((a, b) => a.groupMemberId.localeCompare(b.groupMemberId));
+    return result.sort((a, b) =>
+      a.groupMemberId.localeCompare(b.groupMemberId),
+    );
   }
 
   /**
@@ -863,10 +875,7 @@ export class SettlementsService {
     }
 
     // Currency check
-    if (
-      group.currency &&
-      normalizedCurrency !== group.currency.toUpperCase()
-    ) {
+    if (group.currency && normalizedCurrency !== group.currency.toUpperCase()) {
       throw new BadRequestException({
         errorCode: 'SETTLE_CURRENCY_MISMATCH',
         message: `Settlement currency must match the group's base currency (${group.currency})`,
@@ -971,17 +980,16 @@ export class SettlementsService {
     if (!group) {
       throw new NotFoundException('Group not found');
     }
-    if (
-      group.currency &&
-      normalizedCurrency !== group.currency.toUpperCase()
-    ) {
+    if (group.currency && normalizedCurrency !== group.currency.toUpperCase()) {
       throw new BadRequestException({
         errorCode: 'SETTLE_CURRENCY_MISMATCH',
         message: `Settlement currency must match the group's base currency (${group.currency})`,
       });
     }
     if (dto.fromMemberId === dto.toMemberId) {
-      throw new BadRequestException('Payer and payee must be different members');
+      throw new BadRequestException(
+        'Payer and payee must be different members',
+      );
     }
 
     const [fromMember, toMember] = await Promise.all([

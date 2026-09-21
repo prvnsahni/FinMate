@@ -377,11 +377,19 @@ export class ContactsService {
   }> {
     // Gate: only a verified email may claim.
     if (!user.emailVerified) {
-      return { linkedGroupIds: [], claimedContactIds: [], skippedContactIds: [] };
+      return {
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      };
     }
     const email = this.normalizeEmail(opts.email ?? user.email);
     if (!email) {
-      return { linkedGroupIds: [], claimedContactIds: [], skippedContactIds: [] };
+      return {
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      };
     }
 
     const result = await this.dataSource.transaction(async (manager) => {

@@ -34,7 +34,7 @@ and unsettleable** (not deleted).
    (`backend/src/app/settlements/settlements.service.ts:621-637`); a `removed` member is rejected.
 
 **Reachability:** a MEDIUM (same display-name) `confirmed:true` merge of two same-name pending
-Contacts both present in one group with expenses. (HIGH same-identifier merges between two *pending*
+Contacts both present in one group with expenses. (HIGH same-identifier merges between two _pending_
 Contacts are impossible — the partial unique indexes forbid duplicate pending email/phone.)
 
 ## 2b — Read-only detection query (DO NOT run against production here; owner will run)
@@ -95,7 +95,7 @@ to the **survivor's** existing member row, then remove/close the losing row.
 - **History immutability / governance:** rewrites the member FK on historical financial rows →
   **conflicts with the history-immutability rule**; requires a **Decision-Ledger entry + ADR** to
   authorise identity-consolidation repoint (amounts unchanged, only the member key).
-- **Same expense with splits for both identities:** if one expense has a split for *both* the losing
+- **Same expense with splits for both identities:** if one expense has a split for _both_ the losing
   and surviving member, repointing the loser's split to the survivor yields **two splits for the same
   member on one expense** → double-counts that member's owed share unless merged/summed. Needs an
   explicit merge-or-reject rule per expense.
@@ -103,7 +103,7 @@ to the **survivor's** existing member row, then remove/close the losing row.
   and `to` is the survivor (or vice-versa) becomes **`from == to`** after repoint — a self-settlement
   that must be voided/collapsed, not left in place.
 - **Unique constraints on splits/payments:** no DB unique on `(expense, participant_group_member)` or
-  `(expense, paid_by_group_member)` today, so the DB will *not* stop the duplicate-split case — it must
+  `(expense, paid_by_group_member)` today, so the DB will _not_ stop the duplicate-split case — it must
   be handled in code.
 - **Existing stranded data:** the same repoint logic, run as a one-off migration keyed off the 2b
   query, repairs historical rows.

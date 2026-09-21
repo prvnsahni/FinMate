@@ -430,7 +430,13 @@ export class PersonLedgerService {
   ): Promise<DirectLedgerEntry> {
     const entry = await this.directLedgerRepository.findOne({
       where: { id: entryId },
-      relations: ['fromUser', 'toUser', 'fromContact', 'toContact', 'createdByUser'],
+      relations: [
+        'fromUser',
+        'toUser',
+        'fromContact',
+        'toContact',
+        'createdByUser',
+      ],
     });
     if (!entry) throw new NotFoundException('Transaction not found');
     // A Contact-backed entry leaves one side's `*User` null (a Contact never

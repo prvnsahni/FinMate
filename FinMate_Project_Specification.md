@@ -4906,7 +4906,7 @@ FIN-002 `finance-golden` re-run green after every step. Separate commit per fix.
   `mergeContacts`' close-out branch (`joinStatus='removed'` when the survivor is already in that group)
   stranded the losing member's split/payment/settlement balances on a `removed` row — surfaced under the
   stale identity and **unsettleable**. Guarded up-front: a same-group merge is rejected `409
-  CONTACT_MERGE_SAME_GROUP` for all confidence levels, **before any write**; cross-group merges still
+CONTACT_MERGE_SAME_GROUP` for all confidence levels, **before any write**; cross-group merges still
   repoint (no close-out path remains). Tracked bug + read-only detection SQL + fix-design comparison
   filed in `docs/follow-ups/mergecontacts-close-out-strands-balances.md`. **Tests (+2 −1).** Commits
   `a973eae`, `37b4543`.
