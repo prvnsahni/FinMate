@@ -34,6 +34,7 @@ import { EmailService } from '../email/email.service';
 import { ContactsService } from '../contacts/contacts.service';
 import { BalancesService } from '../settlements/balances.service';
 import { lockGroupMemberForUpdate } from '../common/member-lock.util';
+import { resolveFrontendUrl } from '../common/frontend-url.util';
 
 @Injectable()
 export class GroupsService {
@@ -380,9 +381,7 @@ export class GroupsService {
           await manager.save(GroupMember, newMember);
 
           if (resolution.type === 'user') {
-            const frontendUrl =
-              this.configService.get<string>('FRONTEND_URL') ||
-              'http://localhost:4200';
+            const frontendUrl = resolveFrontendUrl(this.configService);
             const inviteUrl = `${frontendUrl}/groups/join/${savedGroup.inviteToken}`;
             const inviterName = owner.displayName || owner.email;
             this.emailService
@@ -399,9 +398,7 @@ export class GroupsService {
                 ),
               );
           } else if (resolution.contact!.email) {
-            const frontendUrl =
-              this.configService.get<string>('FRONTEND_URL') ||
-              'http://localhost:4200';
+            const frontendUrl = resolveFrontendUrl(this.configService);
             const inviteUrl = `${frontendUrl}/groups/join/${savedGroup.inviteToken}`;
             const inviterName = owner.displayName || owner.email;
             this.emailService
@@ -782,9 +779,7 @@ export class GroupsService {
 
     const inviteeEmail = targetUser?.email ?? resolvedContact?.email;
     if (inviteeEmail) {
-      const frontendUrl =
-        this.configService.get<string>('FRONTEND_URL') ||
-        'http://localhost:4200';
+      const frontendUrl = resolveFrontendUrl(this.configService);
       const token = inviteToken || group.inviteToken;
       const safeHash = (dto.inviteKeyHash ?? '').replace(/[^A-Za-z0-9_-]/g, '');
       const inviteUrl = safeHash
