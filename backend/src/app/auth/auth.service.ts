@@ -19,6 +19,7 @@ import { randomUUID, createHash } from 'crypto';
 import { generateSecret, verifyTotp } from './utils/totp.util';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { redactSensitiveKeys } from '../common/log-redaction.util';
+import { resolveFrontendUrl } from '../common/frontend-url.util';
 
 const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 const PASSWORD_RESET_TTL_SECONDS = 60 * 60;
@@ -123,8 +124,7 @@ export class AuthService {
       user.id,
       EMAIL_VERIFICATION_TTL_SECONDS,
     );
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    const frontendUrl = resolveFrontendUrl(this.configService);
     const verifyUrl = `${frontendUrl}/auth/verify-email?token=${token}`;
     await this.emailService.sendVerificationEmail(user.email, verifyUrl);
   }
@@ -199,8 +199,7 @@ export class AuthService {
       PASSWORD_RESET_TTL_SECONDS,
     );
 
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+    const frontendUrl = resolveFrontendUrl(this.configService);
     const resetUrl = `${frontendUrl}/auth/reset-password?token=${token}`;
     await this.emailService.sendPasswordResetEmail(user.email, resetUrl);
   }

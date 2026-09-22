@@ -184,6 +184,33 @@ describe('UsersService', () => {
       expect(result.profile.defaultCurrency).toBe('EUR');
     });
 
+    it('CLAIM-1 guard: ignores an injected `email`/`emailVerified` in the payload — email is immutable, so a verified account cannot be re-pointed to an unverified address (REPLACE with a reset-on-change test if an email-change feature is ever added)', async () => {
+      const mockUser = {
+        id: 'user-id',
+        displayName: 'Old Name',
+        email: 'original@example.com',
+        emailVerified: true,
+      } as any;
+      const mockProfile = { id: 'profile-id' } as any;
+      userRepository.findOne.mockResolvedValue(mockUser);
+      profileRepository.findOne.mockResolvedValue(mockProfile);
+
+      // Smuggle email/emailVerified past the type (the DTO has no such fields;
+      // the global ValidationPipe whitelist would strip them at the edge).
+      await service.updateProfile('user-id', {
+        displayName: 'New Name',
+        email: 'attacker@example.com',
+        emailVerified: false,
+      } as any);
+
+      // updateProfile never reads/writes email or emailVerified.
+      expect(mockUser.email).toBe('original@example.com');
+      expect(mockUser.emailVerified).toBe(true);
+      const savedUser = userRepository.save.mock.calls.at(-1)?.[0] as any;
+      expect(savedUser.email).toBe('original@example.com');
+      expect(savedUser.emailVerified).toBe(true);
+    });
+
     it('should update displayName and aiOptIn on the user entity', async () => {
       const mockUser = {
         id: 'user-id',

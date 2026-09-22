@@ -2790,6 +2790,7 @@
     [expense]="selectedExpenseForEdit()"
     (closeModalEvent)="closeExpenseModal()"
     (expenseCreated)="onExpenseCreated()"
+    (memberChanged)="fetchMembers(group()!.id)"
   ></app-create-expense-modal>
 }
 

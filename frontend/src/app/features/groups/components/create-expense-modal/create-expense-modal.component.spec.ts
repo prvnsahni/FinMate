@@ -2,6 +2,7 @@ import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { SimpleChange } from '@angular/core';
 import { CreateExpenseModalComponent } from './create-expense-modal.component';
 import { ExpensesService } from '../../services/expenses.service';
+import { GroupsService } from '../../services/groups.service';
 import { FriendsService } from '../../../../features/friends/services/friends.service';
 import { of, throwError } from 'rxjs';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
@@ -27,6 +28,7 @@ describe('CreateExpenseModalComponent', () => {
   let component: CreateExpenseModalComponent;
   let fixture: ComponentFixture<CreateExpenseModalComponent>;
   let mockExpensesService: any;
+  let mockGroupsService: any;
   let mockFriendsService: any;
   let mockGroupKeyService: any;
   let mockStore: any;
@@ -47,6 +49,15 @@ describe('CreateExpenseModalComponent', () => {
       createExpense: jest.fn().mockReturnValue(of({ id: 'exp-new' })),
       updateExpense: jest.fn().mockReturnValue(of({ id: 'exp-1' })),
       checkDuplicates: jest.fn().mockReturnValue(of([])),
+    };
+
+    mockGroupsService = {
+      inviteMember: jest.fn().mockReturnValue(
+        of({
+          member: { id: 'gm-priya', contact: { id: 'c-priya' } },
+          inviteToken: 'tok',
+        }),
+      ),
     };
 
     mockFriendsService = {
@@ -96,6 +107,7 @@ describe('CreateExpenseModalComponent', () => {
       imports: [CreateExpenseModalComponent, HttpClientTestingModule],
       providers: [
         { provide: ExpensesService, useValue: mockExpensesService },
+        { provide: GroupsService, useValue: mockGroupsService },
         { provide: FriendsService, useValue: mockFriendsService },
         { provide: GroupKeyService, useValue: mockGroupKeyService },
         { provide: Store, useValue: mockStore },
@@ -1214,6 +1226,482 @@ describe('CreateExpenseModalComponent', () => {
       expect(component.expenseForm.getRawValue().title).not.toBe(
         'Corner Grocery',
       );
+    });
+  });
+
+  // --- Reusable non-member Contact participant/payer (Priya) -----------------
+  // A non-member Contact is modelled as a Contact-backed GroupMember (contact
+  // set, no `user`). It must be selectable and REUSED across expenses by its
+  // stable GroupMember id — never re-created — and must never surface a User
+  // account or private contact details. Backend already accepts
+  // participantGroupMemberId / paidByGroupMemberId (verified by the backend
+  // Priya test); this proves the frontend wires that end of the contract.
+  describe('reusable non-member Contact (Priya)', () => {
+    const members = [
+      {
+        id: 'm-rahul',
+        role: 'member',
+        joinStatus: 'active',
+        user: { id: 'u-rahul', displayName: 'Rahul', email: 'r@e.com' },
+      },
+      {
+        id: 'm-amit',
+        role: 'member',
+        joinStatus: 'active',
+        user: { id: 'u-amit', displayName: 'Amit', email: 'a@e.com' },
+      },
+      {
+        id: 'm-priya',
+        role: 'member',
+        joinStatus: 'invited',
+        user: undefined,
+        contact: { id: 'c-priya', displayName: 'Priya' },
+      },
+    ] as any;
+
+    const openGroup = (subset = members) => {
+      component.groupId = 'group-1';
+      component.groupCurrency = 'INR';
+      component.members = subset;
+      component.ngOnChanges({
+        members: {
+          currentValue: subset,
+          previousValue: [],
+          firstChange: true,
+          isFirstChange: () => true,
+        } as any,
+      });
+      component.expenseForm.patchValue({
+        title: 'Hotel',
+        amountTotal: 6000,
+        currency: 'INR',
+        category: 'food',
+        expenseDate: '2026-06-28',
+        paidByUserId: 'u-rahul',
+      });
+    };
+
+    it('lists the non-member Contact as a participant, keyed by member:<groupMemberId> and marked kind=contact', () => {
+      component.groupId = 'group-1';
+      component.members = members;
+      const priya = component.availableParticipants.find(
+        (p) => p.name === 'Priya',
+      );
+      expect(priya).toBeTruthy();
+      expect(priya!.id).toBe('member:m-priya');
+      expect(priya!.kind).toBe('contact');
+    });
+
+    it('auto-selects the Contact-backed member by its member key when the group loads', () => {
+      openGroup();
+      expect(component.selectedUserIds.has('member:m-priya')).toBe(true);
+      expect(component.selectedUserIds.has('u-rahul')).toBe(true);
+    });
+
+    it('sends the existing GroupMember id for the Contact and REUSES the same id on a second expense — never a new identity', async () => {
+      openGroup();
+
+      // Expense 1
+      await component.onSubmit();
+      const firstSplits =
+        mockExpensesService.createExpense.mock.calls[0][0].splits;
+      const priyaSplit1 = firstSplits.find(
+        (s: any) => s.participantGroupMemberId,
+      );
+      expect(priyaSplit1).toEqual({
+        participantGroupMemberId: 'm-priya',
+        splitType: 'equal',
+        shareValue: 1,
+      });
+      expect(priyaSplit1.participantUserId).toBeUndefined();
+
+      // Expense 2 — same participant selection, fresh submit.
+      mockExpensesService.createExpense.mockClear();
+      component.expenseForm.patchValue({ title: 'Dinner', amountTotal: 3000 });
+      await component.onSubmit();
+      const secondSplits =
+        mockExpensesService.createExpense.mock.calls[0][0].splits;
+      const priyaSplit2 = secondSplits.find(
+        (s: any) => s.participantGroupMemberId,
+      );
+
+      // The SAME stable GroupMember identity is used both times.
+      expect(priyaSplit2.participantGroupMemberId).toBe('m-priya');
+      expect(priyaSplit2.participantGroupMemberId).toBe(
+        priyaSplit1.participantGroupMemberId,
+      );
+    });
+
+    it('keeps User-member splits keyed by participantUserId while the Contact uses participantGroupMemberId (they coexist)', async () => {
+      openGroup();
+      await component.onSubmit();
+      const splits = mockExpensesService.createExpense.mock.calls[0][0].splits;
+      expect(splits).toEqual(
+        expect.arrayContaining([
+          { participantUserId: 'u-rahul', splitType: 'equal', shareValue: 1 },
+          { participantUserId: 'u-amit', splitType: 'equal', shareValue: 1 },
+          {
+            participantGroupMemberId: 'm-priya',
+            splitType: 'equal',
+            shareValue: 1,
+          },
+        ]),
+      );
+    });
+
+    it('allows a Contact-backed member as payer: sends paidByGroupMemberId and no paidByUserId', async () => {
+      openGroup();
+      component.expenseForm.patchValue({ paidByUserId: 'member:m-priya' });
+
+      await component.onSubmit();
+
+      const payload = mockExpensesService.createExpense.mock.calls[0][0];
+      expect(payload.paidByGroupMemberId).toBe('m-priya');
+      expect(payload.paidByUserId).toBeUndefined();
+    });
+
+    it('supports custom (fixed) amounts for a Contact-backed participant', async () => {
+      const subset = [members[0], members[2]]; // Rahul + Priya
+      openGroup(subset);
+      component.expenseForm.patchValue({ title: 'Taxi', amountTotal: 1500 });
+      component.selectSplitMode('fixed');
+      component.setExactSplitAmount('u-rahul', 750);
+      component.setExactSplitAmount('member:m-priya', 750);
+
+      await component.onSubmit();
+
+      const splits = mockExpensesService.createExpense.mock.calls[0][0].splits;
+      expect(splits).toEqual(
+        expect.arrayContaining([
+          { participantUserId: 'u-rahul', splitType: 'fixed', shareValue: 750 },
+          {
+            participantGroupMemberId: 'm-priya',
+            splitType: 'fixed',
+            shareValue: 750,
+          },
+        ]),
+      );
+    });
+
+    it('round-trips an existing Contact-backed split in edit mode (selects it, not dropped)', () => {
+      component.groupId = 'group-1';
+      component.members = members;
+      component.expense = {
+        id: 'exp-9',
+        title: 'Hotel',
+        amountTotal: 6000,
+        currency: 'INR',
+        category: 'food',
+        expenseDate: '2026-06-28',
+        paidByUserId: null,
+        paidByGroupMemberId: 'm-rahul',
+        version: 1,
+        splits: [
+          { participantUserId: null, participantGroupMemberId: 'm-rahul' },
+          { participantUserId: null, participantGroupMemberId: 'm-priya' },
+        ],
+      } as any;
+
+      component.ngOnChanges({
+        expense: {
+          currentValue: component.expense,
+          previousValue: null,
+          firstChange: true,
+          isFirstChange: () => true,
+        } as any,
+      });
+
+      expect(component.selectedUserIds.has('u-rahul')).toBe(true);
+      expect(component.selectedUserIds.has('member:m-priya')).toBe(true);
+      expect(component.expenseForm.get('paidByUserId')?.value).toBe('u-rahul');
+    });
+
+    it('never exposes the Contact phone/email in the selector — only the display name (existing selection path)', () => {
+      component.groupId = 'group-1';
+      component.members = [
+        {
+          id: 'm-priya',
+          role: 'member',
+          joinStatus: 'invited',
+          contact: {
+            id: 'c-priya',
+            displayName: 'Priya',
+            email: 'priya@example.com',
+            phoneNumber: '+919999999999',
+          },
+        },
+      ] as any;
+
+      const serialized = JSON.stringify([
+        ...component.availableParticipants,
+        ...component.availablePayers,
+      ]);
+      expect(serialized).toContain('Priya');
+      expect(serialized).not.toContain('priya@example.com');
+      expect(serialized).not.toContain('9999999999');
+    });
+
+    it('renders a "Contact" badge and a clarifying caption so the person is not shown as a group member', () => {
+      openGroup();
+      fixture.detectChanges();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+      expect(text).toContain('Contact');
+      expect(text).toContain('not a FinMate member of this group');
+    });
+  });
+
+  // --- Add a NEW non-member Contact from inside Add Expense ------------------
+  // Owner/admin only. Reuses the EXISTING GroupsService.inviteMember path
+  // (POST /groups/:id/members → ContactsService.resolveOrCreateIdentity). No
+  // Contact is created client-side; no new endpoint; duplicate protection stays
+  // server-side.
+  describe('add non-member Contact from Add Expense', () => {
+    // current token user is 'user-1'
+    const asOwner = () => [
+      {
+        id: 'm-me',
+        role: 'owner',
+        joinStatus: 'active',
+        user: { id: 'user-1', displayName: 'Me', email: 'me@e.com' },
+      },
+      {
+        id: 'm-amit',
+        role: 'member',
+        joinStatus: 'active',
+        user: { id: 'u-amit', displayName: 'Amit', email: 'a@e.com' },
+      },
+    ];
+
+    const openAsOwner = () => {
+      const members = asOwner() as any;
+      component.groupId = 'group-1';
+      component.groupCurrency = 'INR';
+      component.members = members;
+      component.ngOnChanges({
+        members: {
+          currentValue: members,
+          previousValue: [],
+          firstChange: true,
+          isFirstChange: () => true,
+        } as any,
+      });
+      component.expenseForm.patchValue({
+        title: 'Dinner',
+        amountTotal: 3000,
+        currency: 'INR',
+        category: 'food',
+        expenseDate: '2026-06-28',
+        paidByUserId: 'user-1',
+      });
+      return members;
+    };
+
+    // Simulate the parent's fetchMembers() → members() refresh flowing back in.
+    const refreshMembersWith = (members: any[]) => {
+      component.members = members as any;
+      component.ngOnChanges({
+        members: {
+          currentValue: members,
+          previousValue: [],
+          firstChange: false,
+          isFirstChange: () => false,
+        } as any,
+      });
+    };
+
+    // TEST 1 — visibility / authorization
+    it('shows the add-Contact control to an owner/admin only', () => {
+      component.groupId = 'group-1';
+      component.members = asOwner() as any;
+      expect(component.canAddContact()).toBe(true);
+
+      // Regular member (user-1 is a plain member) → not allowed.
+      component.members = [
+        { id: 'm-me', role: 'member', user: { id: 'user-1' } },
+      ] as any;
+      expect(component.canAddContact()).toBe(false);
+    });
+
+    it('a non-owner/admin cannot create a Contact even if submit is invoked', async () => {
+      component.groupId = 'group-1';
+      component.members = [
+        { id: 'm-me', role: 'member', user: { id: 'user-1' } },
+      ] as any;
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+
+      await component.submitNewContact();
+
+      expect(mockGroupsService.inviteMember).not.toHaveBeenCalled();
+    });
+
+    // TEST 2 — create from expense
+    it('creates the Contact via the existing inviteMember path, refreshes members, and auto-selects it', async () => {
+      openAsOwner();
+      const memberChangedSpy = jest.spyOn(component.memberChanged, 'emit');
+      component.openAddContact();
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+
+      await component.submitNewContact();
+
+      // Existing endpoint/path only — identifier + displayName + role.
+      expect(mockGroupsService.inviteMember).toHaveBeenCalledWith('group-1', {
+        identifier: 'priya@example.com',
+        displayName: 'Priya',
+        role: 'member',
+      });
+      expect(mockGroupsService.inviteMember).toHaveBeenCalledTimes(1);
+      // Members refresh requested through the existing lifecycle.
+      expect(memberChangedSpy).toHaveBeenCalled();
+      // Optimistically selected by its stable member key.
+      expect(component.selectedUserIds.has('member:gm-priya')).toBe(true);
+      expect(component.showAddContact()).toBe(false);
+
+      // Parent refresh brings the new Contact-backed member into the list.
+      refreshMembersWith([
+        ...asOwner(),
+        {
+          id: 'gm-priya',
+          role: 'member',
+          joinStatus: 'invited',
+          contact: { id: 'c-priya', displayName: 'Priya' },
+        },
+      ]);
+      const priya = component.availableParticipants.find(
+        (p) => p.id === 'member:gm-priya',
+      );
+      expect(priya).toBeTruthy();
+      expect(priya!.name).toBe('Priya');
+      expect(priya!.kind).toBe('contact');
+      // Still selected after refresh (selection not wiped).
+      expect(component.selectedUserIds.has('member:gm-priya')).toBe(true);
+      // Only displayName is exposed — no email/phone.
+      expect(JSON.stringify(component.availableParticipants)).not.toContain(
+        'priya@example.com',
+      );
+    });
+
+    // TEST 3 — reuse across expenses
+    it('reuses the same GroupMember id when the Contact is used on a later expense', async () => {
+      openAsOwner();
+      component.openAddContact();
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+      await component.submitNewContact();
+      refreshMembersWith([
+        ...asOwner(),
+        {
+          id: 'gm-priya',
+          role: 'member',
+          joinStatus: 'invited',
+          contact: { id: 'c-priya', displayName: 'Priya' },
+        },
+      ]);
+
+      // Expense 1
+      await component.onSubmit();
+      const splits1 = mockExpensesService.createExpense.mock.calls[0][0].splits;
+      const p1 = splits1.find((s: any) => s.participantGroupMemberId);
+      expect(p1.participantGroupMemberId).toBe('gm-priya');
+
+      // Expense 2
+      mockExpensesService.createExpense.mockClear();
+      component.expenseForm.patchValue({ title: 'Taxi', amountTotal: 1500 });
+      await component.onSubmit();
+      const splits2 = mockExpensesService.createExpense.mock.calls[0][0].splits;
+      const p2 = splits2.find((s: any) => s.participantGroupMemberId);
+      expect(p2.participantGroupMemberId).toBe('gm-priya');
+
+      // No second Contact/GroupMember was ever created client-side.
+      expect(mockGroupsService.inviteMember).toHaveBeenCalledTimes(1);
+    });
+
+    // TEST 4 — Contact payer
+    it('lets the newly added Contact be the payer (paidByGroupMemberId, no paidByUserId)', async () => {
+      openAsOwner();
+      component.openAddContact();
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+      await component.submitNewContact();
+      refreshMembersWith([
+        ...asOwner(),
+        {
+          id: 'gm-priya',
+          role: 'member',
+          joinStatus: 'invited',
+          contact: { id: 'c-priya', displayName: 'Priya' },
+        },
+      ]);
+      component.expenseForm.patchValue({ paidByUserId: 'member:gm-priya' });
+
+      await component.onSubmit();
+
+      const payload = mockExpensesService.createExpense.mock.calls[0][0];
+      expect(payload.paidByGroupMemberId).toBe('gm-priya');
+      expect(payload.paidByUserId).toBeUndefined();
+    });
+
+    // TEST 5 — privacy
+    it('does not invoke any Contact search and renders no phone/email', async () => {
+      openAsOwner();
+      component.openAddContact();
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+      await component.submitNewContact();
+      refreshMembersWith([
+        ...asOwner(),
+        {
+          id: 'gm-priya',
+          role: 'member',
+          joinStatus: 'invited',
+          contact: {
+            id: 'c-priya',
+            displayName: 'Priya',
+            email: 'priya@example.com',
+            phoneNumber: '+919999999999',
+          },
+        },
+      ]);
+
+      // No user/contact search was triggered by the add-Contact flow.
+      expect(mockFriendsService.searchUsers).not.toHaveBeenCalled();
+      const serialized = JSON.stringify([
+        ...component.availableParticipants,
+        ...component.availablePayers,
+      ]);
+      expect(serialized).toContain('Priya');
+      expect(serialized).not.toContain('priya@example.com');
+      expect(serialized).not.toContain('9999999999');
+    });
+
+    // TEST 6 — duplicate handling (server-side)
+    it('surfaces the server conflict and creates no duplicate when the identity already exists', async () => {
+      openAsOwner();
+      mockGroupsService.inviteMember.mockReturnValueOnce(
+        throwError(() => ({
+          error: {
+            message:
+              'This person is already a member or has a pending invitation',
+          },
+        })),
+      );
+      component.openAddContact();
+      component.newContactName = 'Priya';
+      component.newContactIdentifier = 'priya@example.com';
+
+      await component.submitNewContact();
+
+      expect(component.newContactError).toBe(
+        'This person is already a member or has a pending invitation',
+      );
+      // Attempted exactly once — no client-side retry/duplicate.
+      expect(mockGroupsService.inviteMember).toHaveBeenCalledTimes(1);
+      // No optimistic member key was added on the conflict path.
+      const hasNewKey = Array.from(component.selectedUserIds).some((k) =>
+        k.startsWith('member:'),
+      );
+      expect(hasNewKey).toBe(false);
     });
   });
 });

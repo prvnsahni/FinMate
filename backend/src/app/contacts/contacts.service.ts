@@ -1,7 +1,9 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
@@ -41,6 +43,8 @@ export interface ContactAddressBookEntry {
 
 @Injectable()
 export class ContactsService {
+  private readonly logger = new Logger(ContactsService.name);
+
   constructor(
     @InjectRepository(Contact)
     private readonly contactRepository: Repository<Contact>,
@@ -190,7 +194,22 @@ export class ContactsService {
       return { type: 'user', user: existingUser };
     }
 
-    // 2. Resolve-or-create the Contact atomically.
+    // 2/3. A previously-known person may already exist as a CLAIMED or MERGED
+    // (archived) Contact. Resolve those to their terminal identity so re-adding
+    // the same email/phone never creates a duplicate pending Contact: a claimed
+    // Contact folds to its `claimedByUser`; a merged Contact follows
+    // `resolveMergeRedirect` to the surviving row (and, if that survivor is
+    // itself claimed, on to its User).
+    const resolvedKnown = await this.resolveKnownContactIdentity(
+      email,
+      phone,
+      manager,
+    );
+    if (resolvedKnown) {
+      return resolvedKnown;
+    }
+
+    // 4/5. Resolve-or-create the pending Contact atomically.
     const run = async (
       txManager: EntityManager,
     ): Promise<{ contact: Contact; wasCreated: boolean }> => {
@@ -260,48 +279,162 @@ export class ContactsService {
   }
 
   /**
-   * Registration/verification-time claim: finds every unclaimed Contact
-   * matching the now-verified email (or phone), links every GroupMember row
-   * referencing it to the new User (keeping `contact` populated for audit),
-   * activates the membership, and marks the Contact claimed — all inside one
-   * transaction. Creates zero new Expense/ExpenseSplit/Settlement rows;
-   * historical rows already reference the GroupMember and simply resolve
-   * correctly the moment `GroupMember.user` is set.
+   * Resolves an email/phone to an already-known person represented by a
+   * non-pending Contact — a CLAIMED Contact (→ its `claimedByUser`) or a MERGED
+   * (archived) Contact (→ `resolveMergeRedirect` to the survivor, then on to the
+   * survivor's User if that survivor is itself claimed). Returns `null` when no
+   * such Contact matches, so the caller falls through to the pending
+   * resolve-or-create path. Read-only: never writes or repoints a row.
+   *
+   * The partial unique indexes only constrain PENDING rows, so several
+   * claimed/archived rows may match one identifier; candidates are resolved in
+   * creation order and the first that folds to a terminal (User or surviving
+   * pending Contact) identity wins.
+   */
+  private async resolveKnownContactIdentity(
+    email: string | undefined,
+    phone: string | undefined,
+    manager?: EntityManager,
+  ): Promise<IdentityResolution | null> {
+    const repo = manager
+      ? manager.getRepository(Contact)
+      : this.contactRepository;
+    const idMatch = [
+      ...(email ? [{ email }] : []),
+      ...(phone ? [{ phoneNumber: phone }] : []),
+    ];
+    if (idMatch.length === 0) return null;
+
+    // Claimed first, then archived (merged) — a directly-claimed row is a more
+    // direct signal than a merge chain; both still fold to the same human.
+    const candidates = await repo.find({
+      where: idMatch.flatMap((m) => [
+        { ...m, status: 'claimed' as const },
+        { ...m, status: 'archived' as const },
+      ]),
+      relations: ['mergedIntoContact', 'claimedByUser'],
+      // status DESC puts 'claimed' before 'archived' (c > a); createdAt breaks ties.
+      order: { status: 'DESC', createdAt: 'ASC' },
+    });
+
+    for (const candidate of candidates) {
+      const survivor =
+        candidate.status === 'archived'
+          ? await this.resolveMergeRedirect(candidate, manager)
+          : candidate;
+      // resolveMergeRedirect loads only `mergedIntoContact`; reload the terminal
+      // row with its claim state so a merged→claimed chain folds to the User.
+      const terminal =
+        survivor.id === candidate.id
+          ? candidate
+          : ((await repo.findOne({
+              where: { id: survivor.id },
+              relations: ['claimedByUser'],
+            })) ?? survivor);
+
+      if (terminal.status === 'claimed' && terminal.claimedByUser) {
+        return { type: 'user', user: terminal.claimedByUser };
+      }
+      if (terminal.status === 'pending') {
+        return { type: 'contact', contact: terminal };
+      }
+      // Still archived (broken/cyclic chain) — skip and try the next candidate.
+    }
+    return null;
+  }
+
+  /**
+   * Verification-time claim: finds every unclaimed Contact matching the user's
+   * **verified email**, links every GroupMember row referencing it to the user
+   * (keeping `contact` populated for audit), activates the membership, and marks
+   * the Contact claimed — all inside one transaction. Creates zero new
+   * Expense/ExpenseSplit/Settlement rows; historical rows already reference the
+   * GroupMember and simply resolve correctly the moment `GroupMember.user` is
+   * set.
+   *
+   * Fix C invariants:
+   * - **Verified email only.** Claiming connects third-party history to an
+   *   account, so it must never run on an unverified identifier — the method is
+   *   a no-op unless `user.emailVerified`. Token possession is NOT accepted as
+   *   proof (invite links are shareable/reusable); the join path enforces that
+   *   separately.
+   * - **No phone claiming.** Deferred until a phone-verification (OTP) flow
+   *   exists; phone is never used to match a Contact here.
+   * - **Skip-and-flag collision guard.** If claiming a Contact would repoint one
+   *   of its memberships into a group where the user is ALREADY a member
+   *   (`uq(group,user)`), the Contact is skipped entirely (left pending, no row
+   *   changes) and a structured warning is logged — never thrown, never closed
+   *   out (closing out strands balances; see the tracked bug). The person may
+   *   appear twice in that group until the V2 collision fix.
    */
   async claimContactsForUser(
     user: User,
-    opts: { email?: string; phone?: string } = {},
-  ): Promise<{ linkedGroupIds: string[]; claimedContactIds: string[] }> {
+    opts: { email?: string } = {},
+  ): Promise<{
+    linkedGroupIds: string[];
+    claimedContactIds: string[];
+    skippedContactIds: string[];
+  }> {
+    // Gate: only a verified email may claim.
+    if (!user.emailVerified) {
+      return {
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      };
+    }
     const email = this.normalizeEmail(opts.email ?? user.email);
-    const phone = this.normalizePhone(opts.phone ?? user.phoneNumber);
+    if (!email) {
+      return {
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      };
+    }
 
     const result = await this.dataSource.transaction(async (manager) => {
       const contactRepo = manager.getRepository(Contact);
       const memberRepo = manager.getRepository(GroupMember);
 
       const matches = await contactRepo.find({
-        where: [
-          ...(email ? [{ email, status: 'pending' as const }] : []),
-          ...(phone
-            ? [{ phoneNumber: phone, status: 'pending' as const }]
-            : []),
-        ],
+        where: { email, status: 'pending' as const },
       });
 
       const linkedGroupIds = new Set<string>();
       const claimedContactIds: string[] = [];
+      const skippedContactIds: string[] = [];
 
       for (const contact of matches) {
+        const members = await memberRepo.find({
+          where: { contact: { id: contact.id } },
+          relations: ['group'],
+        });
+        const groupIds = members.map((m) => m.group.id);
+
+        // Skip-and-flag collision guard: if the user already backs a membership
+        // in ANY group this Contact is in, repointing would violate
+        // uq(group,user). Leave the Contact fully untouched and warn.
+        if (groupIds.length > 0) {
+          const existing = await memberRepo.find({
+            where: { user: { id: user.id }, group: In(groupIds) },
+          });
+          if (existing.length > 0) {
+            skippedContactIds.push(contact.id);
+            this.logger.warn(
+              `claimContactsForUser: skipped Contact ${contact.id} for user ` +
+                `${user.id} — (group,user) membership collision; Contact left ` +
+                `pending (V2 collision guard). No rows changed.`,
+            );
+            continue;
+          }
+        }
+
         contact.status = 'claimed';
         contact.claimedByUser = user;
         contact.claimedAt = new Date();
         await contactRepo.save(contact);
         claimedContactIds.push(contact.id);
 
-        const members = await memberRepo.find({
-          where: { contact: { id: contact.id } },
-          relations: ['group'],
-        });
         for (const member of members) {
           member.user = user;
           member.joinStatus = 'active';
@@ -318,6 +451,7 @@ export class ContactsService {
       return {
         linkedGroupIds: Array.from(linkedGroupIds),
         claimedContactIds,
+        skippedContactIds,
       };
     });
 
@@ -545,25 +679,15 @@ export class ContactsService {
               });
             }
 
-            // Archive the loser, never delete it — the timeline and every
-            // historical reference stay readable (hardening item D/E +
-            // Review 05).
-            losing.status = 'archived';
-            losing.mergedIntoContact = surviving;
-            losing.mergedAt = new Date();
-            losing.mergedByUser = opts.mergedByUser;
-            await contactRepo.save(losing);
-
-            // Re-point every GroupMember from the loser to the survivor —
-            // except where the survivor is already a member of that same
-            // group (both Contact rows were independently added to the
-            // same group before anyone noticed they were the same
-            // person). The GroupMember unique constraint on (group,
-            // contact) forbids two rows for one Contact in one group, so
-            // that specific losing membership is closed out instead of
-            // repointed — its historical Expense/ExpenseSplit/Settlement
-            // rows remain intact and still resolve via the surviving
-            // membership.
+            // Same-group guard (Fix M.1): if the losing and surviving Contacts
+            // both back a GroupMember in the SAME group, merging cannot proceed.
+            // Closing out the losing membership would strand its historical
+            // Expense/ExpenseSplit/ExpensePayment/Settlement rows on a `removed`
+            // GroupMember that the balance engine surfaces under the stale
+            // losing identity and that `proposeSettlement` refuses as a
+            // recipient (unsettleable) — see tracked bug "mergeContacts
+            // close-out strands balances". Reject up-front for ALL confidence
+            // levels, BEFORE any write, so no data changes on this path.
             const memberRepo = manager.getRepository(GroupMember);
             const [losingMembers, survivorMembers] = await Promise.all([
               memberRepo.find({
@@ -578,14 +702,35 @@ export class ContactsService {
             const survivorGroupIds = new Set(
               survivorMembers.map((m) => m.group.id),
             );
+            const clash = losingMembers.find((m) =>
+              survivorGroupIds.has(m.group.id),
+            );
+            if (clash) {
+              throw new ConflictException({
+                errorCode: 'CONTACT_MERGE_SAME_GROUP',
+                message: `These contacts are both members of ${clash.group.name}; merge not supported yet`,
+              });
+            }
+
+            // Archive the loser, never delete it — the timeline and every
+            // historical reference stay readable (hardening item D/E +
+            // Review 05).
+            losing.status = 'archived';
+            losing.mergedIntoContact = surviving;
+            losing.mergedAt = new Date();
+            losing.mergedByUser = opts.mergedByUser;
+            await contactRepo.save(losing);
+
+            // Re-point every GroupMember from the loser to the survivor. The
+            // same-group guard above guarantees the survivor is never already a
+            // member of any of these groups, so every losing membership is
+            // repointed — its historical Expense/ExpenseSplit/ExpensePayment/
+            // Settlement rows keep referencing this same (now survivor-backed)
+            // GroupMember row and continue to resolve correctly. No membership
+            // is ever closed out here, so no balance is stranded.
             for (const member of losingMembers) {
-              if (survivorGroupIds.has(member.group.id)) {
-                member.joinStatus = 'removed';
-                await memberRepo.save(member);
-              } else {
-                member.contact = surviving;
-                await memberRepo.save(member);
-              }
+              member.contact = surviving;
+              await memberRepo.save(member);
             }
 
             await manager

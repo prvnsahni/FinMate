@@ -122,6 +122,18 @@ describe('RecurringExpenses Service & Scheduler', () => {
       expect(service).toBeDefined();
     });
 
+    it('rejects unsupported currency (KWD) with CURRENCY_UNSUPPORTED', async () => {
+      await expect(
+        service.createRecurringExpense('user-owner', {
+          currency: 'KWD',
+        } as any),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'CURRENCY_UNSUPPORTED',
+        }),
+      });
+    });
+
     it('should create personal recurring expense template', async () => {
       const ownerUser = { id: 'user-owner' };
       const paidByUser = { id: 'user-owner' };
@@ -599,6 +611,10 @@ describe('RecurringExpenses Service & Scheduler', () => {
           amountOwed: 100,
         },
       ]);
+      mockGroupMemberRepo.find.mockResolvedValue([
+        { id: 'gm-payer', joinStatus: 'active' },
+        { id: 'gm-1', joinStatus: 'active' },
+      ] as any);
       await scheduler.generateDueOccurrences(
         dueTemplate() as any,
         '2026-06-20',
@@ -608,6 +624,82 @@ describe('RecurringExpenses Service & Scheduler', () => {
   });
 
   describe('RecurringExpensesScheduler Cron Engine', () => {
+    it('pauses template and skips generation when a split participant has departed', async () => {
+      const template: any = {
+        id: 'template-departed',
+        title: 'Rent',
+        amountTotal: 500,
+        currency: 'USD',
+        category: 'rent',
+        paidByUser: undefined,
+        paidByGroupMember: { id: 'gm-payer' },
+        ownerUser: { id: 'user-1' },
+        group: { id: 'group-1', groupType: 'normal' },
+        frequency: 'monthly',
+        startDate: '2026-06-01',
+        nextOccurrenceDate: '2026-06-20',
+        status: 'active',
+      };
+
+      mockRecurringExpenseSplitRepo.find.mockResolvedValue([
+        {
+          participantGroupMember: { id: 'gm-departed' },
+          splitType: 'equal',
+          shareValue: 1,
+          amountOwed: 500,
+        },
+      ]);
+      mockGroupMemberRepo.find.mockResolvedValue([
+        { id: 'gm-payer', joinStatus: 'active' },
+      ] as any);
+
+      await scheduler.generateDueOccurrences(template, '2026-06-20');
+
+      expect(template.status).toBe('paused');
+      expect(mockExpenseRepo.create).not.toHaveBeenCalled();
+      expect(mockExpenseSplitRepo.create).not.toHaveBeenCalled();
+      expect(mockRecurringExpenseRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'paused' }),
+      );
+    });
+
+    it('generates normally when payer and participants are active/invited', async () => {
+      const template: any = {
+        id: 'template-active',
+        title: 'Rent',
+        amountTotal: 500,
+        currency: 'USD',
+        category: 'rent',
+        paidByUser: undefined,
+        paidByGroupMember: { id: 'gm-payer' },
+        ownerUser: { id: 'user-1' },
+        group: { id: 'group-1', groupType: 'normal' },
+        frequency: 'monthly',
+        startDate: '2026-06-01',
+        nextOccurrenceDate: '2026-06-20',
+        status: 'active',
+      };
+
+      mockRecurringExpenseSplitRepo.find.mockResolvedValue([
+        {
+          participantGroupMember: { id: 'gm-participant' },
+          splitType: 'equal',
+          shareValue: 1,
+          amountOwed: 500,
+        },
+      ]);
+      mockGroupMemberRepo.find.mockResolvedValue([
+        { id: 'gm-payer', joinStatus: 'active' },
+        { id: 'gm-participant', joinStatus: 'invited' },
+      ] as any);
+
+      await scheduler.generateDueOccurrences(template, '2026-06-20');
+
+      expect(mockExpenseRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockExpenseSplitRepo.create).toHaveBeenCalledTimes(1);
+      expect(template.status).toBe('active');
+    });
+
     it('generateDueOccurrences is idempotent per day — a re-run generates no duplicate', async () => {
       const template: any = {
         id: 'template-x',
@@ -722,6 +814,10 @@ describe('RecurringExpenses Service & Scheduler', () => {
           amountOwed: 500,
         },
       ]);
+      mockGroupMemberRepo.find.mockResolvedValueOnce([
+        { id: 'gm-payer', joinStatus: 'active' },
+        { id: 'gm-1', joinStatus: 'active' },
+      ] as any);
 
       await scheduler.processDueExpenses();
 

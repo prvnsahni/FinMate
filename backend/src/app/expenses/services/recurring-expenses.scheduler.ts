@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, LessThanOrEqual, Repository } from 'typeorm';
+import { DataSource, In, LessThanOrEqual, Repository } from 'typeorm';
 import {
   RecurringExpense,
   RecurringExpenseSplit,
   Expense,
   ExpenseSplit,
   GroupKeyVersion,
+  GroupMember,
 } from '@finmate/data-models';
 import { RedisService } from '../../redis/redis.service';
 
@@ -154,8 +155,29 @@ export class RecurringExpensesScheduler {
         template.frequency,
         anchorDay,
       );
+      let pausedBecauseDepartedMember = false;
 
       await this.dataSource.transaction(async (manager) => {
+        const blockedMemberIds = await this.findInvalidTemplateMemberIds(
+          manager,
+          template,
+        );
+        if (blockedMemberIds.length > 0) {
+          template.status = 'paused';
+          pausedBecauseDepartedMember = true;
+          await manager.getRepository(RecurringExpense).save(template);
+          this.logger.warn({
+            event: 'scheduler_template_paused_departed_member',
+            scheduler: 'recurring_expenses',
+            templateId: template.id,
+            groupId: template.group?.id ?? null,
+            memberIds: blockedMemberIds,
+            reason: 'departed_member_reference',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
         let groupKeyVersion: GroupKeyVersion | undefined;
         let encryptionScope: 'personal' | 'group' | 'direct_shared' =
           'personal';
@@ -244,6 +266,10 @@ export class RecurringExpensesScheduler {
         await manager.getRepository(RecurringExpense).save(template);
       });
 
+      if (pausedBecauseDepartedMember) {
+        break;
+      }
+
       this.logger.log({
         event: 'scheduler_expense_created',
         scheduler: 'recurring_expenses',
@@ -274,6 +300,44 @@ export class RecurringExpensesScheduler {
       return 'group_payer_removed';
     }
     return null;
+  }
+
+  private async findInvalidTemplateMemberIds(
+    manager: {
+      getRepository: <T>(entity: new () => T) => Repository<T>;
+    },
+    template: RecurringExpense,
+  ): Promise<string[]> {
+    if (!template.group?.id) return [];
+
+    const referencedMemberIds = new Set<string>();
+    if (template.paidByGroupMember?.id) {
+      referencedMemberIds.add(template.paidByGroupMember.id);
+    }
+
+    const templateSplits = await manager
+      .getRepository(RecurringExpenseSplit)
+      .find({
+        where: { recurringExpense: { id: template.id } },
+        relations: ['participantGroupMember'],
+      });
+    for (const split of templateSplits) {
+      if (split.participantGroupMember?.id) {
+        referencedMemberIds.add(split.participantGroupMember.id);
+      }
+    }
+
+    if (!referencedMemberIds.size) return [];
+
+    const activeOrInvited = await manager.getRepository(GroupMember).find({
+      where: {
+        id: In([...referencedMemberIds]),
+        group: { id: template.group.id },
+        joinStatus: In(['active', 'invited']),
+      },
+    });
+    const allowed = new Set((activeOrInvited ?? []).map((m) => m.id));
+    return [...referencedMemberIds].filter((id) => !allowed.has(id));
   }
 
   /**

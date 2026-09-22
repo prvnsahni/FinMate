@@ -45,6 +45,16 @@ export class Settlement {
   @ManyToOne(() => GroupMember, { nullable: true })
   toGroupMember?: GroupMember;
 
+  /**
+   * The registered user who *recorded* this settlement. For a normal
+   * propose/accept settlement this is the proposing debtor; for a one-step
+   * "record a cash payment" with a non-registered (Contact-backed) member it is
+   * the caller (a party or a group admin), who may be neither `from` nor `to`.
+   * Null for legacy rows created before this column existed.
+   */
+  @ManyToOne(() => User, { nullable: true })
+  recordedByUser?: User;
+
   @Column('decimal', { precision: 12, scale: 2 })
   amount!: number;
 

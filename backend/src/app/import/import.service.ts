@@ -203,11 +203,15 @@ export class ImportService {
           relations: ['user'],
         });
 
-        const activeEmails = new Set(
-          activeMembers.map((m) => m.user.email.toLowerCase()),
+        // A Contact-backed member has no `user` (and no email) — guard against
+        // it so a group containing any pending Contact member cannot NPE the
+        // import. Contact-backed members simply aren't valid import payers/
+        // participants (import references registered members only).
+        const registeredMembers = activeMembers.filter(
+          (m): m is typeof m & { user: User } => !!m.user,
         );
         const emailToUserMap = new Map<string, User>(
-          activeMembers.map((m) => [m.user.email.toLowerCase(), m.user]),
+          registeredMembers.map((m) => [m.user.email.toLowerCase(), m.user]),
         );
 
         const validationErrors: { field: string; issue: string }[] = [];

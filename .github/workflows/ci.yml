@@ -39,3 +39,45 @@ jobs:
       # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/ci/features/self-healing-ci
       - run: npx nx fix-ci
         if: always()
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finmate_user
+          POSTGRES_PASSWORD: finmate_password
+          POSTGRES_DB: finmate_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finmate_user -d finmate_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://finmate_user:finmate_password@localhost:5432/finmate_dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Wait for Postgres service
+        run: |
+          for i in $(seq 1 30); do
+            if node -e "const { Client } = require('pg'); (async () => { const c = new Client({ connectionString: process.env.DATABASE_URL }); await c.connect(); await c.end(); process.exit(0); })().catch(() => process.exit(1));"; then
+              echo "Postgres ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Postgres did not become ready in time"
+          exit 1
+
+      - run: npm run test:integration

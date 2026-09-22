@@ -23,11 +23,14 @@ import * as argon2 from 'argon2';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { ContactsService } from '../contacts/contacts.service';
+import { BalancesService } from '../settlements/balances.service';
 
 jest.mock('argon2');
 
 describe('GroupsService', () => {
   let service: GroupsService;
+  let mockBalancesService: { assertZeroBalance: jest.Mock };
+  let managerQuery: jest.Mock;
   let groupRepository: jest.Mocked<Repository<Group>>;
   let groupMemberRepository: jest.Mocked<Repository<GroupMember>>;
   let groupInviteRepository: jest.Mocked<Repository<GroupInvite>>;
@@ -66,6 +69,7 @@ describe('GroupsService', () => {
       createQueryBuilder: jest.fn(() => ({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         getOne: jest
           .fn()
@@ -108,8 +112,16 @@ describe('GroupsService', () => {
 
     const mockManager = {
       create: jest.fn((entity, data) => data),
-      save: jest.fn(async (entity, data) => data),
-      getRepository: jest.fn((entity) => {
+      // Delegate GroupMember saves to the member repo mock so existing
+      // assertions on groupMemberRepository.save keep working now that
+      // remove/leave saves go through the transaction manager.
+      save: jest.fn(async (entity, data) => {
+        if (entity === GroupMember) return mockGroupMemberRepository.save(data);
+        return data;
+      }),
+      // Raw FOR UPDATE member lock (member-lock.util) — no-op in unit tests.
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entity: any) => {
         if (entity === GroupMember) return mockGroupMemberRepository;
         if (entity === GroupMemberContribution) {
           return {
@@ -142,6 +154,8 @@ describe('GroupsService', () => {
       }),
     };
 
+    managerQuery = mockManager.query as jest.Mock;
+
     const mockConfigService = {
       get: jest.fn((key: string) => {
         if (key === 'FRONTEND_URL') return 'http://localhost:4200';
@@ -159,11 +173,24 @@ describe('GroupsService', () => {
     const mockContactsService = {
       resolveOrCreateIdentity: jest.fn(),
       // Default: no pending Contact matches this user — a safe no-op so
-      // every existing test that reaches joinGroupByToken (which now always
-      // calls this before resolving membership) keeps working unchanged.
-      claimContactsForUser: jest
-        .fn()
-        .mockResolvedValue({ linkedGroupIds: [], claimedContactIds: [] }),
+      // every existing test that reaches joinGroupByToken (which now calls
+      // this only on the verified-email path) keeps working unchanged.
+      claimContactsForUser: jest.fn().mockResolvedValue({
+        linkedGroupIds: [],
+        claimedContactIds: [],
+        skippedContactIds: [],
+      }),
+      // Real normalizer behaviour (lowercase/trim) for the Option-C gate.
+      normalizeEmail: jest.fn((email?: string | null) => {
+        const t = email?.trim().toLowerCase();
+        return t ? t : undefined;
+      }),
+    };
+
+    // Default: member is fully settled, so the zero-balance guard is a no-op
+    // and every existing remove/leave/update test keeps working unchanged.
+    mockBalancesService = {
+      assertZeroBalance: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -191,6 +218,7 @@ describe('GroupsService', () => {
           useValue: mockMemberWrappedGroupKeyRepository,
         },
         { provide: DataSource, useValue: mockDataSource },
+        { provide: BalancesService, useValue: mockBalancesService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: EmailService, useValue: mockEmailService },
         { provide: ContactsService, useValue: mockContactsService },
@@ -657,6 +685,7 @@ describe('GroupsService', () => {
     const registeredUser = {
       id: 'joining-user-id',
       email: 'joiner@example.com',
+      emailVerified: true,
     } as any;
 
     beforeEach(() => {
@@ -814,6 +843,63 @@ describe('GroupsService', () => {
         expect.objectContaining({ role: 'member', joinStatus: 'active' }),
       );
       expect((result as any).member.id).toBe('brand-new-member-id');
+    });
+
+    // ── Fix C (Option C) — unverified joins ──────────────────────────────────
+    it('rejects an UNVERIFIED user with 403 GROUP_JOIN_EMAIL_UNVERIFIED when a matching pending Contact-backed member exists in the group, creating no rows and never claiming', async () => {
+      const unverifiedUser = {
+        id: 'unverified-user-id',
+        email: 'Joiner@Example.com',
+        emailVerified: false,
+      } as any;
+      userRepository.findOne.mockResolvedValue(unverifiedUser);
+      // Option-C gate query: a pending Contact-backed member matches this email.
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'pending-contact-member',
+      } as any);
+
+      const err = await service
+        .joinGroupByToken(unverifiedUser.id, 'the-invite-token')
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect(err.getResponse()).toMatchObject({
+        errorCode: 'GROUP_JOIN_EMAIL_UNVERIFIED',
+      });
+
+      expect(contactsService.claimContactsForUser).not.toHaveBeenCalled();
+      expect(groupMemberRepository.create).not.toHaveBeenCalled();
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('lets an UNVERIFIED user join normally (no claim) when NO matching pending Contact exists in the group', async () => {
+      const unverifiedUser = {
+        id: 'unverified-user-id',
+        email: 'newcomer@example.com',
+        emailVerified: false,
+      } as any;
+      userRepository.findOne.mockResolvedValue(unverifiedUser);
+      // First getOne → Option-C gate: no pending match. Second getOne →
+      // existing-membership lookup: none → create a fresh user-backed member.
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+      groupMemberRepository.save.mockResolvedValueOnce({
+        id: 'fresh-member-id',
+        role: 'member',
+        joinStatus: 'active',
+        user: unverifiedUser,
+      } as any);
+
+      const result = await service.joinGroupByToken(
+        unverifiedUser.id,
+        'the-invite-token',
+      );
+
+      expect(contactsService.claimContactsForUser).not.toHaveBeenCalled();
+      expect(groupMemberRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'member', joinStatus: 'active' }),
+      );
+      expect((result as any).member.id).toBe('fresh-member-id');
     });
   });
 
@@ -1042,6 +1128,60 @@ describe('GroupsService', () => {
     });
   });
 
+  describe('updateMember zero-balance guard', () => {
+    it('rejects a joinStatus=removed transition with 409 when the member is not settled, and does not persist', async () => {
+      const caller = {
+        id: 'caller-member',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      mockBalancesService.assertZeroBalance.mockRejectedValueOnce(
+        new ConflictException({ errorCode: 'MEMBER_BALANCE_NONZERO' }),
+      );
+
+      await expect(
+        service.updateMember('caller-user', 'group-id', 'target-id', {
+          joinStatus: 'removed',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('does NOT invoke the balance guard for a role-only update', async () => {
+      const caller = {
+        id: 'caller-member',
+        joinStatus: 'active',
+        role: 'owner',
+        user: { id: 'owner-user' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+
+      await service.updateMember('owner-user', 'group-id', 'target-id', {
+        role: 'admin',
+      });
+
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+    });
+  });
+
   describe('removeMember', () => {
     it('should allow self-remove (leaving) if not owner', async () => {
       const selfMember = {
@@ -1080,6 +1220,184 @@ describe('GroupsService', () => {
 
       expect(target.joinStatus).toBe('removed');
       expect(target.leftAt).toBeDefined();
+    });
+
+    it('runs the zero-balance guard (FOR UPDATE lock + assertZeroBalance) before persisting a removal', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+
+      await service.removeMember('caller-user-id', 'group-id', 'target-id');
+
+      expect(managerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('FOR UPDATE'),
+        ['target-id'],
+      );
+      expect(mockBalancesService.assertZeroBalance).toHaveBeenCalledWith(
+        'group-id',
+        'target-id',
+        expect.any(Object),
+      );
+    });
+
+    it('rejects an admin removal with 409 MEMBER_BALANCE_NONZERO and does NOT persist when the member is not settled', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      mockBalancesService.assertZeroBalance.mockRejectedValueOnce(
+        new ConflictException({ errorCode: 'MEMBER_BALANCE_NONZERO' }),
+      );
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects self-leave with 409 when the member is not settled', async () => {
+      const selfMember = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(selfMember)
+        .mockResolvedValueOnce(selfMember);
+      mockBalancesService.assertZeroBalance.mockRejectedValueOnce(
+        new ConflictException({ errorCode: 'MEMBER_BALANCE_NONZERO' }),
+      );
+
+      await expect(
+        service.removeMember('user-id', 'group-id', 'caller-id'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(groupMemberRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects removal when member has pending proposed settlements', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'PENDING_SETTLEMENTS' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
+    });
+
+    it('rejects removal when member is referenced by active recurring templates', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '0' }];
+        if (sql.includes('FROM recurring_expenses')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'ACTIVE_RECURRING' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
+    });
+
+    it('rejects removal when member is referenced by unpublished drafts', async () => {
+      const caller = {
+        id: 'caller-id',
+        joinStatus: 'active',
+        role: 'admin',
+        user: { id: 'caller-user-id' },
+      } as any;
+      const target = {
+        id: 'target-id',
+        joinStatus: 'active',
+        role: 'member',
+        user: { id: 'target-user-id' },
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(caller)
+        .mockResolvedValueOnce(target);
+      managerQuery.mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM settlements')) return [{ count: '0' }];
+        if (sql.includes('FROM recurring_expenses')) return [{ count: '0' }];
+        if (sql.includes('FROM expenses')) return [{ count: '1' }];
+        return [];
+      });
+
+      await expect(
+        service.removeMember('caller-user-id', 'group-id', 'target-id'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'MEMBER_BALANCE_NONZERO',
+          details: expect.objectContaining({ reason: 'DRAFT_REFERENCES' }),
+        }),
+      });
+      expect(mockBalancesService.assertZeroBalance).not.toHaveBeenCalled();
+      managerQuery.mockReset().mockResolvedValue([]);
     });
   });
 

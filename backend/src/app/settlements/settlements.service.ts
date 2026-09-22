@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -21,8 +22,12 @@ import {
   Settlement,
   SettlementVersion,
   ProposeSettlementDto,
+  RecordPaymentDto,
   UpdateSettlementDto,
   AuditLog,
+  CURRENCY_MINOR_UNITS,
+  isSupportedCurrencyCode,
+  normalizeCurrencyCode,
   User,
 } from '@finmate/data-models';
 import { createHash } from 'crypto';
@@ -32,6 +37,10 @@ import {
   MemberDisplay,
   resolveMemberDisplay,
 } from '../common/member-display.util';
+import {
+  lockGroupMembersByIdsForUpdate,
+  lockGroupMembersForShare,
+} from '../common/member-lock.util';
 
 export interface MemberBalance {
   userId: string;
@@ -197,6 +206,59 @@ export class SettlementsService {
     return resolveMemberDisplay(m);
   }
 
+  private async assertSettlementTransitionAllowedForDepartedMembers(
+    manager: EntityManager,
+    groupId: string,
+    settlement: Settlement,
+    nextStatus: 'confirmed' | 'cancelled',
+  ): Promise<void> {
+    const currentStatus = settlement.status;
+    const changesBalances =
+      (currentStatus === 'proposed' && nextStatus === 'confirmed') ||
+      (currentStatus === 'confirmed' && nextStatus === 'cancelled');
+    if (!changesBalances) return;
+
+    const memberIds = [
+      settlement.fromGroupMember?.id,
+      settlement.toGroupMember?.id,
+    ].filter((id): id is string => !!id);
+    if (!memberIds.length) return;
+
+    const departed = await manager.getRepository(GroupMember).find({
+      where: {
+        id: In(memberIds),
+        group: { id: groupId },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+    if (!departed?.length) return;
+
+    await lockGroupMembersByIdsForUpdate(
+      manager,
+      departed.map((m) => m.id),
+    );
+
+    const stillDeparted = await manager.getRepository(GroupMember).find({
+      where: {
+        id: In(memberIds),
+        group: { id: groupId },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+    if (!stillDeparted?.length) return;
+
+    const blocked = stillDeparted[0];
+    const display = this.memberDisplay(blocked);
+    throw new ConflictException({
+      errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+      memberId: blocked.id,
+      displayName: display.displayName,
+      message: `${display.displayName} has left this group. To change this, add ${display.displayName} back to the group first.`,
+    });
+  }
+
   /** Resolve group-member ids to {groupMemberId, userId} pairs for the filter. */
   private async resolveGroupMemberRefs(
     groupMemberIds: string[] | undefined,
@@ -211,6 +273,123 @@ export class SettlementsService {
       groupMemberId: m.id,
       userId: m.user?.id ?? null,
     }));
+  }
+
+  /**
+   * Live balances/suggestions UX rule: hide departed members only once they are
+   * fully settled across all currencies. Non-zero departed members remain
+   * visible until brought to zero.
+   */
+  private filterDepartedZeroNetMembers(
+    groupMembers: GroupMember[],
+    balances: Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>,
+    suggestedSettlements: SuggestedSettlement[],
+  ) {
+    const departedIds = new Set(
+      groupMembers
+        .filter((m) => m.joinStatus === 'left' || m.joinStatus === 'removed')
+        .map((m) => m.id),
+    );
+    if (!departedIds.size) {
+      return { balances, suggestedSettlements };
+    }
+
+    const absByDeparted = new Map<string, number>();
+    for (const b of balances) {
+      if (!departedIds.has(b.groupMemberId)) continue;
+      absByDeparted.set(
+        b.groupMemberId,
+        (absByDeparted.get(b.groupMemberId) ?? 0) + Math.abs(b.netBalance),
+      );
+    }
+
+    const hiddenIds = new Set<string>();
+    for (const memberId of departedIds) {
+      const absNet = absByDeparted.get(memberId) ?? 0;
+      if (this.isCentZero(absNet)) hiddenIds.add(memberId);
+    }
+    if (!hiddenIds.size) {
+      return { balances, suggestedSettlements };
+    }
+
+    return {
+      balances: balances.filter((b) => !hiddenIds.has(b.groupMemberId)),
+      suggestedSettlements: suggestedSettlements.filter(
+        (s) =>
+          !hiddenIds.has(s.fromGroupMemberId) &&
+          !hiddenIds.has(s.toGroupMemberId),
+      ),
+    };
+  }
+
+  private isCentZero(amount: number): boolean {
+    return Math.round(Math.abs(amount) * 100) / 100 === 0;
+  }
+
+  private buildMemberSettledStatus(
+    groupMembers: GroupMember[],
+    overallBalances: Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>,
+  ): Array<{
+    groupMemberId: string;
+    settled: boolean;
+    byCurrency: Array<{
+      currency: string;
+      netBalance: number;
+      settled: boolean;
+    }>;
+  }> {
+    const byMember = new Map<string, Map<string, number>>();
+    for (const member of groupMembers) {
+      byMember.set(member.id, new Map<string, number>());
+    }
+    for (const b of overallBalances) {
+      const curr = byMember.get(b.groupMemberId) ?? new Map<string, number>();
+      curr.set(b.currency, b.netBalance);
+      byMember.set(b.groupMemberId, curr);
+    }
+
+    const result: Array<{
+      groupMemberId: string;
+      settled: boolean;
+      byCurrency: Array<{
+        currency: string;
+        netBalance: number;
+        settled: boolean;
+      }>;
+    }> = [];
+
+    for (const [groupMemberId, currencyMap] of byMember.entries()) {
+      const byCurrency = [...currencyMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([currency, netBalance]) => ({
+          currency,
+          netBalance,
+          settled: this.isCentZero(netBalance),
+        }));
+      result.push({
+        groupMemberId,
+        settled: byCurrency.every((c) => c.settled),
+        byCurrency,
+      });
+    }
+
+    return result.sort((a, b) =>
+      a.groupMemberId.localeCompare(b.groupMemberId),
+    );
   }
 
   /**
@@ -251,7 +430,7 @@ export class SettlementsService {
       relations: ['user', 'contact'],
     });
 
-    const overall = await this.computeBalancesCore(
+    const overallRaw = await this.computeBalancesCore(
       groupId,
       allMembers,
       undefined,
@@ -259,9 +438,24 @@ export class SettlementsService {
     );
     // Only compute a separate filtered view when a filter was actually supplied
     // (internal callers like Friends pass none and just want the overall picture).
-    const filtered = filter
+    const filteredRaw = filter
       ? await this.computeBalancesCore(groupId, allMembers, filter, false)
-      : overall;
+      : overallRaw;
+
+    const overall = this.filterDepartedZeroNetMembers(
+      allMembers,
+      overallRaw.balances,
+      overallRaw.suggestedSettlements,
+    );
+    const filtered = this.filterDepartedZeroNetMembers(
+      allMembers,
+      filteredRaw.balances,
+      filteredRaw.suggestedSettlements,
+    );
+    const memberSettledStatus = this.buildMemberSettledStatus(
+      allMembers,
+      overallRaw.balances,
+    );
 
     // Decompose the *caller's* balance for the Balance Breakdown UI. The
     // backend stays the single source of truth: Opening is derived here as
@@ -291,7 +485,37 @@ export class SettlementsService {
       closingBalance,
     };
 
-    return { overall, filtered, breakdown };
+    return { overall, filtered, breakdown, memberSettledStatus };
+  }
+
+  /**
+   * Caller-agnostic all-time balances for every member of a group, keyed by
+   * GroupMember.id (one row per member per currency). Unlike
+   * `calculateGroupBalances` this performs no caller access check or breakdown —
+   * it is an internal computation used by `BalancesService` to gate identity
+   * changes. Includes confirmed settlements (all-time overall view).
+   */
+  async getOverallBalances(groupId: string): Promise<
+    Array<{
+      userId: string | null;
+      contactId: string | null;
+      groupMemberId: string;
+      displayName: string;
+      netBalance: number;
+      currency: string;
+    }>
+  > {
+    const allMembers = await this.groupMemberRepository.find({
+      where: { group: { id: groupId }, joinStatus: In(['active', 'invited']) },
+      relations: ['user', 'contact'],
+    });
+    const { balances } = await this.computeBalancesCore(
+      groupId,
+      allMembers,
+      undefined,
+      true,
+    );
+    return balances;
   }
 
   /**
@@ -590,6 +814,15 @@ export class SettlementsService {
     dto: ProposeSettlementDto,
     context?: { ip?: string; userAgent?: string },
   ): Promise<Settlement> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
     // 1. Validate caller active membership in group
     const callerMember = await this.groupMemberRepository.findOne({
       where: {
@@ -642,10 +875,7 @@ export class SettlementsService {
     }
 
     // Currency check
-    if (
-      group.currency &&
-      dto.currency.toUpperCase() !== group.currency.toUpperCase()
-    ) {
+    if (group.currency && normalizedCurrency !== group.currency.toUpperCase()) {
       throw new BadRequestException({
         errorCode: 'SETTLE_CURRENCY_MISMATCH',
         message: `Settlement currency must match the group's base currency (${group.currency})`,
@@ -654,6 +884,9 @@ export class SettlementsService {
 
     const savedSettlement = await this.dataSource.transaction(
       async (manager) => {
+        // Serialize against a concurrent member remove/leave (see
+        // member-lock.util): a settlement is balance-affecting.
+        await lockGroupMembersForShare(manager, groupId);
         // Frozen group-ledger identity rule: both settlement parties always
         // resolve via GroupMember, never User — including the caller, who
         // is always a real registered member but is referenced by their
@@ -663,7 +896,7 @@ export class SettlementsService {
           fromGroupMember: callerMember,
           toGroupMember: recipientMember,
           amount: dto.amount,
-          currency: dto.currency.toUpperCase(),
+          currency: normalizedCurrency,
           status: 'proposed',
           note: dto.note,
         });
@@ -696,6 +929,154 @@ export class SettlementsService {
     });
 
     return savedSettlement;
+  }
+
+  /**
+   * One-step "record a cash payment" between two group members, created
+   * directly as `confirmed`. This exists because a non-registered
+   * (Contact-backed) member cannot log in to accept a proposed settlement, so
+   * their balance could otherwise never be brought to zero.
+   *
+   * Rules:
+   * - Both members must be active/invited in the group; `amount > 0`; currency
+   *   must match the group's base currency.
+   * - The caller must be one of the two parties OR a group owner/admin.
+   * - Allowed only when at least one party is an **unclaimed** (Contact-backed,
+   *   `user`-less) member. If both are registered users the propose/accept flow
+   *   must be used so both sides consent.
+   * - Overpayment is intentionally NOT capped here (Splitwise-style); the client
+   *   warns.
+   */
+  async recordPayment(
+    userId: string,
+    groupId: string,
+    dto: RecordPaymentDto,
+    context?: { ip?: string; userAgent?: string },
+  ): Promise<Settlement> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
+    const callerMember = await this.groupMemberRepository.findOne({
+      where: {
+        group: { id: groupId },
+        user: { id: userId },
+        joinStatus: 'active',
+      },
+      relations: ['user'],
+    });
+    if (!callerMember) {
+      throw new ForbiddenException('You do not have access to this group');
+    }
+
+    const group = await this.groupRepository.findOne({
+      where: { id: groupId },
+    });
+    if (!group) {
+      throw new NotFoundException('Group not found');
+    }
+    if (group.currency && normalizedCurrency !== group.currency.toUpperCase()) {
+      throw new BadRequestException({
+        errorCode: 'SETTLE_CURRENCY_MISMATCH',
+        message: `Settlement currency must match the group's base currency (${group.currency})`,
+      });
+    }
+    if (dto.fromMemberId === dto.toMemberId) {
+      throw new BadRequestException(
+        'Payer and payee must be different members',
+      );
+    }
+
+    const [fromMember, toMember] = await Promise.all([
+      this.groupMemberRepository.findOne({
+        where: {
+          id: dto.fromMemberId,
+          group: { id: groupId },
+          joinStatus: In(['active', 'invited']),
+        },
+        relations: ['user', 'contact'],
+      }),
+      this.groupMemberRepository.findOne({
+        where: {
+          id: dto.toMemberId,
+          group: { id: groupId },
+          joinStatus: In(['active', 'invited']),
+        },
+        relations: ['user', 'contact'],
+      }),
+    ]);
+    if (!fromMember || !toMember) {
+      throw new BadRequestException(
+        'Both payer and payee must be active members of this group',
+      );
+    }
+
+    // Authorization: a party to the payment, or a group owner/admin.
+    const callerIsParty =
+      callerMember.id === fromMember.id || callerMember.id === toMember.id;
+    const callerIsAdmin =
+      callerMember.role === 'owner' || callerMember.role === 'admin';
+    if (!callerIsParty && !callerIsAdmin) {
+      throw new ForbiddenException({
+        errorCode: 'RES_FORBIDDEN',
+        message:
+          'You must be a party to this payment or a group admin to record it',
+      });
+    }
+
+    // One-step confirmed is only for a non-registered counterparty. If BOTH
+    // sides are registered users, both can consent — require propose/accept.
+    if (fromMember.user && toMember.user) {
+      throw new BadRequestException({
+        errorCode: 'SETTLE_USE_PROPOSE_ACCEPT',
+        message:
+          'Both members are registered users — use the propose/accept flow so both sides confirm the payment',
+      });
+    }
+
+    const actorUser = callerMember.user;
+    const saved = await this.dataSource.transaction(async (manager) => {
+      await lockGroupMembersForShare(manager, groupId);
+      const settlement = manager.create(Settlement, {
+        group,
+        fromGroupMember: fromMember,
+        toGroupMember: toMember,
+        amount: dto.amount,
+        currency: normalizedCurrency,
+        status: 'confirmed',
+        settledOn: new Date().toISOString().split('T')[0],
+        note: dto.note,
+        recordedByUser: actorUser,
+      });
+      const s = await manager.save(Settlement, settlement);
+      await this.recordSettlementVersion(manager, s, 'confirmed', actorUser);
+      return s;
+    });
+
+    void this.writeAuditLog({
+      actorUser,
+      action: 'settlement.recorded',
+      entityId: saved.id,
+      groupId,
+      metadata: {
+        fromGroupMemberId: fromMember.id,
+        toGroupMemberId: toMember.id,
+        fromContactId: fromMember.contact?.id ?? null,
+        toContactId: toMember.contact?.id ?? null,
+        amount: Number(saved.amount),
+        currency: saved.currency,
+        recordedByUserId: actorUser.id,
+      },
+      ip: context?.ip,
+      userAgent: context?.userAgent,
+    });
+
+    return saved;
   }
 
   async listSettlements(
@@ -753,6 +1134,9 @@ export class SettlementsService {
   ): Promise<Settlement> {
     const { savedSettlement, callerUser, action } =
       await this.dataSource.transaction(async (manager) => {
+        // Confirming/cancelling a settlement changes balances — serialize
+        // against a concurrent member remove/leave (see member-lock.util).
+        await lockGroupMembersForShare(manager, groupId);
         // Validate caller active membership
         const callerMember = await manager.findOne(GroupMember, {
           where: {
@@ -780,6 +1164,13 @@ export class SettlementsService {
         if (!settlement) {
           throw new NotFoundException('Settlement not found');
         }
+
+        await this.assertSettlementTransitionAllowedForDepartedMembers(
+          manager,
+          groupId,
+          settlement,
+          dto.status,
+        );
 
         // Concurrency control: verify version matches
         if (settlement.version !== dto.version) {

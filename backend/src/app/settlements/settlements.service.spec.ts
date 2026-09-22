@@ -16,6 +16,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   PreconditionFailedException,
 } from '@nestjs/common';
 
@@ -27,6 +28,7 @@ describe('SettlementsService', () => {
   let expenseSplitRepository: jest.Mocked<Repository<ExpenseSplit>>;
   let settlementRepository: jest.Mocked<Repository<Settlement>>;
   let settlementVersionRepository: jest.Mocked<Repository<SettlementVersion>>;
+  let managerQuery: jest.Mock;
 
   beforeEach(async () => {
     const mockGroupRepository = {
@@ -35,7 +37,7 @@ describe('SettlementsService', () => {
 
     const mockGroupMemberRepository = {
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn(() => ({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -112,6 +114,16 @@ describe('SettlementsService', () => {
     };
 
     const mockEntityManager = {
+      // Raw FOR SHARE member lock (member-lock.util) — no-op in unit tests.
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn((entityClass) => {
+        if (entityClass === GroupMember) {
+          return {
+            find: mockGroupMemberRepository.find,
+          };
+        }
+        return { find: jest.fn().mockResolvedValue([]) };
+      }),
       findOne: jest.fn(async (entityClass, options: any) => {
         if (entityClass === GroupMember) {
           const res = await mockGroupMemberRepository.findOne(options);
@@ -147,6 +159,8 @@ describe('SettlementsService', () => {
         return data;
       }),
     };
+
+    managerQuery = mockEntityManager.query as jest.Mock;
 
     const mockDataSource = {
       transaction: jest.fn((cb) => cb(mockEntityManager)),
@@ -607,6 +621,259 @@ describe('SettlementsService', () => {
       // Opening therefore carries the 40 rollover.
       expect(result.breakdown.openingBalance).toBe(40.0);
     });
+
+    it('hides departed members from live balances when they are net-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(false);
+      expect(
+        result.overall.suggestedSettlements.some(
+          (s) =>
+            s.fromGroupMemberId === 'member-b' ||
+            s.toGroupMemberId === 'member-b',
+        ),
+      ).toBe(false);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-a',
+            settled: true,
+          }),
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: true,
+          }),
+        ]),
+      );
+    });
+
+    it('keeps departed members visible in live balances when non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'removed' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([
+        {
+          id: 'exp-1',
+          amountTotal: 100,
+          currency: 'USD',
+          paidByUser: userA,
+          transactionType: 'expense',
+        },
+      ] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([
+        {
+          expense: { id: 'exp-1', currency: 'USD', transactionType: 'expense' },
+          participantUser: userB,
+          amountOwed: 100,
+        },
+      ] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(true);
+      expect(result.overall.suggestedSettlements.length).toBeGreaterThan(0);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+            byCurrency: expect.arrayContaining([
+              expect.objectContaining({
+                currency: 'USD',
+                settled: false,
+              }),
+            ]),
+          }),
+        ]),
+      );
+    });
+
+    it('period view hides departed members at period-net zero even when overall net is non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      // First compute (overall): departed member has non-zero net due to historical spend.
+      // Second compute (filtered period): no in-period rows, so member is period-net zero.
+      expenseRepository.find
+        .mockResolvedValueOnce([
+          {
+            id: 'hist-exp-1',
+            amountTotal: 100,
+            currency: 'USD',
+            paidByUser: userA,
+            transactionType: 'expense',
+          },
+        ] as any[])
+        .mockResolvedValueOnce([] as any[]);
+
+      expenseSplitRepository.find
+        .mockResolvedValueOnce([
+          {
+            expense: {
+              id: 'hist-exp-1',
+              currency: 'USD',
+              transactionType: 'expense',
+            },
+            participantUser: userB,
+            amountOwed: 100,
+          },
+        ] as any[])
+        .mockResolvedValueOnce([] as any[]);
+
+      settlementRepository.find.mockResolvedValueOnce([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id', {
+        from: '2026-09-01',
+        to: '2026-09-30',
+      });
+
+      // Overall keeps departed member visible (non-zero all-time net).
+      expect(
+        result.overall.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(true);
+      // Period view hides departed member (period-net zero).
+      expect(
+        result.filtered.balances.some((b) => b.groupMemberId === 'member-b'),
+      ).toBe(false);
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+            byCurrency: expect.arrayContaining([
+              expect.objectContaining({
+                currency: 'USD',
+                settled: false,
+              }),
+            ]),
+          }),
+        ]),
+      );
+    });
+
+    it('keeps a departed cross-currency member visible when each currency is non-zero', async () => {
+      const userA = { id: 'aaaa', email: 'a@ex.com', displayName: 'User A' };
+      const userB = { id: 'bbbb', email: 'b@ex.com', displayName: 'User B' };
+
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      groupRepository.findOne.mockResolvedValueOnce({
+        id: 'group-id',
+        currency: 'USD',
+      } as any);
+      groupMemberRepository.find.mockResolvedValueOnce([
+        { id: 'member-a', user: userA, joinStatus: 'active' },
+        { id: 'member-b', user: userB, joinStatus: 'left' },
+      ] as any);
+
+      expenseRepository.find.mockResolvedValue([
+        {
+          id: 'usd-exp',
+          amountTotal: 100,
+          currency: 'USD',
+          paidByUser: userA,
+          transactionType: 'expense',
+        },
+        {
+          id: 'inr-exp',
+          amountTotal: 100,
+          currency: 'INR',
+          paidByUser: userB,
+          transactionType: 'expense',
+        },
+      ] as any[]);
+      expenseSplitRepository.find.mockResolvedValue([
+        {
+          expense: {
+            id: 'usd-exp',
+            currency: 'USD',
+            transactionType: 'expense',
+          },
+          participantUser: userB,
+          amountOwed: 100,
+        },
+        {
+          expense: {
+            id: 'inr-exp',
+            currency: 'INR',
+            transactionType: 'expense',
+          },
+          participantUser: userA,
+          amountOwed: 100,
+        },
+      ] as any[]);
+      settlementRepository.find.mockResolvedValue([] as any[]);
+
+      const result = await service.calculateGroupBalances('aaaa', 'group-id');
+
+      const memberBBalances = result.overall.balances.filter(
+        (b) => b.groupMemberId === 'member-b',
+      );
+      expect(memberBBalances.length).toBeGreaterThan(0);
+      expect(memberBBalances).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ currency: 'USD', netBalance: -100 }),
+          expect.objectContaining({ currency: 'INR', netBalance: 100 }),
+        ]),
+      );
+      expect(result.memberSettledStatus).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            groupMemberId: 'member-b',
+            settled: false,
+          }),
+        ]),
+      );
+    });
   });
 
   // ── Phase 3: Friends Balance (registered-user-only aggregation) ─────────
@@ -1037,6 +1304,20 @@ describe('SettlementsService', () => {
   });
 
   describe('proposeSettlement', () => {
+    it('rejects unsupported currency (JPY) with CURRENCY_UNSUPPORTED', async () => {
+      await expect(
+        service.proposeSettlement('caller-id', 'group-id', {
+          toUserId: 'target-id',
+          amount: 10,
+          currency: 'JPY',
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          errorCode: 'CURRENCY_UNSUPPORTED',
+        }),
+      });
+    });
+
     it('should throw ForbiddenException if caller is not an active member', async () => {
       groupMemberRepository.findOne.mockResolvedValueOnce(null);
 
@@ -1185,6 +1466,207 @@ describe('SettlementsService', () => {
           currency: 'USD',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('recordPayment', () => {
+    const group = { id: 'group-id', currency: 'USD' } as any;
+    const contactMember = {
+      id: 'contact-member',
+      user: null,
+      contact: { id: 'contact-1' },
+      role: 'member',
+    } as any;
+    const callerMember = {
+      id: 'caller-member',
+      user: { id: 'caller-id' },
+      role: 'member',
+    } as any;
+
+    const wireSave = () => {
+      settlementRepository.create.mockImplementation((d) => d as any);
+      settlementRepository.save.mockImplementation(
+        async (d) => ({ ...d, id: 'settlement-id', version: 1 }) as any,
+      );
+    };
+
+    it('records a one-step CONFIRMED payment when a Contact owes the caller (Contact=from, caller=to)', async () => {
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember) // caller
+        .mockResolvedValueOnce(contactMember) // fromMember (Contact/debtor)
+        .mockResolvedValueOnce(callerMember); // toMember (caller/creditor)
+      groupRepository.findOne.mockResolvedValueOnce(group);
+      wireSave();
+
+      const result = await service.recordPayment('caller-id', 'group-id', {
+        fromMemberId: 'contact-member',
+        toMemberId: 'caller-member',
+        amount: 40,
+        currency: 'USD',
+      });
+
+      expect(settlementRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'confirmed',
+          fromGroupMember: contactMember,
+          toGroupMember: callerMember,
+          amount: 40,
+          currency: 'USD',
+          recordedByUser: callerMember.user,
+        }),
+      );
+      expect(settlementVersionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'confirmed' }),
+      );
+      expect((result as any).status).toBe('confirmed');
+    });
+
+    it('records a one-step CONFIRMED payment when the caller owes a Contact (caller=from, Contact=to)', async () => {
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember) // caller
+        .mockResolvedValueOnce(callerMember) // fromMember (caller/debtor)
+        .mockResolvedValueOnce(contactMember); // toMember (Contact/creditor)
+      groupRepository.findOne.mockResolvedValueOnce(group);
+      wireSave();
+
+      await service.recordPayment('caller-id', 'group-id', {
+        fromMemberId: 'caller-member',
+        toMemberId: 'contact-member',
+        amount: 25,
+        currency: 'USD',
+      });
+
+      expect(settlementRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'confirmed',
+          fromGroupMember: callerMember,
+          toGroupMember: contactMember,
+        }),
+      );
+    });
+
+    it('rejects (SETTLE_USE_PROPOSE_ACCEPT) when both parties are registered users', async () => {
+      const otherRegistered = {
+        id: 'other-member',
+        user: { id: 'other-id' },
+        role: 'member',
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember) // caller
+        .mockResolvedValueOnce(callerMember) // from (registered)
+        .mockResolvedValueOnce(otherRegistered); // to (registered)
+      groupRepository.findOne.mockResolvedValueOnce(group);
+
+      const err = await service
+        .recordPayment('caller-id', 'group-id', {
+          fromMemberId: 'caller-member',
+          toMemberId: 'other-member',
+          amount: 10,
+          currency: 'USD',
+        })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.getResponse()).toMatchObject({
+        errorCode: 'SETTLE_USE_PROPOSE_ACCEPT',
+      });
+      expect(settlementRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-party, non-admin caller with ForbiddenException', async () => {
+      const fromM = {
+        id: 'm1',
+        user: { id: 'u1' },
+        role: 'member',
+      } as any;
+      const toM = {
+        id: 'm2',
+        user: null,
+        contact: { id: 'c2' },
+        role: 'member',
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember) // caller (member, not a party)
+        .mockResolvedValueOnce(fromM)
+        .mockResolvedValueOnce(toM);
+      groupRepository.findOne.mockResolvedValueOnce(group);
+
+      await expect(
+        service.recordPayment('caller-id', 'group-id', {
+          fromMemberId: 'm1',
+          toMemberId: 'm2',
+          amount: 10,
+          currency: 'USD',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(settlementRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('lets a group ADMIN record a payment between a registered member and a Contact', async () => {
+      const admin = {
+        id: 'admin-member',
+        user: { id: 'admin-id' },
+        role: 'admin',
+      } as any;
+      const registeredParty = {
+        id: 'reg-member',
+        user: { id: 'reg-id' },
+        role: 'member',
+      } as any;
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(admin) // caller (admin, not a party)
+        .mockResolvedValueOnce(registeredParty) // from
+        .mockResolvedValueOnce(contactMember); // to (Contact)
+      groupRepository.findOne.mockResolvedValueOnce(group);
+      wireSave();
+
+      await service.recordPayment('admin-id', 'group-id', {
+        fromMemberId: 'reg-member',
+        toMemberId: 'contact-member',
+        amount: 15,
+        currency: 'USD',
+      });
+
+      expect(settlementRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'confirmed',
+          recordedByUser: admin.user,
+        }),
+      );
+    });
+
+    it('rejects a currency that does not match the group base currency', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce(callerMember);
+      groupRepository.findOne.mockResolvedValueOnce(group);
+
+      await expect(
+        service.recordPayment('caller-id', 'group-id', {
+          fromMemberId: 'contact-member',
+          toMemberId: 'caller-member',
+          amount: 10,
+          currency: 'EUR',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('acquires a FOR SHARE member lock inside the write transaction (serializes vs member removal)', async () => {
+      groupMemberRepository.findOne
+        .mockResolvedValueOnce(callerMember)
+        .mockResolvedValueOnce(contactMember)
+        .mockResolvedValueOnce(callerMember);
+      groupRepository.findOne.mockResolvedValueOnce(group);
+      wireSave();
+
+      await service.recordPayment('caller-id', 'group-id', {
+        fromMemberId: 'contact-member',
+        toMemberId: 'caller-member',
+        amount: 40,
+        currency: 'USD',
+      });
+
+      expect(managerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('FOR SHARE'),
+        ['group-id'],
+      );
     });
   });
 
@@ -1432,6 +1914,101 @@ describe('SettlementsService', () => {
 
       expect(mockSettlement.status).toBe('cancelled');
       expect(result).toBeDefined();
+    });
+
+    it('blocks confirming a proposed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      settlementRepository.findOne.mockResolvedValueOnce({
+        id: 'settlement-id',
+        version: 1,
+        status: 'proposed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-a',
+          joinStatus: 'left',
+          user: { id: 'debtor-id', email: 'debtor@example.com' },
+        },
+      ] as any);
+
+      await expect(
+        service.updateSettlement('creditor-id', 'group-id', 'settlement-id', {
+          status: 'confirmed',
+          version: 1,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('blocks cancelling a confirmed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+      settlementRepository.findOne.mockResolvedValueOnce({
+        id: 'settlement-id',
+        version: 1,
+        status: 'confirmed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-b',
+          joinStatus: 'removed',
+          user: { id: 'creditor-id', email: 'creditor@example.com' },
+        },
+      ] as any);
+
+      await expect(
+        service.updateSettlement('debtor-id', 'group-id', 'settlement-id', {
+          status: 'cancelled',
+          version: 1,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows cancelling a proposed settlement when a party has departed', async () => {
+      groupMemberRepository.findOne.mockResolvedValueOnce({
+        id: 'caller-member',
+      } as any);
+
+      const mockSettlement = {
+        id: 'settlement-id',
+        version: 1,
+        status: 'proposed',
+        fromGroupMember: { id: 'member-a' },
+        toGroupMember: { id: 'member-b' },
+        fromUser: { id: 'debtor-id' },
+        toUser: { id: 'creditor-id' },
+      } as any;
+      settlementRepository.findOne.mockResolvedValueOnce(mockSettlement);
+      groupMemberRepository.find.mockResolvedValue([
+        {
+          id: 'member-a',
+          joinStatus: 'left',
+          user: { id: 'debtor-id', email: 'debtor@example.com' },
+        },
+      ] as any);
+      settlementRepository.save.mockResolvedValueOnce(mockSettlement);
+
+      const result = await service.updateSettlement(
+        'debtor-id',
+        'group-id',
+        'settlement-id',
+        {
+          status: 'cancelled',
+          version: 1,
+        },
+      );
+
+      expect(result.status).toBe('cancelled');
     });
   });
 });

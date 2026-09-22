@@ -23,3 +23,5 @@ export { AddGoalsV2Fields1720000000000 } from './1720000000000-AddGoalsV2Fields'
 export { AddExpenseTags1720100000000 } from './1720100000000-AddExpenseTags';
 export { AddCustomTags1720200000000 } from './1720200000000-AddCustomTags';
 export { AddPublicShares1720300000000 } from './1720300000000-AddPublicShares';
+export { AddDirectLedgerContactIdentity1720400000000 } from './1720400000000-AddDirectLedgerContactIdentity';
+export { AddSettlementRecordedBy1720500000000 } from './1720500000000-AddSettlementRecordedBy';

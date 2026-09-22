@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import {
+  Contact,
   CreateDirectSettlementDto,
   CreateDirectTransactionDto,
   DirectLedgerEntry,
@@ -27,6 +28,7 @@ import {
   simplifyLedgerDebts,
 } from '@finmate/data-models';
 import { resolveMemberDisplay } from '../common/member-display.util';
+import { ContactsService } from '../contacts/contacts.service';
 
 /** Per-currency accumulator for one counterparty. */
 interface CurrencyBucket {
@@ -36,15 +38,45 @@ interface CurrencyBucket {
   history: PersonHistoryItem[];
 }
 
-/** Accumulated relationship with one counterparty user, keyed by currency. */
+/**
+ * Accumulated relationship with one counterparty, keyed by currency. The
+ * counterparty is a registered `User` or a non-member `Contact`; `key` is the
+ * opaque ledger identity (`user:<id>` / `contact:<id>`) that also feeds
+ * `simplifyLedgerDebts` unchanged.
+ */
 interface CounterpartyLedger {
-  userId: string;
+  key: string;
+  kind: 'user' | 'contact';
+  /** Set when kind === 'user'. */
+  userId?: string;
+  /** Set when kind === 'contact'. */
+  contactId?: string;
   displayName: string;
   email: string;
   byCurrency: Map<string, CurrencyBucket>;
 }
 
+/** Metadata carried alongside a ledger key when a counterparty is first seen. */
+interface CounterpartyMeta {
+  kind: 'user' | 'contact';
+  userId?: string;
+  contactId?: string;
+  displayName: string;
+  email: string;
+}
+
+/** Get-or-create a counterparty bucket by its opaque ledger key. */
+type GetCp = (key: string, meta: CounterpartyMeta) => CounterpartyLedger;
+
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Opaque ledger identity keys. Kept as plain prefixed strings so the FIN-002
+ * calculator `simplifyLedgerDebts` continues to receive opaque keys with no
+ * business meaning (it already sorts/tie-breaks purely lexicographically).
+ */
+const keyForUser = (id: string): string => `user:${id}`;
+const keyForContact = (id: string): string => `contact:${id}`;
 
 @Injectable()
 export class PersonLedgerService {
@@ -63,7 +95,64 @@ export class PersonLedgerService {
     private readonly directLedgerRepository: Repository<DirectLedgerEntry>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Contact)
+    private readonly contactRepository: Repository<Contact>,
+    // P2P-2: reused only for its existing merge/redirect resolver — no second
+    // merge mechanism and no claim/merge write path is touched here.
+    private readonly contactsService: ContactsService,
   ) {}
+
+  /**
+   * Read-time resolution of a Contact-backed counterparty to its terminal
+   * ledger identity (P2P-2). Follows the existing Contact merge redirect chain
+   * (`ContactsService.resolveMergeRedirect`, cycle-guarded) to the surviving
+   * Contact, then folds a *claimed* Contact into its `user:<id>` identity so
+   * historical Contact-backed rows collapse into the same human as the
+   * registered User. The underlying `DirectLedgerEntry` is never mutated.
+   */
+  private async resolveContactIdentity(
+    contactId: string,
+  ): Promise<CounterpartyMeta> {
+    const contact = await this.contactRepository.findOne({
+      where: { id: contactId },
+      relations: ['mergedIntoContact', 'claimedByUser'],
+    });
+    if (!contact) {
+      // Defensive: FK guarantees the row exists, but never throw during a
+      // read-only ledger build — fall back to an opaque contact identity.
+      return { kind: 'contact', contactId, displayName: 'Contact', email: '' };
+    }
+
+    // Follow merge redirects to the terminal (surviving) Contact. Only archived
+    // rows redirect; resolveMergeRedirect handles multi-hop chains + cycles.
+    let terminal = contact;
+    if (contact.status === 'archived' && contact.mergedIntoContact) {
+      const resolved = await this.contactsService.resolveMergeRedirect(contact);
+      // resolveMergeRedirect loads only `mergedIntoContact`; reload the terminal
+      // with its claim state so a merged→claimed chain folds to the User.
+      terminal =
+        (await this.contactRepository.findOne({
+          where: { id: resolved.id },
+          relations: ['claimedByUser'],
+        })) ?? resolved;
+    }
+
+    if (terminal.status === 'claimed' && terminal.claimedByUser) {
+      const u = terminal.claimedByUser;
+      return {
+        kind: 'user',
+        userId: u.id,
+        displayName: u.displayName || u.email,
+        email: u.email,
+      };
+    }
+    return {
+      kind: 'contact',
+      contactId: terminal.id,
+      displayName: terminal.displayName || 'Contact',
+      email: '',
+    };
+  }
 
   // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -86,6 +175,12 @@ export class PersonLedgerService {
     const byCurrency = new Map<string, { owed: number; owe: number }>();
 
     for (const cp of ledger.values()) {
+      // P2P-1: only registered-User counterparties are surfaced in the public
+      // response. Contact-backed direct entries are assembled internally (so the
+      // ledger is Contact-capable) but exposed via dedicated Contact routes in a
+      // later batch (P2P-3), keeping the existing User API byte-for-byte.
+      if (cp.kind !== 'user' || !cp.userId) continue;
+      const counterpartyUserId = cp.userId;
       for (const [currency, bucket] of cp.byCurrency.entries()) {
         const net = round2(
           bucket.groupObligations + bucket.directLending + bucket.settlements,
@@ -95,7 +190,7 @@ export class PersonLedgerService {
         else if (net < 0) totals.owe += Math.abs(net);
         byCurrency.set(currency, totals);
         people.push({
-          counterpartyUserId: cp.userId,
+          counterpartyUserId,
           displayName: cp.displayName,
           email: cp.email,
           currency,
@@ -143,7 +238,7 @@ export class PersonLedgerService {
       throw new BadRequestException('Cannot view a relationship with yourself');
     }
     const ledger = await this.buildLedger(callerUserId, counterpartyUserId);
-    const cp = ledger.get(counterpartyUserId);
+    const cp = ledger.get(keyForUser(counterpartyUserId));
 
     const counterparty = await this.userRepository.findOne({
       where: { id: counterpartyUserId },
@@ -241,7 +336,9 @@ export class PersonLedgerService {
     const currency = dto.currency.toUpperCase();
 
     const ledger = await this.buildLedger(callerUserId, counterpartyUserId);
-    const bucket = ledger.get(counterpartyUserId)?.byCurrency.get(currency);
+    const bucket = ledger
+      .get(keyForUser(counterpartyUserId))
+      ?.byCurrency.get(currency);
     const net = bucket
       ? round2(
           bucket.groupObligations + bucket.directLending + bucket.settlements,
@@ -333,12 +430,22 @@ export class PersonLedgerService {
   ): Promise<DirectLedgerEntry> {
     const entry = await this.directLedgerRepository.findOne({
       where: { id: entryId },
-      relations: ['fromUser', 'toUser', 'createdByUser'],
+      relations: [
+        'fromUser',
+        'toUser',
+        'fromContact',
+        'toContact',
+        'createdByUser',
+      ],
     });
     if (!entry) throw new NotFoundException('Transaction not found');
+    // A Contact-backed entry leaves one side's `*User` null (a Contact never
+    // records/queries), so guard both sides — the caller is authorised iff they
+    // are the registered User on either side. `createdByUser` is always one of
+    // the User sides (entity invariant), so this also covers the recorder.
     if (
-      entry.fromUser.id !== callerUserId &&
-      entry.toUser.id !== callerUserId
+      entry.fromUser?.id !== callerUserId &&
+      entry.toUser?.id !== callerUserId
     ) {
       throw new ForbiddenException('You are not a party to this transaction');
     }
@@ -375,19 +482,19 @@ export class PersonLedgerService {
     onlyCounterpartyId?: string,
   ): Promise<Map<string, CounterpartyLedger>> {
     const ledger = new Map<string, CounterpartyLedger>();
-    const getCp = (
-      userId: string,
-      display: { displayName: string; email: string },
-    ): CounterpartyLedger => {
-      let cp = ledger.get(userId);
+    const getCp: GetCp = (key, meta) => {
+      let cp = ledger.get(key);
       if (!cp) {
         cp = {
-          userId,
-          displayName: display.displayName,
-          email: display.email,
+          key,
+          kind: meta.kind,
+          userId: meta.userId,
+          contactId: meta.contactId,
+          displayName: meta.displayName,
+          email: meta.email,
           byCurrency: new Map(),
         };
-        ledger.set(userId, cp);
+        ledger.set(key, cp);
       }
       return cp;
     };
@@ -400,10 +507,7 @@ export class PersonLedgerService {
   private async accumulateGroupLedger(
     callerUserId: string,
     onlyCounterpartyId: string | undefined,
-    getCp: (
-      userId: string,
-      display: { displayName: string; email: string },
-    ) => CounterpartyLedger,
+    getCp: GetCp,
   ): Promise<void> {
     // Caller's active memberships in NORMAL groups only.
     const memberships = await this.groupMemberRepository.find({
@@ -533,7 +637,9 @@ export class PersonLedgerService {
           if (onlyCounterpartyId && info.userId !== onlyCounterpartyId)
             continue;
 
-          const cp = getCp(info.userId, {
+          const cp = getCp(keyForUser(info.userId), {
+            kind: 'user',
+            userId: info.userId,
             displayName: info.displayName,
             email: info.email ?? '',
           });
@@ -594,7 +700,9 @@ export class PersonLedgerService {
           (counterpartyUserId === toUserId
             ? s.toGroupMember?.user?.email
             : s.fromGroupMember?.user?.email) ?? '';
-        const cp = getCp(counterpartyUserId, {
+        const cp = getCp(keyForUser(counterpartyUserId), {
+          kind: 'user',
+          userId: counterpartyUserId,
           displayName: cpDisplayName || cpEmail,
           email: cpEmail,
         });
@@ -618,42 +726,97 @@ export class PersonLedgerService {
   private async accumulateDirectLedger(
     callerUserId: string,
     onlyCounterpartyId: string | undefined,
-    getCp: (
-      userId: string,
-      display: { displayName: string; email: string },
-    ) => CounterpartyLedger,
+    getCp: GetCp,
   ): Promise<void> {
+    // The caller is always a User on one side (a Contact never records/queries),
+    // so filtering by the caller's user id on either side finds every entry the
+    // caller is party to — including User↔Contact ones.
     const entries = await this.directLedgerRepository.find({
       where: [
         { fromUser: { id: callerUserId }, deletedAt: IsNull() },
         { toUser: { id: callerUserId }, deletedAt: IsNull() },
       ],
-      relations: ['fromUser', 'toUser'],
+      relations: ['fromUser', 'toUser', 'fromContact', 'toContact'],
     });
 
+    // P2P-2: resolve each DISTINCT counterparty Contact exactly once (claim +
+    // merge redirect), so a Contact appearing in many rows never triggers a
+    // per-row query — no N+1. Repeated resolution is idempotent and does no
+    // writes, so the ledger is stable across repeated reads.
+    const contactIds = new Set<string>();
     for (const e of entries) {
-      const isCallerTo = e.toUser.id === callerUserId;
-      const counterparty = isCallerTo ? e.fromUser : e.toUser;
-      if (onlyCounterpartyId && counterparty.id !== onlyCounterpartyId)
-        continue;
+      const callerParty =
+        e.fromUser?.id === callerUserId || e.toUser?.id === callerUserId;
+      if (!callerParty) continue;
+      const cpContact =
+        e.toUser?.id === callerUserId ? e.fromContact : e.toContact;
+      if (cpContact) contactIds.add(cpContact.id);
+    }
+    const contactIdentity = new Map<string, CounterpartyMeta>();
+    await Promise.all(
+      [...contactIds].map(async (id) =>
+        contactIdentity.set(id, await this.resolveContactIdentity(id)),
+      ),
+    );
+
+    for (const e of entries) {
+      const callerIsFrom = e.fromUser?.id === callerUserId;
+      const callerIsTo = e.toUser?.id === callerUserId;
+      if (!callerIsFrom && !callerIsTo) continue;
+
+      // Counterparty = the OTHER side — a registered User or a non-member Contact.
+      const cpUser = callerIsTo ? e.fromUser : e.toUser;
+      const cpContact = callerIsTo ? e.fromContact : e.toContact;
+
+      let cpKey: string;
+      let cpMeta: CounterpartyMeta;
+      if (cpUser) {
+        cpKey = keyForUser(cpUser.id);
+        cpMeta = {
+          kind: 'user',
+          userId: cpUser.id,
+          displayName: cpUser.displayName || cpUser.email,
+          email: cpUser.email,
+        };
+      } else if (cpContact) {
+        // Read-time resolved identity: a claimed Contact folds to user:<id>
+        // (collapsing with any native User↔User history for the same human);
+        // a merged Contact resolves to its terminal Contact. History rows are
+        // never rewritten — only the ledger key is resolved here.
+        cpMeta =
+          contactIdentity.get(cpContact.id) ??
+          ({
+            kind: 'contact',
+            contactId: cpContact.id,
+            displayName: cpContact.displayName || 'Contact',
+            email: '',
+          } as CounterpartyMeta);
+        cpKey =
+          cpMeta.kind === 'user'
+            ? keyForUser(cpMeta.userId as string)
+            : keyForContact(cpMeta.contactId as string);
+      } else {
+        continue; // malformed row (DB checks forbid this) — skip defensively
+      }
+
+      // `onlyCounterpartyId` is a User id (P2P-1 read routes are User-only), so
+      // an unclaimed Contact never matches; a CLAIMED Contact resolves to its
+      // user id and therefore correctly folds into that user's detail view.
+      if (onlyCounterpartyId && cpMeta.userId !== onlyCounterpartyId) continue;
 
       let signedForCaller: number;
       let bucketKey: 'directLending' | 'settlements';
       if (e.entryType === 'settlement') {
         // from = payer. Caller paying back increases net toward "they owe you".
-        signedForCaller =
-          e.fromUser.id === callerUserId ? Number(e.amount) : -Number(e.amount);
+        signedForCaller = callerIsFrom ? Number(e.amount) : -Number(e.amount);
         bucketKey = 'settlements';
       } else {
-        // lend/borrow: toUser is the creditor.
-        signedForCaller = isCallerTo ? Number(e.amount) : -Number(e.amount);
+        // lend/borrow: the `to` side is the creditor.
+        signedForCaller = callerIsTo ? Number(e.amount) : -Number(e.amount);
         bucketKey = 'directLending';
       }
 
-      const cp = getCp(counterparty.id, {
-        displayName: counterparty.displayName || counterparty.email,
-        email: counterparty.email,
-      });
+      const cp = getCp(cpKey, cpMeta);
       const bucket = this.ensureBucket(cp, e.currency);
       bucket[bucketKey] += signedForCaller;
       bucket.history.push({

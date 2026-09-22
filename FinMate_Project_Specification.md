@@ -4710,3 +4710,226 @@ the anonymous endpoint (PUBLIC-1G).
 - **Files:** `group-detail.component.ts`, `group-detail.component.spec.ts` (2 files, frontend only).
 - **Verification:** frontend 79 suites / **721 tests** (was 713; +8); production build clean; lint 0 errors
   (pre-existing `any` warnings only). No backend change → backend suite/FIN-002 not required. No push.
+
+## 2026-09-07 — Reusable non-member "Person": audit + Priya reuse regression lock
+
+- **Summary:** A "Reusable Non-Member Person" feature was requested. A repository audit found the capability
+  **already fully implemented** as the `Contact` entity (not a new `Person` model): stable UUID identity,
+  `displayName`/`email`/`phoneNumber`, `status` (`pending`/`claimed`/`archived`), `claimedByUser`/`claimedAt`
+  link path, and `mergedIntoContact`/`mergedAt`/`mergedByUser` merge lineage. A non-member participates via a
+  Contact-backed `GroupMember` (contact set, `user` null → no login/keys/permissions), and expense
+  splits/payments reference that membership via `participantGroupMember`/`paidByGroupMember`. Building a second
+  `Person` model was rejected as duplicative (violates the frozen identity architecture and the "reuse existing
+  identity" rule). **No new entity, schema, migration, API, or architecture change.** Only the missing
+  end-to-end regression test for the core "same non-member reused across multiple expenses in one group"
+  scenario was added.
+- **Why already-done:** `ContactsService.resolveOrCreateIdentity` resolves-or-creates exactly one Contact
+  (advisory lock + partial unique indexes prevent duplicates); `claimContactsForUser` links a later-registered
+  User without minting a second identity or copying history; `mergeContacts` archives (never deletes) and
+  forbids LOW/name-only auto-merge; `listAddressBook` is group-scoped (no global private directory). All
+  pre-existing and unit-tested (~45 cases in `contacts.service.spec.ts`).
+- **Test added:** `expenses.service.spec.ts` → new describe _"reusable non-member Contact across multiple group
+  expenses (Priya scenario)"_: creates 3 group expenses (Hotel/Dinner/Taxi) all splitting to the same
+  Contact-backed member "Priya"; asserts every persisted Priya split references the **identical** GroupMember
+  object (one stable Person identity, not one-per-expense), exactly one underlying Contact id, `user` undefined
+  (never resolved as an authenticated User), and 3 distinct Expense rows.
+- **Files:** backend — `backend/src/app/expenses/expenses.service.spec.ts` (test-only; 1 file).
+- **Verification:** `npx nx test backend` → **83 suites / 929 tests pass** (was 928; +1), including all FIN-002
+  finance golden tests. No production code touched; no frontend/API/schema/migration/E2EE/finance change. No push.
+
+## 2026-09-07 — Reusable non-member Contacts in the group expense UI (frontend)
+
+- **Summary:** Made the already-supported reusable non-member Contact selectable/reusable from the group
+  Add/Edit-Expense modal. Previously the modal was keyed entirely by `user.id` and **excluded**
+  Contact-backed members from both participants (`!!m.user`) and payers, so a non-member could never be
+  put on a group expense from the UI despite full backend support. **Frontend-only, additive; no backend,
+  DTO, migration, or FIN-002 change** — the contract (`participantGroupMemberId`, `paidByGroupMemberId`)
+  already existed.
+- **Design (approved Option A — additive composite key):** registered members keep their raw `user.id`
+  and are still sent as `participantUserId`/`paidByUserId` (byte-for-byte unchanged); non-member
+  Contact-backed members are keyed by `member:<groupMemberId>` and sent as
+  `participantGroupMemberId`/`paidByGroupMemberId`. The SAME GroupMember id is reused across every expense
+  — no client-side identity creation, no per-expense Contact.
+- **Changes (`create-expense-modal.component.ts`):** `availableParticipants`/`availablePayers` now include
+  Contact-backed members with a `kind: 'user' | 'contact'` discriminator; `resolveParticipantUserId` →
+  `resolveParticipantKey` (round-trips Contact-backed splits/payer in edit mode instead of dropping them);
+  new `participantRefFor`/`isContactKey`/`groupMemberIdOf` bridge the selection key to the DTO fields;
+  `currentSplitPayload` and the payer payload branch on the key; default create-mode selection also
+  auto-selects Contact-backed members; `hasContactParticipants()` added.
+- **Template (`create-expense-modal.component.html`):** a "Contact" badge per non-member row, a "· Contact"
+  suffix on contact payer options, and a caption clarifying a Contact is not a group member and gains no
+  group access. Only `displayName` is ever rendered — no phone/email.
+- **Privacy:** selector is limited to this group's already-authorized members; no new search/endpoint; no
+  contact phone/email surfaced (test-asserted).
+- **Files:** frontend — `create-expense-modal.component.ts`, `create-expense-modal.component.html`,
+  `create-expense-modal.component.spec.ts` (3 files).
+- **Tests:** +9 modal cases (Priya): lists/auto-selects the Contact by `member:<id>`; **reuses the same
+  GroupMember id across a 2nd expense**; User+Contact splits coexist; Contact payer → `paidByGroupMemberId`
+  (no `paidByUserId`); fixed-amount split for a Contact; edit-mode round-trip; no phone/email exposure;
+  badge/caption render.
+- **Verification:** `npx nx test frontend` → **79 suites / 730 tests pass** (was 721; +9); `npx nx lint
+frontend` 0 errors (pre-existing `any` warnings only); prettier clean on changed files. No push.
+
+## 2026-09-07 — Add a new non-member Contact from group Add-Expense (frontend)
+
+- **Summary:** Closed the last UX gap — an owner/admin can now add a brand-new non-member Contact **without
+  leaving Add Expense**. Prior to this the only entry point was Members tab → Add New Contact. Added a small
+  owner/admin-only inline "+ Add someone not in this group" form in the expense modal's participant area that
+  **reuses the existing identity path** and auto-selects the created Contact. **Frontend-only; no backend,
+  DTO, schema, migration, finance, E2EE, P2P, recurring, or public-sharing change; no new endpoint.**
+- **Reuse (no duplicated logic):** the inline form calls the existing
+  `GroupsService.inviteMember(groupId, { identifier, displayName, role:'member' })` →
+  `POST /groups/:id/members` → `GroupsService.inviteMember` → `ContactsService.resolveOrCreateIdentity`.
+  The Members-tab Add-New-Contact modal was **not** reusable directly (it stages into the bulk-invite +
+  key-wrapping flow), so per the audit's fallback the smallest equivalent integration keeps identity
+  creation in the existing API/service layer. Key-wrapping is intentionally omitted — the backend ignores
+  it for a Contact (no `targetUser`).
+- **Authorization (frozen — owner/admin only):** control shown only when `canAddContact()` (=
+  `isCurrentUserOwnerOrAdmin()`); `submitNewContact()` also guards; the backend `inviteMember` owner/admin
+  check remains the security boundary. Regular members see a non-actionable hint instead.
+- **State/refresh:** on success the modal optimistically selects `member:<newGroupMemberId>` and emits a new
+  `memberChanged` output wired to the parent's existing `fetchMembers()`; the refreshed `members()` flows
+  back in. The create-mode default-selection was guarded to **initialize-once** so the mid-expense refresh
+  no longer wipes the user's in-progress selection.
+- **Payer / reuse / duplicates / privacy:** contact payer → `paidByGroupMemberId` (no `paidByUserId`); the
+  same GroupMember id is reused on later expenses (no second Contact); duplicate handling is entirely
+  server-side (conflict message surfaced, no client-side duplicate); only `displayName` is rendered — no
+  phone/email, no Contact search.
+- **Files:** frontend — `create-expense-modal.component.ts`, `create-expense-modal.component.html`,
+  `create-expense-modal.component.spec.ts`, `pages/group-detail/group-detail.component.html` (wire
+  `memberChanged`). (4 files.)
+- **Tests:** +7 modal cases: owner/admin visibility + non-owner cannot invoke; create-from-expense uses the
+  existing inviteMember path once, refreshes, auto-selects, shows only displayName; reuse of same
+  GroupMember id on a 2nd expense; contact payer; privacy (no search, no phone/email); server-conflict
+  surfaced with no duplicate.
+- **Verification:** `npx nx test frontend` → **79 suites / 737 tests pass** (was 730; +7); `npx nx lint
+frontend` 0 errors (pre-existing warnings only); prettier clean on changed files. Backend untouched → not
+  run. No push.
+
+## 2026-09-07 — P2P-1: DirectLedgerEntry Contact identity + ledger assembly (backend)
+
+- **Summary:** First backend batch of the approved P2P Contact plan. `DirectLedgerEntry` now supports a
+  non-member `Contact` on either side (`User XOR Contact`), mirroring `ExpenseSplit`/`ExpensePayment`, and
+  `PersonLedgerService` assembles direct entries under opaque `user:<id>` / `contact:<id>` ledger keys.
+  **No API/frontend/claim/merge/settlement-API work** (later batches). **FIN-002 calculators untouched.**
+- **Entity (`direct-ledger-entry.entity.ts`):** `fromUser`/`toUser` relaxed to nullable; added nullable
+  `fromContact`/`toContact` (`@ManyToOne(Contact)`); `createdByUser` still required (a Contact never
+  records). New `@Check`s: per-side XOR (`chk_dle_from_identity`/`chk_dle_to_identity`) + same-kind
+  distinctness (`chk_dle_distinct_parties` — rejects userA→userA and contactC→contactC, allows cross-kind);
+  added `fromContact`/`toContact` indexes.
+- **Migration `1720400000000-AddDirectLedgerContactIdentity`:** additive/non-destructive — drops NOT NULL on
+  the two user FKs, adds two nullable contact FKs (`ON DELETE RESTRICT`), swaps the distinctness check, adds
+  the XOR checks + indexes. Existing User↔User rows untouched (no backfill/rewrite/delete). `down()` is
+  **guarded**: raises if Contact-backed rows exist rather than silently deleting history; otherwise reverses
+  the schema. Registered in `migrations/index.ts`.
+- **`PersonLedgerService`:** opaque key helpers `keyForUser`/`keyForContact`; `CounterpartyLedger` rekeyed to
+  a composite key + `kind`/`userId?`/`contactId?`; `accumulateDirectLedger` resolves the counterparty as User
+  **or** Contact (caller is always the User side); group-side keys wrapped in `keyForUser` (V1 guards left
+  **unchanged** — deferred). `simplifyLedgerDebts` still receives opaque keys, unmodified. **External User
+  API is byte-for-byte unchanged:** `getOverview` skips non-user counterparties (P2P-1 defers Contact
+  exposure to P2P-3), `getPersonDetail`/`createDirectSettlement` look up `keyForUser(counterpartyUserId)`; a
+  Contact's email/phone is never surfaced through the ledger (`email: ''`).
+- **Tests (+13):** migration spec (5) asserts additive/XOR/same-kind/guarded-down SQL; `person-ledger` spec
+  (8) proves User→Contact & Contact→User assembly, same-Contact reuse across 3 entries → one `contact:<id>`
+  identity, per-currency bucketing, zero-net, round2 drift, User↔User parity (internal `user:<id>` key,
+  external `counterpartyUserId` unchanged), and that Contacts are not yet surfaced in the User overview.
+- **Files:** `shared/data-models/src/lib/direct-ledger-entry.entity.ts`;
+  `backend/src/migrations/1720400000000-AddDirectLedgerContactIdentity.ts` (+ `.spec.ts`);
+  `backend/src/migrations/index.ts`; `backend/src/app/people/person-ledger.service.ts` (+ `.spec.ts`).
+- **Verification:** `npx nx test backend` → **84 suites / 942 tests pass** (was 929; +13), including the full
+  FIN-002 `finance-golden` gate (unchanged) and all existing `person-ledger` User↔User tests (parity).
+  `nx lint backend`/`data-models` 0 errors; prettier clean. No push.
+- **Governance follow-up (NOT done here):** the frozen `FINMATE_DECISION_LEDGER.md` + an ADR must record
+  "P2P counterparty = User XOR Contact; Contact claim/merge = read-time resolution; Contact email/phone
+  omitted from P2P DTOs." Not authored in this code batch — editing the frozen doc stack needs the
+  freeze/back-port governance approval. Flagged as a required approval before P2P-3 exposes Contacts.
+
+## 2026-09-07 — P2P-2: read-time Contact claim + merge resolution for the direct ledger (backend)
+
+- **Summary:** Second backend batch of the P2P Contact plan. `PersonLedgerService` now resolves a
+  Contact-backed direct-ledger counterparty **at read time**: a _claimed_ Contact folds to its
+  `user:<id>` identity, and a _merged_ Contact follows the existing redirect chain to its terminal
+  survivor. **Historical `DirectLedgerEntry` rows are never rewritten** (immutable) — this is purely
+  ledger-assembly identity resolution. No API/frontend/claim-write/merge-write changes; FIN-002
+  calculators untouched.
+- **Reuse (no second mechanism):** follows `ContactsService.resolveMergeRedirect` (the existing
+  cycle-guarded chain resolver); `claimContactsForUser` and `mergeContacts` are **unmodified**.
+  `PeopleModule` now imports `ContactsModule` and registers the `Contact` repo.
+- **Resolution (`resolveContactIdentity`):** loads the Contact (`mergedIntoContact` + `claimedByUser`);
+  if archived→ follow redirect to terminal, reload its claim state; if terminal is `claimed`→
+  `user:<claimedByUser.id>` (surfacing the registered user's own name/email like any User counterparty),
+  else `contact:<terminalId>` (Contact email/phone still never surfaced). Handles chains A→B→C and
+  A→B→C→claimed-User.
+- **Identity collapse:** because a claimed Contact resolves to `user:<id>`, historical Contact-backed
+  rows share the SAME `CounterpartyLedger` bucket as native User↔User rows for that human — one balance
+  row, combined net (e.g. Contact ₹500 + User ₹300 → U9 ₹800), and `getOverview` surfaces the single
+  collapsed row. `getPersonDetail(userId)` includes the folded Contact history via the same key.
+- **No N+1:** each distinct counterparty Contact is resolved once per `buildLedger` (deduped map);
+  repeated rows for the same Contact reuse the cached identity. Read-only — no writes during assembly
+  (idempotent across repeated reads).
+- **Unchanged:** `simplifyLedgerDebts`/`calculateDeterministicSplits`/golden fixtures; `round2`,
+  currency bucketing, sign/direction, ordering; the group-derived V1 guards (`!info.userId` /
+  `fromGroupMember?.user?.id`) — still deferred.
+- **Files:** `backend/src/app/people/person-ledger.service.ts` (+ `.spec.ts`);
+  `backend/src/app/people/people.module.ts`.
+- **Tests (+12):** unclaimed keeps `contact:<id>`; claimed→`user:<id>` (no row mutation); claim collapse
+  into one identity + combined net (+ overview one-row); 3 entries for one claimed Contact → one identity
+  with a single lookup (no N+1); merge A→B→terminal; merge+claim; redirect chain A→B→C; chain+claim;
+  immutability (no save/softRemove/create); idempotency; multi-currency bucketing; round2 preserved.
+- **Verification:** `npx nx test backend` → **84 suites / 954 tests pass** (was 942; +12), full FIN-002
+  `finance-golden` gate unchanged. `nx lint backend` 0 errors; prettier clean. No push.
+- **Governance:** ADR + `FINMATE_DECISION_LEDGER.md` addendum still owed (frozen stack; needs
+  freeze/back-port approval) — unchanged from P2P-1; not authored here.
+
+## 2026-09-16 — Non-registered-participant gap closure on the Contact model (backend)
+
+Closing the "non-registered participants" feature on the **existing Contact model** — ADR-025 /
+P2P-CNT-1 retained, **no Person entity introduced** (see Stage-1 audit). Additive, GOV-1 compliant;
+FIN-002 `finance-golden` re-run green after every step. Separate commit per fix.
+
+- **Fix A — `loadCallerEntry` null-safety (`person-ledger.service.ts`):** a Contact-backed
+  `DirectLedgerEntry` leaves one side's `*User` null; `loadCallerEntry` dereferenced `entry.fromUser.id`
+  / `entry.toUser.id` unguarded (latent NPE for future Contact-backed writes). Now loads
+  `fromContact`/`toContact` and authorises via optional chaining on the User sides (`createdByUser` is
+  always one of them). **Tests (+3):** update/delete a Contact-backed entry (`fromUser`/`toUser` null);
+  forbid a non-party caller without an NPE. Commit `5f8881a`.
+- **Fix B — resolution order in `resolveOrCreateIdentity` (`contacts.service.ts`):** before creating a
+  fresh pending Contact, resolve a previously-known person represented by a **claimed** Contact (→ its
+  `claimedByUser`) or a **merged/archived** Contact (→ `resolveMergeRedirect` to the survivor, then on to
+  the survivor's User if it is itself claimed). New read-only helper `resolveKnownContactIdentity`;
+  reuses the existing cycle-guarded redirect resolver and `normalizeEmail`/`normalizePhone`. Closes the
+  Stage-1 gap where re-adding a merged-away identifier created a duplicate. **Tests (+6):**
+  claimed→User; merged→surviving pending Contact; merged→claimed-survivor→User; multi-hop A→B→C; cycle
+  A→B→A (no hang → safe create); pending-only still reused. Order preserved: User → claimed → merged →
+  pending → create.
+- **Fix M.1 — reject same-group Contact merge (`contacts.service.ts`):** the Step-1 audit found
+  `mergeContacts`' close-out branch (`joinStatus='removed'` when the survivor is already in that group)
+  stranded the losing member's split/payment/settlement balances on a `removed` row — surfaced under the
+  stale identity and **unsettleable**. Guarded up-front: a same-group merge is rejected `409
+CONTACT_MERGE_SAME_GROUP` for all confidence levels, **before any write**; cross-group merges still
+  repoint (no close-out path remains). Tracked bug + read-only detection SQL + fix-design comparison
+  filed in `docs/follow-ups/mergecontacts-close-out-strands-balances.md`. **Tests (+2 −1).** Commits
+  `a973eae`, `37b4543`.
+- **Fix C — claiming requires a verified email; phone claiming removed; Option-C join gate
+  (`contacts.service.ts`, `groups.service.ts`):** `claimContactsForUser` now (a) no-ops unless
+  `user.emailVerified`, (b) matches pending Contacts by **email only** (phone matching removed — deferred
+  to a V2 phone-OTP flow), and (c) applies a **skip-and-flag collision guard** — if claiming a Contact
+  would repoint a membership into a group where the user already has a `(group,user)` row, the Contact is
+  **skipped** (left pending, no row changes) and a structured warning is logged; never thrown, never
+  closed out (avoids the M.1 stranding bug). `joinGroupByToken` no longer claims on token possession
+  (invite links are shareable/reusable): a **verified** user claims-first (email-only, no duplicate row);
+  an **unverified** user matching a pending Contact-backed member in that group is rejected **403
+  `GROUP_JOIN_EMAIL_UNVERIFIED`** and auto-added on later verification. Per-invite tokens are consumed
+  only after the gate passes. Read-only pre-checks confirmed: no email-change path exists (email
+  immutable), no OAuth (only JWT; `emailVerified` set solely by the emailed-token flow), and claim
+  activates memberships (auto-add after verification). **Tests (+~12):** phone never claims; unverified
+  no-op; skip-and-flag collision (no rows, warning); idempotent; claimed-by-other no-op; in-place
+  activation; join 403 vs normal-join branches. Frontend follow-up (not implemented here): surface
+  `GROUP_JOIN_EMAIL_UNVERIFIED` as "Verify your email and you'll be added to this group" + resend button.
+- **Unchanged:** `simplifyLedgerDebts`/`calculateDeterministicSplits`/golden fixtures; authorization
+  logic; all existing identity/ledger behaviour (User↔User byte-for-byte).
+- **Verification:** `npx nx test backend` → **84 suites / 971 tests pass** (was 954; +17), full FIN-002
+  `finance-golden` gate green after each commit. No push.
+- **Governance:** a Decision-Ledger entry recording the Fix C claim-gating rules is **drafted, pending
+  owner approval** (frozen-stack change control) — not yet written to `FINMATE_DECISION_LEDGER.md`.
+- **Remaining this batch:** Fix D (import null guard), then Stage 3 close-out.

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -22,8 +23,11 @@ import {
   GroupMember,
   GroupMemberContribution,
   CustomTag,
+  CURRENCY_MINOR_UNITS,
   getActiveCanonicalTag,
+  isSupportedCurrencyCode,
   materializeConfirmedExpenseTags,
+  normalizeCurrencyCode,
   ReceiptVersion,
   User,
 } from '@finmate/data-models';
@@ -35,6 +39,10 @@ import {
 } from '../common/pagination.util';
 import { simplifyLedgerDebts } from '../common/ledger-debt-simplifier';
 import { resolveMemberDisplay } from '../common/member-display.util';
+import {
+  lockGroupMembersByIdsForUpdate,
+  lockGroupMembersForShare,
+} from '../common/member-lock.util';
 import { calculateDeterministicSplits } from './split-calculator.util';
 import { ExpenseEditPolicyService } from './services/expense-edit-policy.service';
 import {
@@ -234,6 +242,10 @@ export class ExpensesService {
     groupMemberById: Map<string, GroupMember>;
     activeOrInvitedByUserId: Map<string, GroupMember>;
   }> {
+    // Serialize this write against a concurrent member remove/leave: FOR SHARE
+    // on the group's member rows conflicts with the remove's FOR UPDATE, so a
+    // removed member can never gain a new split/payment (see member-lock.util).
+    await lockGroupMembersForShare(manager, groupId);
     const members = await manager.getRepository(GroupMember).find({
       where: { group: { id: groupId }, joinStatus: In(['active', 'invited']) },
       relations: ['user'],
@@ -936,6 +948,104 @@ export class ExpensesService {
     return savedSplits;
   }
 
+  private isMoneyAffectingExpenseUpdate(
+    expense: Expense,
+    dto: UpdateExpenseDto,
+  ): boolean {
+    // Drafts do not participate in balances; only publishing a draft can start
+    // affecting balances.
+    if (expense.status === 'draft') {
+      return dto.status === 'posted';
+    }
+
+    return (
+      dto.splits !== undefined ||
+      dto.payments !== undefined ||
+      dto.amountTotal !== undefined ||
+      dto.currency !== undefined ||
+      dto.paidByUserId !== undefined ||
+      dto.paidByGroupMemberId !== undefined ||
+      dto.transactionType !== undefined ||
+      dto.status !== undefined
+    );
+  }
+
+  private async getDepartedMembersReferencedByExpense(
+    manager: EntityManager,
+    expense: Expense,
+  ): Promise<GroupMember[]> {
+    if (!expense.group?.id) return [];
+
+    const memberIds = new Set<string>();
+    if (expense.paidByGroupMember?.id) {
+      memberIds.add(expense.paidByGroupMember.id);
+    }
+
+    const [splits, payments] = await Promise.all([
+      manager.getRepository(ExpenseSplit).find({
+        where: { expense: { id: expense.id } },
+        relations: ['participantGroupMember'],
+      }),
+      manager.getRepository(ExpensePayment).find({
+        where: { expense: { id: expense.id } },
+        relations: ['paidByGroupMember'],
+      }),
+    ]);
+
+    for (const split of splits) {
+      if (split.participantGroupMember?.id) {
+        memberIds.add(split.participantGroupMember.id);
+      }
+    }
+    for (const payment of payments) {
+      if (payment.paidByGroupMember?.id) {
+        memberIds.add(payment.paidByGroupMember.id);
+      }
+    }
+
+    if (!memberIds.size) return [];
+
+    return manager.getRepository(GroupMember).find({
+      where: {
+        id: In([...memberIds]),
+        group: { id: expense.group.id },
+        joinStatus: In(['removed', 'left']),
+      },
+      relations: ['user', 'contact'],
+    });
+  }
+
+  private async assertExpenseReferenceDoesNotTouchDepartedMember(
+    manager: EntityManager,
+    expense: Expense,
+  ): Promise<void> {
+    const departed = await this.getDepartedMembersReferencedByExpense(
+      manager,
+      expense,
+    );
+    if (!departed.length) return;
+
+    await lockGroupMembersByIdsForUpdate(
+      manager,
+      departed.map((m) => m.id),
+    );
+
+    const stillDeparted = await this.getDepartedMembersReferencedByExpense(
+      manager,
+      expense,
+    );
+    if (!stillDeparted.length) return;
+
+    const blocked = stillDeparted[0];
+    const display = resolveMemberDisplay(blocked);
+    throw new ConflictException({
+      errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+      memberId: blocked.id,
+      displayName: display.displayName,
+      message: `${display.displayName} has left this group. To change this, add ${display.displayName} back to the group first.`,
+    });
+  }
+
   /**
    * Persist the payer breakdown for an expense (soft-deleting any existing
    * payments first, so this is safe for both create and update). Multi-payer:
@@ -1058,6 +1168,15 @@ export class ExpensesService {
     userId: string,
     dto: CreateExpenseDto,
   ): Promise<Record<string, unknown>> {
+    const normalizedCurrency = normalizeCurrencyCode(dto.currency);
+    const minorUnits = CURRENCY_MINOR_UNITS[normalizedCurrency];
+    if (!isSupportedCurrencyCode(normalizedCurrency) || minorUnits !== 2) {
+      throw new BadRequestException({
+        errorCode: 'CURRENCY_UNSUPPORTED',
+        message: `Currency ${normalizedCurrency} is not supported for ledger writes`,
+      });
+    }
+
     if (!dto.splits || !Array.isArray(dto.splits) || dto.splits.length === 0) {
       throw new BadRequestException({
         errorCode: 'VAL_INVALID_INPUT',
@@ -1137,7 +1256,7 @@ export class ExpensesService {
       // ── Currency validation ─────────────────────────────────────────────
       if (
         group.currency &&
-        dto.currency.toUpperCase() !== group.currency.toUpperCase()
+        normalizedCurrency !== group.currency.toUpperCase()
       ) {
         throw new BadRequestException({
           errorCode: 'EXP_CURRENCY_MISMATCH',
@@ -1235,7 +1354,7 @@ export class ExpensesService {
           title: dto.title,
           description: dto.description,
           amountTotal: dto.amountTotal,
-          currency: dto.currency.toUpperCase(),
+          currency: normalizedCurrency,
           category: dto.category,
           transactionType: dto.transactionType ?? 'expense',
           paidByUser,
@@ -2096,6 +2215,16 @@ export class ExpensesService {
     }
 
     const saved = await this.dataSource.transaction(async (manager) => {
+      if (
+        expense.group?.id &&
+        this.isMoneyAffectingExpenseUpdate(expense, dto)
+      ) {
+        await this.assertExpenseReferenceDoesNotTouchDepartedMember(
+          manager,
+          expense,
+        );
+      }
+
       const replacedSplits =
         dto.splits !== undefined
           ? await manager.getRepository(ExpenseSplit).find({
@@ -2371,6 +2500,13 @@ export class ExpensesService {
     }
 
     await this.dataSource.transaction(async (manager) => {
+      if (expense.group?.id) {
+        await this.assertExpenseReferenceDoesNotTouchDepartedMember(
+          manager,
+          expense,
+        );
+      }
+
       const splits = await manager.getRepository(ExpenseSplit).find({
         where: { expense: { id: expense.id } },
         relations: ['participantUser', 'participantGroupMember'],
@@ -2998,9 +3134,87 @@ export class ExpensesService {
       overallBalance: number;
     }[]
   > {
-    await this.assertGroupAccess(userId, groupId);
+    return this.getCarryForwardSummaryInternal(userId, groupId, ledgerMonth, {
+      skipAccessCheck: false,
+    });
+  }
 
-    const group = await this.groupRepository.findOne({
+  /**
+   * Transaction-bound carry-forward summary for month-close flow.
+   * Requires a manager so reads participate in the same lock scope.
+   */
+  async getCarryForwardSummaryInTransaction(
+    userId: string,
+    groupId: string,
+    ledgerMonth: string,
+    manager: EntityManager,
+  ): Promise<
+    {
+      groupMemberId: string;
+      userId: string | null;
+      displayName: string | null;
+      netBalance: number;
+      currency: string;
+      paid: number;
+      expected: number;
+      percentage: number;
+      currentMonthNet: number;
+      carryForwardNet: number;
+      openingBalance: number;
+      closingBalance: number;
+      overallBalance: number;
+    }[]
+  > {
+    return this.getCarryForwardSummaryInternal(userId, groupId, ledgerMonth, {
+      manager,
+      skipAccessCheck: true,
+    });
+  }
+
+  private async getCarryForwardSummaryInternal(
+    userId: string,
+    groupId: string,
+    ledgerMonth: string,
+    opts: { manager?: EntityManager; skipAccessCheck: boolean },
+  ): Promise<
+    {
+      groupMemberId: string;
+      userId: string | null;
+      displayName: string | null;
+      netBalance: number;
+      currency: string;
+      paid: number;
+      expected: number;
+      percentage: number;
+      currentMonthNet: number;
+      carryForwardNet: number;
+      openingBalance: number;
+      closingBalance: number;
+      overallBalance: number;
+    }[]
+  > {
+    if (!opts?.skipAccessCheck) {
+      await this.assertGroupAccess(userId, groupId);
+    }
+
+    const manager = opts?.manager;
+    const groupRepo = manager
+      ? manager.getRepository(Group)
+      : this.groupRepository;
+    const expenseRepo = manager
+      ? manager.getRepository(Expense)
+      : this.expenseRepository;
+    const memberRepo = manager
+      ? manager.getRepository(GroupMember)
+      : this.groupMemberRepository;
+    const splitRepo = manager
+      ? manager.getRepository(ExpenseSplit)
+      : this.expenseSplitRepository;
+    const contributionRepo = manager
+      ? manager.getRepository(GroupMemberContribution)
+      : this.dataSource.getRepository(GroupMemberContribution);
+
+    const group = await groupRepo.findOne({
       where: { id: groupId },
     });
     if (!group) throw new NotFoundException('Group not found');
@@ -3012,13 +3226,13 @@ export class ExpensesService {
     }
 
     // Get all posted expenses for the ledger month
-    const expenses = await this.expenseRepository.find({
+    const expenses = await expenseRepo.find({
       where: { group: { id: groupId }, ledgerMonth, status: 'posted' },
       relations: ['paidByUser', 'paidByGroupMember', 'ownerUser'],
       withDeleted: false,
     });
 
-    const activeMembers = await this.groupMemberRepository.find({
+    const activeMembers = await memberRepo.find({
       where: { group: { id: groupId }, joinStatus: 'active' },
       relations: ['user', 'contact'],
     });
@@ -3072,8 +3286,7 @@ export class ExpensesService {
     }
 
     // Look up monthly contribution percentages
-    const contributions = await this.dataSource
-      .getRepository(GroupMemberContribution)
+    const contributions = await contributionRepo
       .createQueryBuilder('contribution')
       .innerJoinAndSelect('contribution.groupMember', 'groupMember')
       .where('groupMember.group_id = :groupId', { groupId })
@@ -3094,7 +3307,7 @@ export class ExpensesService {
     // Load splits for carry forward expenses to adjust targets
     const carryExpenseIds = carryExpenses.map((e) => e.id);
     const carrySplits = carryExpenseIds.length
-      ? await this.expenseSplitRepository.find({
+      ? await splitRepo.find({
           where: { expense: { id: In(carryExpenseIds) } },
           relations: ['expense', 'participantUser', 'participantGroupMember'],
         })
@@ -3146,14 +3359,13 @@ export class ExpensesService {
     const openingByMember = new Map<string, number>();
     const overallByMember = new Map<string, number>();
     {
-      const allExpenses = await this.expenseRepository.find({
+      const allExpenses = await expenseRepo.find({
         where: { group: { id: groupId }, status: 'posted' },
         relations: ['paidByUser', 'paidByGroupMember'],
       });
       const allNormalExpenses = allExpenses.filter((e) => !e.isCarryForward);
 
-      const allContributions = await this.dataSource
-        .getRepository(GroupMemberContribution)
+      const allContributions = await contributionRepo
         .createQueryBuilder('contribution')
         .innerJoinAndSelect('contribution.groupMember', 'groupMember')
         .where('groupMember.group_id = :groupId', { groupId })
@@ -3541,79 +3753,123 @@ export class ExpensesService {
     const nextDate = new Date(year, month, 1);
     const nextLedgerMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
 
-    // Verify duplicate closure
-    const existingCarryForward = await this.expenseRepository.count({
-      where: {
-        group: { id: groupId },
-        ledgerMonth: nextLedgerMonth,
-        isCarryForward: true,
-      },
-    });
-    if (existingCarryForward > 0) {
-      throw new BadRequestException({
-        errorCode: 'VAL_INVALID_INPUT',
-        message: `Month ${ledgerMonth} is already closed/rolled over`,
-      });
-    }
+    const carryForwardExpenseCount = await this.dataSource.transaction(
+      async (manager) => {
+        // Serialize month-close per group: FOR SHARE member locks are compatible
+        // with each other, so concurrent closeMonth calls can both pass the
+        // "existing carry-forward" check and each write rollover rows. A group-row
+        // FOR UPDATE lock forces one-at-a-time evaluation/write for this group.
+        await manager.query(`SELECT id FROM groups WHERE id = $1 FOR UPDATE`, [
+          groupId,
+        ]);
 
-    let carryForwardExpenseCount = 0;
+        await manager.query(
+          `SELECT id FROM group_members ` +
+            `WHERE group_id = $1 AND join_status IN ('active','invited') FOR SHARE`,
+          [groupId],
+        );
 
-    if (group.carryForwardEnabled) {
-      const summary = await this.getCarryForwardSummary(
-        userId,
-        groupId,
-        ledgerMonth,
-      );
-      const balances = summary.map((s) => ({
-        groupMemberId: s.groupMemberId,
-        balance: s.netBalance,
-      }));
-
-      const simplified = this.simplifyDebts(balances, group.currency);
-      carryForwardExpenseCount = simplified.length;
-
-      if (simplified.length > 0) {
-        await this.dataSource.transaction(async (manager) => {
-          for (const tx of simplified) {
-            const debtorMember = await manager
-              .getRepository(GroupMember)
-              .findOne({ where: { id: tx.fromGroupMemberId } });
-            const creditorMember = await manager
-              .getRepository(GroupMember)
-              .findOne({ where: { id: tx.toGroupMemberId } });
-            if (!debtorMember || !creditorMember) continue;
-
-            // Frozen rule: inside a group ledger, payer/participant always
-            // resolve to GroupMember — mirrors createExpense()'s write path.
-            const expense = manager.create(Expense, {
-              title: `Carry-Forward from ${ledgerMonth}`,
-              description: `System-generated carry-forward balance rollover`,
-              amountTotal: tx.amount,
-              currency: group.currency,
-              category: 'Other',
-              paidByGroupMember: creditorMember,
-              ownerUser: callerMember.user,
-              group,
-              expenseDate: `${nextLedgerMonth}-01`,
+        const existingCarryForward = await manager
+          .getRepository(Expense)
+          .count({
+            where: {
+              group: { id: groupId },
               ledgerMonth: nextLedgerMonth,
               isCarryForward: true,
-              status: 'posted',
-            });
-            const savedExpense = await manager.save(Expense, expense);
+            },
+          });
+        if (existingCarryForward > 0) {
+          throw new BadRequestException({
+            errorCode: 'VAL_INVALID_INPUT',
+            message: `Month ${ledgerMonth} is already closed/rolled over`,
+          });
+        }
 
-            const split = manager.create(ExpenseSplit, {
-              expense: savedExpense,
-              participantGroupMember: debtorMember,
-              splitType: 'fixed',
-              shareValue: tx.amount,
-              amountOwed: tx.amount,
-              isSettled: false,
+        if (!group.carryForwardEnabled) {
+          return 0;
+        }
+
+        const summary = await this.getCarryForwardSummaryInTransaction(
+          userId,
+          groupId,
+          ledgerMonth,
+          manager,
+        );
+        const balances = summary.map((s) => ({
+          groupMemberId: s.groupMemberId,
+          balance: s.netBalance,
+        }));
+        const simplified = this.simplifyDebts(balances, group.currency);
+
+        for (const tx of simplified) {
+          const [debtorMember, creditorMember] = await Promise.all([
+            manager.getRepository(GroupMember).findOne({
+              where: {
+                id: tx.fromGroupMemberId,
+                group: { id: groupId },
+                joinStatus: In(['active', 'invited']),
+              },
+              relations: ['user', 'contact'],
+            }),
+            manager.getRepository(GroupMember).findOne({
+              where: {
+                id: tx.toGroupMemberId,
+                group: { id: groupId },
+                joinStatus: In(['active', 'invited']),
+              },
+              relations: ['user', 'contact'],
+            }),
+          ]);
+
+          if (!debtorMember || !creditorMember) {
+            const missingId = debtorMember
+              ? tx.toGroupMemberId
+              : tx.fromGroupMemberId;
+            const departed = await manager.getRepository(GroupMember).findOne({
+              where: { id: missingId, group: { id: groupId } },
+              relations: ['user', 'contact'],
             });
-            await manager.save(ExpenseSplit, split);
+            const displayName = departed
+              ? resolveMemberDisplay(departed).displayName
+              : 'This member';
+            throw new ConflictException({
+              errorCode: 'MEMBER_DEPARTED_BALANCE_LOCKED',
+              memberId: missingId,
+              displayName,
+              message: `${displayName} has left this group. To change this, add ${displayName} back to the group first.`,
+            });
           }
-        });
-      }
-    }
+
+          const expense = manager.create(Expense, {
+            title: `Carry-Forward from ${ledgerMonth}`,
+            description: `System-generated carry-forward balance rollover`,
+            amountTotal: tx.amount,
+            currency: group.currency,
+            category: 'Other',
+            paidByGroupMember: creditorMember,
+            ownerUser: callerMember.user,
+            group,
+            expenseDate: `${nextLedgerMonth}-01`,
+            ledgerMonth: nextLedgerMonth,
+            isCarryForward: true,
+            status: 'posted',
+          });
+          const savedExpense = await manager.save(Expense, expense);
+
+          const split = manager.create(ExpenseSplit, {
+            expense: savedExpense,
+            participantGroupMember: debtorMember,
+            splitType: 'fixed',
+            shareValue: tx.amount,
+            amountOwed: tx.amount,
+            isSettled: false,
+          });
+          await manager.save(ExpenseSplit, split);
+        }
+
+        return simplified.length;
+      },
+    );
 
     // Write audit log
     void this.writeAuditLog({
