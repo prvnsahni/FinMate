@@ -576,31 +576,71 @@ this preparatory document.
 
 ---
 
-## Deliverable 13 — Decision-Ledger Entry Timing (flagged, not acted on)
+## Deliverable 13 — Decision-Ledger Entry Timing (re-evaluated; not acted on)
 
-`FINMATE_DECISION_LEDGER.md` is described as **"FROZEN"**, with its own
-change-control rule: *"Do not silently change a LOCKED decision. Any change
-requires a new dated entry and an ADR."* Two existing precedents in that
-same ledger — **DEL-1** ("LOCKED (arch); COUNSEL REQUIRED (retention
-basis)") and **P2P-CNT-3** ("APPROVED by the FinMate governance owner ...
-Lawful basis + non-user rights (part A): `[COUNSEL REQUIRED]` — NOT
-reviewed") — show that this repository's own convention **does** allow a
-Decision Ledger entry to record a locked/approved engineering or product
-position *alongside* an explicitly open counsel or security sub-item in the
-same entry, rather than requiring every sub-question to close first.
+**Superseded analysis (2026-10-29, second pass):** the original version of
+this section argued that `DEL-1`/`P2P-CNT-3`'s *mixed locked/open-gate
+entry shape* precedented a partial Account/Transfer entry. That observation
+is correct but incomplete — it looked only at entry *shape*, not at the
+written change-control rule or at *when* in each precedent's lifecycle the
+entry was actually written. Re-examined against both, below.
 
-**This means it would be precedented, not prohibited, to write Decision
-Ledger entries now for `ACC-1`, `ACC-2`, `ACC-3`, `ACC-7`, `ACC-8`, `ACC-9`
-as LOCKED, with `ACC-4`/`ACC-5` marked `[SECURITY REVIEW REQUIRED]` and
-`ACC-6` marked `[COUNSEL REQUIRED]` inside the same or a linked entry — the
-same shape DEL-1 and P2P-CNT-3 already use.**
+### The written rule
 
-**This document does not make that change.** Editing the Decision Ledger is
-a higher-ceremony, harder-to-reverse action than maintaining this
-preparatory document, and the task authorizing this round of work scoped
-itself to documentation and governance *preparation*, not governance
-*formalization*. Whether to proceed with the Decision Ledger addendum now
-(precedented) or wait until `ACC-6`/`ACC-4`/`ACC-5` fully resolve (more
-conservative) is presented here as an explicit choice for the product owner
-and/or whoever holds authority over the frozen document stack — not decided
-by this document.
+`FINMATE_DECISION_LEDGER.md` line 9: *"Do not silently change a LOCKED
+decision. Any change requires a new dated entry and an ADR."* `ADR_INDEX.md`
+lines 3–4 states the reciprocal constraint: ADRs are "all Accepted (each
+reflects an already-frozen decision — no ADR invents a decision)" and
+"every ADR traces to a frozen source." Read together, a new governed
+decision and its ADR are meant to exist as a pair.
+
+### How that pairing actually happened in this repository's history
+
+| Entries | Source cited | New ADR? | What stage was the work at when written? |
+|---|---|---|---|
+| `P2P-CNT-1`, `P2P-CNT-2`, `P2P-CNT-4` (lines 549, 554, 564) | `ADR-025` | **Yes — a brand-new ADR**, created in the same governance-package commit (`a3c1ea2`, 2026-09-08) | **After** the underlying code (`9e93920`, `937b38b`, both 2026-09-07/08) was already implemented and tests were green. |
+| `P2P-CNT-3` (line 559) | `ADR-025` | Same new ADR, plus an explicit, separately **dated** `[GOVERNANCE-OWNER APPROVAL REQUIRED]`/`APPROVED ... on 2026-09-10` marker for the one sub-part crossing a PII/API boundary | Boundary approved; the counsel sub-part (`P2P-CNT-3.A`) stayed open and **the entry says so explicitly** rather than omitting it. |
+| `CLAIM-1`..`CLAIM-4`, `MERGE-1` (lines 584–604) | `impl df01c11` / `impl a973eae` — **no ADR cited at all** | No | **After** the fixes were already coded and merged; these are narrow, interim tightenings *within* the already-accepted `ADR-025`/Contact domain, not a new domain. |
+
+**The pattern that actually holds, without exception, across every
+precedent found:** a new Decision Ledger entry is written either (a) as
+part of the original frozen baseline itself, or (b) **after** the
+underlying engineering work it describes already exists — ratifying
+completed or boundary-approved work, never pre-committing a not-yet-built
+feature's direction. The one case resembling a wholly new domain
+(`P2P-CNT-1/2`, comparable in scope to the proposed Account/Transfer domain)
+is also the one case that paired a **new** ADR with the entry. The one case
+that skipped a new ADR (`CLAIM-1..4`) did so only because it was a narrow
+fix inside an already-ADR'd domain, not a new one.
+
+### Why ACC-1..9 does not fit either path
+
+`ACC-1` (the Hybrid Account/Transfer architecture) is a **new domain** —
+there is no existing accepted ADR for it to tighten under, so it is not
+analogous to `CLAIM-1..4`. It is analogous to `P2P-CNT-1/2` in scope — but
+unlike every entry in the table above, **no code implementing any of
+ACC-1..9 exists yet** (confirmed throughout Deliverables 1–12: "not yet
+designed," "proposed, not authorized," "not built"). There is no precedent
+anywhere in this repository for writing a Decision Ledger entry that
+pre-authorizes a product direction for a feature that has not been built,
+while the same feature still has an open counsel gate (`ACC-6`) and an open
+security review (`ACC-4`/`ACC-5`).
+
+### Conclusion
+
+Writing the six approved `ACC-*` decisions into `FINMATE_DECISION_LEDGER.md`
+now would require either (a) a new, paired ADR — which this task does not
+authorize and no prior governance-owner approval to create one exists for —
+or (b) treating Account/Transfer as a narrow tightening of an existing
+domain, which it plainly is not. **Neither condition the repository's own
+precedent establishes is satisfied. The rule and the precedent are not in
+conflict with each other, but they are both unsatisfied by the current
+state of this feature — so, per the governing instruction to not infer
+permission from shape-level precedent alone, the Decision Ledger is left
+unmodified.**
+
+The next legitimate opportunity to revisit this is **after** `ACC-6`
+clears counsel and the `ACC-4`/`ACC-5` security review completes — at that
+point this would resemble the `P2P-CNT-1/2` pattern (new domain, gates
+closed, pair a new ADR with the Decision Ledger entry in one governance
+commit) rather than an unprecedented early commitment.
