@@ -361,7 +361,8 @@ counsel is inferred or assumed anywhere below.**
 | ADR-019 (deletion cascade + tombstones): **Implementation state: TARGET** — i.e., not built. Decision = personal-scope erase + crypto-shred + shared anonymize/tombstone + mark-stale→recompute via durable outbox + tombstone replay after restore. | `docs/architecture/adr/ADR-019-deletion-cascade-tombstones.md` |
 | DEL-2: backup-restore tombstone replay — **LOCKED (ENGINEERING REQUIRED)**. | `FINMATE_DECISION_LEDGER.md` line 214–217 |
 | DEL-3: departed-user personal content retained in shared free-text — **COUNSEL REQUIRED**, unresolved (adversarial-review finding N4). | `FINMATE_DECISION_LEDGER.md` line 219–222 |
-| **PF-001 — confirmed this session: account deletion is entirely unimplemented today.** `DELETE /users/me` is documented but **no route and no PII-purge logic exist** in `users.controller.ts`/`users.service.ts`. | `docs/architecture/gap-tracker.md` line 33; `docs/architecture/adr-map.md` line 22 |
+| **Correction (ACC-4/5/6 review-package session, superseding the claim below): `DELETE /users/me` IS implemented and tested.** `UsersController.deleteMe` (`users.controller.ts` lines 89–92) calls `UsersService.deleteAccount` (`users.service.ts` lines 236–287), with dedicated test coverage (`users.service.spec.ts`, `describe('deleteAccount', ...)`, lines 340–398+). It anonymizes `User` PII in place inside `this.dataSource.transaction(...)` (email → `deleted-<uuid>@deleted.finmate`, username/phone/displayName cleared, password hash replaced, 2FA/encryption key material cleared, status → `disabled`) and nulls `Profile.avatarUrl` — but **never deletes the `User` row or its `id`**, and **does not touch `profile.monthlyIncome`/`monthlyBudget`**, which remain on the (now-anonymized) Profile row. The docstring states the policy directly: *"anonymizes personal data... while preserving all financial history (expenses, splits, settlements, versions, audit logs) for ledger integrity. Irreversible."* | `backend/src/app/users/users.controller.ts` lines 89–92; `backend/src/app/users/users.service.ts` lines 236–287; `backend/src/app/users/users.service.spec.ts` lines 340–398 |
+| ~~Original (stale) claim: account deletion is entirely unimplemented today~~ — this was based on `docs/architecture/gap-tracker.md` line 33 / `docs/architecture/adr-map.md` line 22, which are themselves now stale relative to the current code. **Do not rely on those two lines without re-verifying the actual source.** | superseded by the row above |
 | Proposed `Account`/`Transfer` schema (Deliverable 4, **not authorized**) carries the same NOT-NULL-FK shape DEL-1 already relies on: `Account.ownerUser`, `Transfer.createdByUser` (both proposed NOT NULL → `User`). | This document, Deliverable 4 |
 
 ### What is genuinely new about Account/Transfer vs. DEL-1's existing scope
@@ -390,7 +391,7 @@ new, single-owner case.
 1. Given `Account`/`Transfer` are single-owner (not shared between Users, unlike `direct_ledger_entries` or a group `expense`), does DEL-1's anonymize-in-place compromise still need to apply, or can personal `Account`/`Transfer` rows be hard-deleted on account deletion — true Art. 17 erasure — without the shared-ledger-corruption concern that originally justified DEL-1 for the other tables?
 2. If hard-delete is permitted for `Account`/`Transfer`, does that create any inconsistency with DEL-2's backup-restore tombstone-replay requirement — would deleted Account/Transfer data need a tombstone to survive a restore the same way other deletions do, or does a genuinely single-owner hard-delete avoid needing one?
 3. Does `Account.displayName` (a user-chosen label, e.g. a bank or card name) raise the same "departed-user personal content in retained shared free-text" concern DEL-3 flags for other free-text fields — or does DEL-3 not apply at all once Account/Transfer are confirmed single-owner-only?
-4. Since `DELETE /users/me` has **no existing implementation** to extend (PF-001), should the Account/Transfer deletion rule be decided now, in principle, for the future deletion service's design — or deferred entirely until that service itself is built and reviewed as a whole, given DEL-1's own retention-basis gate is already open independent of this feature?
+4. **(Corrected — see Deliverable 15 §A for the verified current behavior.)** `DELETE /users/me` **is** implemented today as in-place anonymization of `User`/`Profile` identity fields, never a row-delete, with all financial history (including the `User.id` itself) left untouched. Should `Account`/`Transfer` simply extend this *already-shipped* pattern (anonymize the owning `User`'s identity fields; leave `Account`/`Transfer` rows and their `ownerUser`/`createdByUser` FK untouched, exactly as `Expense`/`DirectLedgerEntry` already are today), or does `Account`/`Transfer`'s single-owner nature (vs. `Expense`'s group-shared, multi-party nature) call for different treatment?
 5. Does retaining historical `Transfer`/`Account` records for a departed user raise a different retention-basis question than `expenses`/`direct_ledger_entries` already do, given `Account.displayName` could name a specific financial institution alongside a balance amount?
 
 ---
@@ -644,3 +645,200 @@ clears counsel and the `ACC-4`/`ACC-5` security review completes — at that
 point this would resemble the `P2P-CNT-1/2` pattern (new domain, gates
 closed, pair a new ADR with the Decision Ledger entry in one governance
 commit) rather than an unprecedented early commitment.
+
+---
+
+## Deliverable 14 — ACC-4/ACC-5 Security Review Package
+
+**Status labels used below:** **[VERIFIED]** = confirmed by reading the
+actual source this session · **[APPROVED]** = product-owner decision
+already on record (Decision Status, top of document) · **[PROPOSED]** =
+part of the unauthorized Account/Transfer design sketch (Deliverable 4),
+not implemented · **[QUESTION]** = for the reviewer to answer ·
+**[RECOMMENDATION]** = this document's suggestion, not a decision ·
+**[BLOCKER]** = unresolved, blocking.
+
+### A. Review objective
+
+The reviewer must determine, for `Account.displayName` and
+`Account.openingBalance`/computed-balance fields specifically (not for the
+Account/Transfer feature as a whole):
+
+1. Whether Zone 2 (plaintext-but-protected, server-readable) is the correct
+   classification, or whether Zone 1a (E2EE) or a stricter Zone-2 variant
+   (comparable to `FLD-5`'s "strict access control") is required.
+2. Whether the **[APPROVED]** product direction (Zone 2) can be authorized
+   as-is, authorized with additional conditions, or rejected.
+3. Which, if any, additional controls (access tightening, logging
+   exclusions, export/serialization restrictions) must be satisfied **before**
+   schema or API work begins.
+
+This review does **not** cover `ACC-6` (deletion/retention — Deliverable 15)
+or the architectural choice of `Account`/`Transfer` itself (`ACC-1`,
+already **[APPROVED]** and out of scope for a security reviewer to
+re-open here).
+
+### B. Data inventory
+
+| Field / group | Classification | Status | Business purpose | Provenance | Expected readers/writers | Exposure paths | Evidence gap |
+|---|---|---|---|---|---|---|---|
+| `Account.displayName` | Zone 2 proposed | **[PROPOSED]** — no entity exists | User-chosen label (e.g. "HDFC Savings") | User-provided, free text | Owning user (read/write) + server (balance computation, list rendering) — per the **[PROPOSED]** design in Deliverable 4/9 | API response (proposed, no endpoint shape decided), logs (see C below), exports (none proposed yet) | No endpoint, DTO, or serialization design exists to review directly — the reviewer is evaluating a classification choice for a field that doesn't exist in code yet, using the `profile.monthlyIncome`/`group.name` precedents below as the only concrete analogues. |
+| `Account.openingBalance` / computed balance | Zone 2 proposed | **[PROPOSED]** — no entity exists | Starting/running balance amount | User-provided (opening balance) or server-computed (running balance, per **[APPROVED]** `ACC-1` read-time-fold design) | Owning user (read) + server (compute) | Same as above — none built | Same as above. Additionally: whether the *computed* running balance needs a classification distinct from the *stored* `openingBalance` is itself one of the open questions (C.3 below) — not resolved by this inventory. |
+| `profile.monthlyIncome` / `monthlyBudget` (precedent, not an ACC-4/5 subject itself) | Zone 2, `FLD-5` | **[VERIFIED]** — `shared/data-models/src/lib/profile.entity.ts` lines 33–37: plain nullable `decimal(12,2)` columns, no field-level encryption annotation | Budgeting/personalization | User-provided | `UsersService.findProfileByUserId`/`updateProfile` (`users.service.ts` lines 72–133); `decryptProfile` (lines 135–144) touches **only** `avatarUrl` — `monthlyIncome`/`monthlyBudget` pass through as plaintext, unmodified | `GET /users/me`/`PATCH /users/me` (`users.controller.ts` lines 55–83), both gated by class-level `@UseGuards(JwtAuthGuard)` (line 24) and hardcoded to `req.user.id` — **[VERIFIED]** no `:userId` route parameter exists for profile, so there is no cross-user profile lookup surface | None — this is current, shipped behavior, fully traceable. |
+| `Settlement.amount` (precedent for financial amounts in audit logs) | Zone 2 | **[VERIFIED]** | Settlement amount | Server-computed/user-entered | `SettlementsService.recordPayment` | Written into `audit_logs.metadataJson` **in plaintext** today (`settlements.service.ts`, the `writeAuditLog` call after `recordPayment`'s transaction: `amount: Number(saved.amount), currency: saved.currency`) | None — confirms financial amounts already cross the audit-log boundary in plaintext; relevant precedent for whether `Account`/`Transfer` amounts would introduce a *new* exposure category by doing the same. |
+
+### C. Existing controls
+
+All **[VERIFIED]** unless marked otherwise.
+
+- **Authentication/authorization:** `UsersController` is class-level `@UseGuards(JwtAuthGuard)` (`users.controller.ts` line 24); the `/me` routes never accept a target-user parameter — they always resolve to `req.user.id`. There is no analogous `AccountsController` to inspect (**[PROPOSED]**, not built) — the reviewer should treat "self-only access, no `:accountId`-without-ownership-check route" as a **[RECOMMENDATION]** to carry into the eventual API design, not a verified existing control for Account.
+- **Database/API access:** `Profile` has no `@Exclude()`/class-transformer annotations and no DTO redaction layer — `GET /users/me` returns the raw `Profile` entity (minus whatever the global response pipe does), including `monthlyIncome`/`monthlyBudget` verbatim. There is **no field-level access tightening beyond the route guard** for this precedent field today, despite `FLD-5`'s stated intent ("strict access control") — the matrix's "strict access control" qualifier for `profile.monthlyIncome` does **not** appear to be enforced by any additional code-level mechanism beyond the same JWT+self-only pattern every other field uses. **[QUESTION for the reviewer: is `FLD-5`'s "strict access control" actually implemented anywhere beyond ordinary auth, or is it an aspirational classification not yet backed by code? If the latter, Account fields inheriting the same "strict access control" label would carry the same gap.]**
+- **Serialization/response filtering:** none found for `Profile`; not applicable to Account (**[PROPOSED]**, no controller/DTO exists).
+- **Logging/observability:** `ObservabilityService.record()` (`observability.service.ts`) passes metadata through `redactSensitiveKeys` (`log-redaction.util.ts` lines 49–64), which redacts by **key name** only: `email, password, pwd, token, refreshtoken, accesstoken, secret, otp, mfacode, apikey, key, jwt, authorization, ip`. **This list does not include any financial-amount or display-name-style key** (no `amount`, `balance`, `displayName`, `income`, etc.). No current code path was found passing `monthlyIncome` or any `Expense`/`Settlement` amount through `ObservabilityService.record()` — but **the mechanism provides no protection if a future Account/Transfer code path does**, since it is name-list-based, not value-heuristic-based. **[VERIFIED code gap — not hypothetical; a concrete finding, not a speculative attack path.]**
+- **Audit-log metadata:** `redactSensitiveKeys` is also used for `audit_logs.metadataJson` per its own docstring (SEC-W7). As shown in the data inventory, `Settlement.amount`/`currency` are **already** written into audit metadata in plaintext — establishing that Zone 2 financial amounts are already an accepted category of audit-log content in this codebase.
+- **Concurrency control:** `Expense`, `Settlement`, `ExpenseSplit`, `ExpensePayment`, `Goal`, `Group`, `RecurringExpense`, `PublicShare`, `CustomTag`, `Note`, `DirectLedgerEntry` all carry `@VersionColumn` (optimistic locking) — confirmed by `grep -l VersionColumn shared/data-models/src/lib/*.entity.ts`. **`Profile` does not** (confirmed: no match in `profile.entity.ts`) — concurrent `monthlyIncome`/`monthlyBudget` updates can silently overwrite each other with no conflict detection. The **[PROPOSED]** `Account` sketch in Deliverable 4 includes `version` (optimistic locking), so if built as sketched, `Account` would actually have *stronger* concurrency protection than its own nearest precedent field.
+- **Retention/deletion:** see Deliverable 15 (ACC-6) — `UsersService.deleteAccount` anonymizes `User` identity fields but **does not touch** `profile.monthlyIncome`/`monthlyBudget`, which is directly relevant to how long these Zone 2 financial values persist after account deletion.
+
+### D. Threat and risk assessment
+
+| # | Scenario | Potential impact | Existing mitigation (verified) | Remaining uncertainty | Question/recommendation |
+|---|---|---|---|---|---|
+| 1 | Cross-user disclosure of another user's account name/balance via an Account API endpoint | Financial-privacy breach (reveals bank relationships + amounts) | **[VERIFIED]** the only existing precedent (`profile.monthlyIncome`) is self-only, no `:userId` param, class-level JWT guard | No Account endpoint exists to verify directly | **[RECOMMENDATION]** any future Account endpoint must follow the same self-only pattern, never a bare `:accountId` lookup without an explicit ownership check (`WHERE ownerUser = caller`) |
+| 2 | `Account.displayName`/balance reaching an unredacted log line | Financial data in log aggregation/observability tooling outside the authorized app boundary | **[VERIFIED gap]** `redactSensitiveKeys`'s key-list does not cover financial/display-name fields; no current code logs `monthlyIncome` this way, but nothing would stop a future Account code path from doing so | Whether any future logging call sites will pass these fields as metadata is unknown (nothing built yet) | **[QUESTION]** should the redaction key-list be extended before Account ships (e.g., add `displayName`, `balance`, `openingbalance`), or is exclusion-by-convention (callers simply never pass these fields) sufficient? **[RECOMMENDATION]** prefer the key-list extension — it fails closed, matching this file's own stated design principle ("name-based... has no false negatives for real secret parameters"). |
+| 3 | Unauthorized modification of `Account.openingBalance` | Corrupted balance computation feeding the Deliverable 4 read-time fold | No Account write-path exists; nearest precedent (`updateProfile`) uses plain field assignment with **no** optimistic lock on `Profile` | The **[PROPOSED]** `Account` sketch already includes `version` (stronger than its own precedent) | No action needed beyond confirming the `version` column is retained when/if implementation proceeds — not a reviewer decision, flagged for completeness. |
+| 4 | Combined sensitivity: institution name + balance together reveal more than either alone | A more complete financial profile than `expense.amountTotal` or `profile.monthlyIncome` individually expose | None specific — `FLD-5`'s "strict access control" is the closest comparable qualifier, but (per C above) its enforcement beyond ordinary auth is itself unverified | Whether this combination needs something *stricter* than plain Zone 2 | **[QUESTION — the central ACC-4/5 question]:** does this combination warrant `FLD-5`'s "strict access control" treatment, something stricter still, or is ordinary Zone 2 (matching `group.name`/`group_member.nickname`, `FLD-3`/`FLD-4`) sufficient? |
+| 5 | Inconsistency between a stored `Account.openingBalance` and the read-time-computed running balance | Users/support staff could be shown two different "truths" | **[APPROVED]** `ACC-1` already mandates the balance is always computed at read time, never cached — this is an architecture answer, not a security control, but it structurally prevents a stored/computed drift bug | None beyond implementation correctness | Not a reviewer question — flagged for completeness only. |
+
+No additional risks beyond those directly supported by the **[PROPOSED]** design or **[VERIFIED]** precedent fields were identified; this document does not speculate about attack paths with no grounding in the actual design.
+
+### E. Explicit reviewer questions
+
+1. Is Zone 2 appropriate for `Account.displayName`?
+2. Is Zone 2 appropriate for `Account.openingBalance` and related balance fields?
+3. Does the **computed** running balance (read-time fold, per `ACC-1`) require different handling from the **stored** `openingBalance` source value?
+4. Are the existing controls identified in §C (JWT self-only access, no DTO redaction, name-based log redaction, `@VersionColumn` concurrency) adequate for these two fields, or do they require tightening beyond what `profile.monthlyIncome`/`FLD-5` currently has?
+5. Do any of these fields need access tightening, encryption, redaction, or another safeguard — and specifically, should the `redactSensitiveKeys` key-list (§C, §D.2) be extended before Account ships?
+6. Which security requirements, if any, must be satisfied **before** any schema or API implementation begins (vs. which can be addressed during implementation)?
+7. **Which role or person is authorized to approve these classifications under this repository's governance process?** Per Deliverable 9/11, no such role is currently documented anywhere in this repository (`FINMATE_SECURITY_PRIVACY_ARCHITECTURE.md`, `FINMATE_KEY_MANAGEMENT_ARCHITECTURE.md`, `FINMATE_DECISION_LEDGER.md` all searched, no hits); the only comparable precedent is the dated "governance owner (project owner)" sign-off used for `P2P-CNT-3`. **This question is itself unanswered — see Deliverable 16.**
+
+Encryption, access-tightening, and any other control are treated above as **open questions for the reviewer**, not pre-approved implementation requirements.
+
+### F. Decision record (blank — for the reviewer to complete)
+
+| Field | Value |
+|---|---|
+| ACC-4 outcome | _pending_ |
+| ACC-5 outcome | _pending_ |
+| Required mitigations | _pending_ |
+| Reviewer identity/role | _pending — no authorized role currently designated (see §E.7, Deliverable 16)_ |
+| Evidence reviewed | _this Deliverable 14, plus Deliverables 1, 4, 9 of this document_ |
+| Approval date | _pending_ |
+| Outstanding conditions | _pending_ |
+
+**No security reviewer is named or assumed here. No review has occurred. Zone 2 remains a product-selected direction only, not an approved classification.**
+
+---
+
+## Deliverable 15 — ACC-6 Counsel Review Package
+
+**Status labels:** same convention as Deliverable 14.
+
+### A. Current state and proposed scope
+
+**Verified facts:**
+
+- `Account`/`Transfer` entities **[VERIFIED do not exist]** anywhere in `shared/data-models/src/lib/` (Deliverable 1).
+- `Account`/`Transfer` are **[PROPOSED]** as single-owner only (no group/shared accounts) — Deliverable 4/8. No code implements any part of this proposal.
+- **Corrected finding (supersedes Deliverable 8's earlier claim):** account deletion **is** implemented and tested today — `UsersController.deleteMe` → `UsersService.deleteAccount` (`users.controller.ts` lines 89–92; `users.service.ts` lines 236–287; tests in `users.service.spec.ts` lines 340–398). It:
+  - Runs inside one `dataSource.transaction`.
+  - Anonymizes `User` identity/auth/key fields in place (email, username, phone, displayName, password hash, 2FA secret, encryption key material, `aiOptIn`, `status`) — **[VERIFIED]** the `User` row and its `id` are **never deleted**.
+  - Nulls `Profile.avatarUrl` only — **[VERIFIED]** `profile.monthlyIncome`/`monthlyBudget` are **left untouched**, still attached to the (now-anonymized) `Profile` row.
+  - Removes active Redis sessions (best-effort).
+  - Its own docstring states the policy: preserve all financial history (expenses, splits, settlements, versions, audit logs) for ledger integrity.
+- `DEL-1` (Decision Ledger lines 209–212) is the written policy this implementation follows: personal erase + anonymize-in-place for shared financial records, justified by "existing NOT-NULL user FKs... make row-DELETE impossible without corrupting other users' ledgers."
+- **[VERIFIED, refines DEL-1's own stated mechanism]:** checking the actual entity decorators, the controlling mechanism is not literally "NOT NULL" in every case (e.g. `audit_logs.actorUser` is `nullable: true` per `audit-log.entity.ts` line 16–17) — the real mechanism is that **no `onDelete` action is specified** on the primary financial-party FKs (`Expense.ownerUser`, `Settlement.fromUser`/`toUser`, `DirectLedgerEntry.fromUser`/`toUser`/`fromContact`/`toContact`), which defaults to `RESTRICT` in Postgres/TypeORM regardless of nullability. In practice this is moot for the *shipped* `deleteAccount`, because it **never attempts a `User` row delete at all** — it only mutates fields on the existing row. `DEL-1`'s "row-DELETE impossible" framing describes a constraint that the actual implementation doesn't even need to rely on, since it was never designed to delete the row in the first place.
+- By contrast, **history/version/actor tables use `onDelete: 'SET NULL'`** on their `User` "who did this" FK (e.g. `ExpenseVersion.user`, `SettlementVersion.user`, `GroupKeyVersion.user` — all `nullable: true, onDelete: 'SET NULL'`), a different, softer pattern than the RESTRICT-by-default used for primary financial-party FKs.
+- `RET-1` (Decision Ledger line 315–318): an **already-open, already-flagged** retention-period question — "~30 days as a working figure," explicitly **not** hard-coded pending infrastructure mapping, status `OPEN VALUE (LOCKED as parametric) · Engineering + Counsel`. This is the existing retention question Account/Transfer would inherit, not a new one.
+- `DEL-2` (backup-restore tombstone replay, lines 214–217) and `DEL-3` (departed-user content in retained shared free-text, lines 219–222) remain as previously reported, unresolved for `DEL-3` specifically.
+
+**What is only proposed, not built:** every `Account`/`Transfer` schema detail in Deliverable 4; any deletion/anonymization behavior specific to `Account`/`Transfer` (there is none — the existing `deleteAccount` only touches `User`/`Profile`, and would not need modification merely because `Account`/`Transfer` exist, **unless** counsel determines different treatment is required).
+
+**Why counsel's decision is required before finalizing the data-lifecycle design:** the existing `deleteAccount` precedent (anonymize-in-place, never delete, preserve all financial history under the same `User.id`) is a *candidate* pattern for `Account`/`Transfer` to simply inherit automatically — since `Account.ownerUser`/`Transfer.createdByUser` would point at the same, unmodified `User.id`, nothing in the existing deletion code would even need to change. **Whether that automatic inheritance is legally sufficient, or whether `Account`/`Transfer`'s single-owner (not shared) nature changes the answer, is exactly what counsel must determine** — this document does not assume either answer.
+
+### B. Legal and policy questions
+
+1. What deletion or anonymization obligations apply to `Account`/`Transfer` records specifically, given the already-shipped precedent (above) anonymizes the owning `User`'s identity fields but leaves ALL financial rows — including, by extension, any future `Account`/`Transfer` rows tied to the same `User.id` — completely untouched, including `profile.monthlyIncome`/`monthlyBudget`-style amounts? Does this precedent extend automatically, or does `Account`/`Transfer` require distinct treatment?
+2. Must `Account`/`Transfer` records be retained for a defined period? `RET-1` already flags an unresolved, parametric retention window (~30 days working figure) for the broader system — does this feature introduce any retention requirement different from that existing open question, or does it simply inherit `RET-1` unchanged?
+3. May some `Account`/`Transfer` records need to remain after a user requests deletion, the way `Expense`/`Settlement`/`DirectLedgerEntry` rows already do today (by design, confirmed above)?
+4. Must `Account.displayName`/balance identifiers be deleted, pseudonymized, or retained for legitimate recordkeeping — and does this differ from how `profile.monthlyIncome` is currently retained unmodified after deletion (verified above)?
+5. How should account deletion interact with `Account`/`Transfer` given their proposed **single-owner** nature (no sharing with other users) — is this materially different from `Expense`(group-shared)/`DirectLedgerEntry` (shared with a Contact/other User), which is the basis `DEL-1` was originally written to address?
+6. Must any `Account`/`Transfer` data remain linked to preserve financial auditability or legal obligations, consistent with how `Expense`/`Settlement`/`audit_logs` are preserved today?
+7. Is anonymize-in-place (the existing, shipped pattern) legally appropriate for `Account`/`Transfer`, or does their single-owner nature permit — or require — true deletion instead?
+8. Do retention periods or deletion behavior differ by record type (e.g. `Account` vs. `Transfer`) or by jurisdiction? **This document does not know which jurisdictions FinMate currently operates in or targets — if that is not already documented elsewhere, counsel's first task may be identifying what jurisdictional scope applies at all.**
+9. Do any user disclosures, consent language, or privacy-policy changes need to accompany an `Account`/`Transfer` feature, beyond what already covers `Expense`/`DirectLedgerEntry`/`Settlement` data today?
+10. Is additional legal, compliance, or privacy review needed beyond this brief — e.g., does this interact with `DEL-3`'s still-open "departed-user content in retained shared free-text" question, given `Account.displayName` is user-authored free text?
+
+**These are questions. No legal conclusion is assumed or implied by their wording.**
+
+### C. Technical decision dependencies
+
+| Engineering decision | Depends on counsel's answer to | Current precedent (verified) |
+|---|---|---|
+| `Account.ownerUser`/`Transfer.createdByUser` FK `onDelete` behavior | B.1, B.5, B.7 | Primary financial-party FKs (`Expense.ownerUser`, `Settlement.fromUser`/`toUser`) have **no** `onDelete` specified → default `RESTRICT`; but the *shipped* `deleteAccount` never triggers this path because it never deletes the `User` row |
+| Whether `Account`/`Transfer` need their own soft-delete (`@DeleteDateColumn`) | B.3, B.6 | `Expense`, `ExpensePayment`, `ExpenseSplit`, `DirectLedgerEntry` have it; `Settlement`, `Profile`, `User`, `Contact`, `Group` do **not** — soft-delete is not universal in this codebase, so this is a real open choice, not a default |
+| Retention/purge job design | B.2 | `RET-1` — already open, parametric, pending infra mapping; no purge job exists for any entity today |
+| Whether `Account.displayName` needs redaction/tombstoning akin to `DEL-3`'s open question | B.4, B.10 | `DEL-3` is unresolved for *existing* shared free-text (e.g. legacy P2P notes); no precedent yet for a *single-owner* free-text field like `Account.displayName` |
+| Whether `Account`/`Transfer` can simply inherit `deleteAccount`'s existing behavior unmodified | B.1, B.5 | Technically yes with zero code change, **if** counsel confirms the single-owner case needs no different treatment than the shared-record case `DEL-1` was written for |
+
+**This document does not recommend a definitive database implementation.** The "no code change needed" possibility above is presented as a technical fact (it would require no engineering work to inherit the existing pattern), not as a legal conclusion that doing so is sufficient.
+
+### D. Counsel response form (blank — for counsel to complete)
+
+| Question/issue | Counsel's determination | Jurisdiction/policy | Required retention/deletion behavior | Conditions/exceptions | Required disclosures/policy changes | Follow-up actions | Counsel/reviewer & date |
+|---|---|---|---|---|---|---|---|
+| B.1 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.2 (ties to `RET-1`) | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.3 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.4 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.5 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.6 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.7 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.8 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.9 | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| B.10 (ties to `DEL-3`) | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+**No legal determination is made or assumed here. `ACC-6` remains blocked.**
+
+---
+
+## Deliverable 16 — Review Process Findings and Readiness Checklist
+
+### Documented reviewer roles and approval process (repository search)
+
+- **No security-reviewer role or formal security-review process document** was found. Searched: `FINMATE_SECURITY_PRIVACY_ARCHITECTURE.md`, `FINMATE_KEY_MANAGEMENT_ARCHITECTURE.md`, `FINMATE_DECISION_LEDGER.md` — no defined role or procedure for approving a data-classification/encryption-zone decision specifically.
+- **No designated legal/counsel contact** was found anywhere in the repository.
+- **One tangential mention of a "Security Lead" exists:** `docs/PRODUCTION_READINESS_CHECKLIST.md` line 70, a blank sign-off line (`Security Lead: ____`) in a general production-release checklist (alongside "Engineering Lead," "QA Lead," "Release Manager"). **[VERIFIED, but not applicable]** — this checklist concerns build/test/deploy release gates generally, not encryption-zone or data-classification decisions, and no process exists for who holds that title or how they are appointed.
+- **The only comparable documented approval mechanism** in this repository is the dated "governance owner (project owner)" sign-off used for `P2P-CNT-3` (`FINMATE_DECISION_LEDGER.md` line 570: *"APPROVED by the FinMate governance owner (project owner) on 2026-09-10... This authorizes the engineering/security boundary... — it is not a legal determination."*). Whether this same mechanism is intended to cover ACC-4/ACC-5's "Product + Security" approval type, or ACC-6's counsel determination, is **not established anywhere** in the repository.
+
+**[RECOMMENDATION — narrowest possible governance clarification]:** before ACC-4/ACC-5/ACC-6 can be formally closed, the repository (or its maintainers) needs a one-line answer to a single question: *is the "governance owner (project owner)" the same person/role authorized to (a) perform or commission the ACC-4/ACC-5 security review, and (b) serve as or route to counsel for ACC-6 — or are these genuinely separate, undesignated roles?* This document does not answer that question or assume an answer.
+
+**No reviewer is appointed, and no external review is represented as requested or completed, by this document.**
+
+### Review-readiness checklist
+
+| Item | Status |
+|---|---|
+| ACC-4/ACC-5 security brief prepared | **Done** — Deliverable 14, evidence-based, verified against actual source this session |
+| Authorized security reviewer identified | **Pending** — no role documented in this repository (see above) |
+| ACC-4 determination | **Pending** |
+| ACC-5 determination | **Pending** |
+| ACC-6 counsel brief prepared | **Done** — Deliverable 15, evidence-based, includes a correction to Deliverable 8's stale "deletion unimplemented" claim |
+| Counsel contact identified | **Pending** — none documented in this repository |
+| Counsel response received | **Pending** |
+| ACC-6 determination | **Pending** |
+| ACC-2a (duplicate-resubmission scope) product-owner confirmation | **Outstanding** — recommendation offered in Deliverable 10, not yet confirmed |
+| ACC-2b (optional-`manager` extension) engineering design review | **Outstanding** — identified as a design recommendation in Deliverable 10, not implemented or reviewed |
+| Decision Ledger entry for the six approved decisions | **Not made** — Deliverable 13 found no precedent for making it before implementation exists; left for a future, separate governance step |
+| Implementation readiness | **Blocked** — pending ACC-4, ACC-5, ACC-6, ACC-2a, and ACC-2b, per Deliverable 12 |
+
+Each "Done" row above reflects that the corresponding brief's content was prepared and checked against actual repository evidence in this session — not that the underlying review has occurred. No row in this checklist is marked complete merely because a heading exists.
