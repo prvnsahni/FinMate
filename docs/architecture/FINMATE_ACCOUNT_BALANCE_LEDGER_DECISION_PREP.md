@@ -824,21 +824,195 @@ Encryption, access-tightening, and any other control are treated above as **open
 
 **No reviewer is appointed, and no external review is represented as requested or completed, by this document.**
 
-### Review-readiness checklist
+### Review-readiness checklist (updated — second pass)
 
 | Item | Status |
 |---|---|
-| ACC-4/ACC-5 security brief prepared | **Done** — Deliverable 14, evidence-based, verified against actual source this session |
-| Authorized security reviewer identified | **Pending** — no role documented in this repository (see above) |
-| ACC-4 determination | **Pending** |
-| ACC-5 determination | **Pending** |
-| ACC-6 counsel brief prepared | **Done** — Deliverable 15, evidence-based, includes a correction to Deliverable 8's stale "deletion unimplemented" claim |
+| **Product decisions approved** (`ACC-1, ACC-2, ACC-3, ACC-7, ACC-8, ACC-9`) | **Approved** — unchanged this round; see Decision Status block, top of document |
+| ACC-4/ACC-5 security brief prepared | **Done** — Deliverable 14 (full brief); Deliverable 18 (reviewer-facing handoff), both verified against actual source |
+| Authorized security reviewer identified | **Pending** — no role documented in this repository (Deliverable 16/18) |
+| **ACC-4/ACC-5 security decision** | **Pending** — not performed; Zone 2 remains a product direction only |
+| ACC-6 counsel brief prepared | **Done** — Deliverable 15 (full brief); Deliverable 19 (counsel-facing handoff), incorporating the corrected `deleteAccount` finding |
 | Counsel contact identified | **Pending** — none documented in this repository |
-| Counsel response received | **Pending** |
-| ACC-6 determination | **Pending** |
-| ACC-2a (duplicate-resubmission scope) product-owner confirmation | **Outstanding** — recommendation offered in Deliverable 10, not yet confirmed |
-| ACC-2b (optional-`manager` extension) engineering design review | **Outstanding** — identified as a design recommendation in Deliverable 10, not implemented or reviewed |
+| **ACC-6 counsel decision** | **Pending** — not performed; blocked |
+| ACC-2a decision request prepared | **Done this round** — Deliverable 17, with explicit A/B/C response options |
+| **ACC-2a product-owner response** | **Pending** — no option has been selected; still unresolved |
+| ACC-2b engineering review brief prepared | **Done this round** — Deliverable 20, with a blank engineering sign-off form |
+| **ACC-2b engineering design review** | **Pending** — not performed; design remains a proposal |
 | Decision Ledger entry for the six approved decisions | **Not made** — Deliverable 13 found no precedent for making it before implementation exists; left for a future, separate governance step |
-| Implementation readiness | **Blocked** — pending ACC-4, ACC-5, ACC-6, ACC-2a, and ACC-2b, per Deliverable 12 |
+| **Implementation plan** | **Not yet authorized** — blocked pending ACC-4, ACC-5, ACC-6, ACC-2a, and ACC-2b (Deliverable 12), none of which were resolved by preparing their handoff materials |
 
-Each "Done" row above reflects that the corresponding brief's content was prepared and checked against actual repository evidence in this session — not that the underlying review has occurred. No row in this checklist is marked complete merely because a heading exists.
+**What changed this round:** four new review/decision-request packages were
+*prepared* (Deliverables 17–20). **No gate was cleared.** Every row that
+represents an actual decision, review outcome, or approval is unchanged
+from before this session and remains **Pending**. Preparing a package is
+not evidence that the review happened — this checklist does not conflate
+the two.
+
+---
+
+## Deliverable 17 — ACC-2a: Product-Owner Decision Request
+
+**This is a decision request, not a decision.** The product owner's response
+is required before ACC-2a can move from "recommendation offered" to
+"resolved" anywhere in this document.
+
+### Three distinct concerns (repeated here deliberately — do not conflate when deciding)
+
+1. **Atomicity** — one combined lending/account operation must not leave a
+   partial result (e.g. a `Transfer` recorded with no matching
+   `DirectLedgerEntry`). **This is a required consistency property, already
+   addressed by design** (Deliverable 10 item 1/2, Deliverable 20 below) —
+   **it is not what this decision request is asking about**, and nothing in
+   options A/B/C below changes it either way.
+2. **Duplicate submission** — the same user action resubmitted (double-click,
+   retry after a timeout) could create a second, complete
+   `Transfer`+`DirectLedgerEntry` pair. **This is the actual subject of
+   ACC-2a.**
+3. **Legitimate separate loans** — two genuine loans to the same person on
+   the same day for the same amount must never be merged or blocked as
+   "duplicates." **This is a standing invariant regardless of how ACC-2a is
+   decided** — no option below authorizes a uniqueness check that could
+   violate it.
+
+### Recommendation (not a decision)
+
+Keep accidental duplicate-submission protection **out of v1**, consistent
+with the already-**[APPROVED]** `ACC-9` scope exclusion:
+
+- Document the limitation explicitly (already done — Deliverable 10,
+  Scenario I).
+- Preserve atomicity for every individual successful combined operation
+  regardless (not contingent on this decision).
+- Never merge legitimate separate loans (not contingent on this decision).
+- Revisit idempotency protection as a future, separately scoped change if
+  it proves necessary in practice.
+
+### Response options
+
+- **A — Approve the recommendation.** Duplicate-submission protection
+  remains out of scope for v1; ACC-2a resolves to "confirmed out of scope,"
+  folded under `ACC-9`.
+- **B — Reject the recommendation.** Duplicate-submission protection must be
+  included in v1; this requires its own scope and design review (an
+  idempotency-key mechanism, which does not exist anywhere in this codebase
+  today — see Deliverable 10 — would need to be designed from scratch).
+- **C — Defer.** Leave ACC-2a explicitly unresolved for now; implementation
+  planning for the combined action cannot proceed past this point until it
+  is picked up again.
+
+**No option is selected here. ACC-2a remains unresolved until the product
+owner records a response through whatever process this repository
+designates for that (see Deliverable 16's open governance-role question —
+no such process is currently documented).**
+
+---
+
+## Deliverable 18 — ACC-4/ACC-5 Security-Review Handoff
+
+**Purpose:** a reviewer-facing entry point. Full detail lives in
+Deliverable 14; this section is the minimum a reviewer needs to start,
+plus the one governance gap that currently blocks even starting.
+
+### The exact questions (restated from Deliverable 14 §E)
+
+1. Is Zone 2 appropriate for `Account.displayName`?
+2. Is Zone 2 appropriate for `Account.openingBalance` and related balance fields?
+3. Does the **computed** running balance need different handling from the **stored** `openingBalance` source value?
+4. Are existing controls (below) adequate, or do they need tightening beyond what `profile.monthlyIncome`/`FLD-5` currently has?
+5. Do any of these fields need access tightening, encryption, redaction, or another safeguard?
+6. Which security requirements, if any, must be satisfied **before** schema/API work begins?
+7. **Which role or person is authorized to approve this?** — unanswered; see "Reviewer designation" below.
+
+### Verified precedent and controls (full detail: Deliverable 14 §B–C)
+
+- `profile.monthlyIncome`/`monthlyBudget` — plain `decimal(12,2)`, no field-level encryption (`profile.entity.ts:33–37`); passed through unmodified by `decryptProfile`, which only touches `avatarUrl` (`users.service.ts:135–144`).
+- Access control: `GET`/`PATCH /users/me` are JWT-gated (`JwtAuthGuard`) and hardcoded to `req.user.id` — no `:userId` parameter exists, so there is no cross-user lookup surface for this precedent field (`users.controller.ts:23–24, 55–83`).
+- **Logging/redaction gap (verified, not hypothetical):** `redactSensitiveKeys`'s key-list (`log-redaction.util.ts:49–64`) covers `email, password, pwd, token, ..., apikey, key, jwt, authorization, ip` — **no financial-amount or display-name-style key is covered.** No current code path logs `monthlyIncome` this way, but the mechanism would not catch it if a future Account code path did.
+- Audit-log precedent: `Settlement.amount`/`currency` are already written into `audit_logs.metadataJson` in plaintext today — an existing, accepted category of Zone 2 content in audit logs, not a new exposure class.
+- Source-vs-calculated distinction: `Account.openingBalance` would be a **stored source value**; the running balance is **always computed at read time** per the **[APPROVED]** `ACC-1` architecture (never cached) — Deliverable 14 §B/D.3 flags whether these two need different handling as an open reviewer question, not a settled answer.
+- Risks already documented (full table: Deliverable 14 §D): cross-user disclosure, the logging gap above, unauthorized balance modification, combined-sensitivity (name + amount together), and stored/computed drift — each with its existing mitigation (if any) and open question already recorded.
+
+### Reviewer designation (blocking, unresolved)
+
+**No security-reviewer role or process is documented anywhere in this
+repository** (Deliverable 16, repeated here because it blocks this handoff
+specifically). The only comparable mechanism is the dated "governance
+owner (project owner)" sign-off used for `P2P-CNT-3`. **This handoff cannot
+proceed to an actual review until someone with authority over this
+repository's governance either designates a reviewer or confirms the
+governance owner fills that role for this decision.** This document does
+not assume either.
+
+**Zone 2 is not approved by this section. No review has occurred.**
+
+---
+
+## Deliverable 19 — ACC-6 Counsel Handoff
+
+**Purpose:** a counsel-facing entry point. Full detail lives in
+Deliverable 15; this section states the verified behavior and the
+unresolved questions plainly, without re-deriving them.
+
+### Verified existing behavior (confirmed against source this session and the prior one)
+
+- `DELETE /users/me` **is implemented**: `UsersController.deleteMe` (`users.controller.ts:89–92`) → `UsersService.deleteAccount` (`users.service.ts:236–287`), with dedicated tests (`users.service.spec.ts:340–398`).
+- `User`/`Profile` identity fields are anonymized **inside one database transaction** (`this.dataSource.transaction(...)`, `users.service.ts:242`).
+- **The `User` row is retained — never physically deleted.** Its `id` is unchanged; only field values are overwritten (email → `deleted-<uuid>@deleted.finmate`, username/phone/displayName cleared, password hash replaced, 2FA/encryption key material cleared, `status` → `disabled`).
+- **Financial history, and the reported profile financial fields, remain.** `Expense`, `Settlement`, `DirectLedgerEntry`, `audit_logs` rows referencing that `User.id` are untouched by design (the method's own docstring states this intent); `Profile.monthlyIncome`/`monthlyBudget` are **not** cleared — only `Profile.avatarUrl` is nulled.
+
+### Unresolved questions for counsel (neutral — no legal conclusion assumed)
+
+1. Must the **proposed** `Account`/`Transfer` records (not yet built) be retained, anonymized, or otherwise treated when a user is anonymized via the existing `deleteAccount` flow — or does the existing "leave all financial rows under the same `User.id` untouched" pattern extend to them automatically, with no distinction required?
+2. How do `Account` ownership and `Transfer` history interact with any existing retention obligations — including `RET-1` (Decision Ledger line 315–318: an already-open, parametric ~30-day retention figure, not yet hard-coded pending infrastructure mapping)? Does `RET-1` apply unchanged, or does this feature introduce a distinct retention question?
+3. Must the existing anonymization transaction (`users.service.ts:242–276`) be modified to include any new `Account`/`Transfer` records, or is leaving it unmodified (because `Account.ownerUser`/`Transfer.createdByUser` would point at the same, now-anonymized `User.id`) sufficient?
+4. Does `Account`/`Transfer`'s proposed **single-owner** nature (no sharing with other users, unlike `Expense` which can be group-shared, or `DirectLedgerEntry` which is shared with a Contact/other User) change whether existing foreign-key, cascade, or retention behavior needs to change — or can the existing `Expense`/`DirectLedgerEntry` treatment be assumed to transfer without modification?
+
+**No inference is made from current database behavior to a legal
+conclusion.** The fact that `Expense`/`DirectLedgerEntry` rules exist does
+not imply they automatically apply to `Account`/`Transfer`; that
+determination is counsel's, not this document's.
+
+**ACC-6 remains blocked. No legal position is taken here.**
+
+---
+
+## Deliverable 20 — ACC-2b Engineering Review Brief
+
+**Status: proposal requiring engineering review. Not implemented. No
+service signature, test, entity, or migration is changed by this
+document.**
+
+### Verified current behavior
+
+- `PersonLedgerService.createDirectTransaction`/`createDirectSettlement` (`person-ledger.service.ts:294–379`) each call a single `this.directLedgerRepository.save(entry)` — **no `dataSource.transaction()` wrapper exists today.**
+- `SettlementsService.recordPayment`/`proposeSettlement`/`updateSettlement` (`settlements.service.ts:885, 1043, 1136`) each use `this.dataSource.transaction(async (manager) => {...})` to write multiple related rows atomically.
+- `ContactsService.resolveOrCreateIdentity` (`contacts.service.ts:165–266`) uses the same pattern, **plus** an optional `manager?: EntityManager` parameter (line 172) so it can join an already-open transaction instead of starting a second, independently-committing one, **plus** a Postgres advisory transaction lock (`pg_advisory_xact_lock`, line 114) for concurrency safety, **plus** a catch on unique-violation (code `23505`) as a defense-in-depth backstop.
+
+### Proposed design (requires engineering review — not decided here)
+
+Extend `createDirectTransaction`/`createDirectSettlement` with an optional `manager?: EntityManager` parameter, mirroring `resolveOrCreateIdentity`'s exact convention: when a caller supplies `manager`, the method uses it instead of operating standalone; when omitted, behavior is unchanged from today. A new orchestration method (not yet designed, not part of this proposal) would open one `dataSource.transaction`, create the `Transfer` row and call `createDirectTransaction`/`createDirectSettlement` with that same `manager`, so both inserts commit or roll back together.
+
+### Review points
+
+| Topic | Finding |
+|---|---|
+| **Transaction ownership/rollback** | The orchestration method, not `PersonLedgerService`, would own the transaction. If either insert throws, the whole transaction rolls back — Postgres guarantees no partial commit. `PersonLedgerService`'s methods become transaction-*participants*, never transaction-*owners*, when called with a `manager`. |
+| **Compatibility with existing callers** | Because `manager` is optional and defaults to current behavior when omitted, every existing caller of `createDirectTransaction`/`createDirectSettlement` (today's plain lending/settlement flows with no `Transfer` involved) is **unaffected** — this is additive, matching `resolveOrCreateIdentity`'s own precedent for introducing the same parameter without breaking existing call sites. |
+| **Concurrency/retry implications** | Each combined action **creates new rows**; it does not update a shared mutable balance column (balances are always computed at read time per `ACC-1`), so two concurrent combined actions for different loans do not contend for the same row the way `contacts.service.ts`'s identity resolution does. No advisory lock is identified as necessary for this reason alone — unlike `resolveOrCreateIdentity`, there is no natural uniqueness key to protect with one (see "why idempotency is separate," below). |
+| **Failure propagation** | A thrown exception inside the transaction callback causes `dataSource.transaction` to roll back and re-throw; the orchestration method's caller (e.g. an HTTP controller) receives that exception as today's error-handling conventions already handle for `recordPayment`/`proposeSettlement`. No new failure-propagation mechanism is required beyond what `settlements.service.ts` already demonstrates. |
+| **Why idempotency is separate from atomicity** | Atomicity (above) guarantees that **one** submission either fully succeeds or fully fails — it says nothing about what happens if the **same logical action is submitted twice** (double-click, client retry). A perfectly atomic implementation can still be invoked twice, producing two complete, correctly-formed `Transfer`+`DirectLedgerEntry` pairs. Solving atomicity (this deliverable) does not solve or substitute for ACC-2a (Deliverable 17); they are orthogonal properties, not stages of the same fix. |
+| **Why two legitimate loans must not be merged** | Deliverable 10's existing invariant, repeated because any future idempotency fix (should `ACC-2a` ever choose option B) must respect it: no uniqueness constraint on caller+counterparty+amount+date (or any subset) may be used to detect "duplicates," because two real loans of the same amount to the same person on the same day are legitimate, independent events. `contacts.service.ts`'s 23505-catch pattern is not transferable here for exactly this reason (it relies on a genuine identity key; a loan has none). |
+
+### Engineering sign-off form (blank — for the reviewer to complete)
+
+| Field | Value |
+|---|---|
+| Design approach reviewed | the optional-`manager` extension described above |
+| Reviewer | _pending_ |
+| Outcome | _pending_ |
+| Required changes before implementation | _pending_ |
+| Date | _pending_ |
+
+**No implementation, signature change, or test change is made by this
+document. This is a proposal for review, not an authorization to build.**
