@@ -1016,3 +1016,98 @@ Extend `createDirectTransaction`/`createDirectSettlement` with an optional `mana
 
 **No implementation, signature change, or test change is made by this
 document. This is a proposal for review, not an authorization to build.**
+
+---
+
+## Deliverable 21 — Implementation-Readiness Assessment
+
+**Re-verified before writing this (not assumed): no Account/Transfer entity
+exists in `shared/data-models/src/lib/`; `profile.entity.ts` still has
+plaintext `monthlyIncome` with no `@VersionColumn`;
+`PersonLedgerService.createDirectTransaction`/`createDirectSettlement`
+still have zero `dataSource.transaction` calls; `UsersService.deleteAccount`
+still contains no row-delete call (anonymize-in-place only); and
+`FINMATE_DECISION_LEDGER.md`/`ADR_INDEX.md` have not been touched since
+2026-09-16/2026-09-10 respectively — well before this document existed, so
+no external approval, review, or counsel determination has landed anywhere
+in the authorized decision record.**
+
+### Readiness matrix
+
+| Gate | Current evidence | Required action | Status |
+|---|---|---|---|
+| Approved architecture (`ACC-1, 2, 3, 7, 8, 9`) | Decision Status block (top of document); re-verified unchanged this session | Preserve as recorded — no re-approval needed | **Verified — approved, unchanged** |
+| `ACC-2a` | Deliverable 17 (decision request with options A/B/C) prepared; no response recorded anywhere in this repository's governance files | Product-owner selects A, B, or C | **Pending** — unresolved |
+| `ACC-4` | Deliverable 14/18 (security brief + handoff) prepared; `profile.monthlyIncome` precedent and logging-gap finding verified; no reviewer designated | Authorized security decision | **Pending** — not performed |
+| `ACC-5` | Same brief covers `Account.openingBalance`/balance fields | Authorized security decision | **Pending** — not performed |
+| `ACC-6` | Deliverable 15/19 (counsel brief + handoff) prepared; `deleteAccount` behavior verified and corrected from an earlier stale claim | Counsel determination | **Pending** — not performed |
+| `ACC-2b` | Deliverable 20 (engineering review brief) prepared; transaction/manager patterns verified in `settlements.service.ts`/`contacts.service.ts` | Engineering review and sign-off | **Pending** — not performed |
+| Implementation plan | This document's Deliverables 1–20; no migration, schema, or code draft exists | Finalize only after the five gates above clear | **Not ready** — blocked |
+
+No row above was upgraded without the specific evidence cited in its own
+column. "Brief prepared" and "decision made" are never conflated in this
+table.
+
+### Preparatory work that may continue now (does not require any gate to clear)
+
+- Test planning for the eventual Account/Transfer balance calculator (what
+  Deliverable 6 item 6 calls a separate, isolated golden-fixture-style
+  suite) — can be scoped and drafted without touching `finance-golden` or
+  any existing test file.
+- Requirements clarification with the product owner on anything Deliverable
+  3's scenario matrix left open that isn't gated on `ACC-4/5/6` specifically.
+- Non-binding design review of the `ACC-2b` proposal (Deliverable 20) —
+  discussion and refinement of the design on paper, not merging it.
+- Preparing reviewer handoffs — already done for `ACC-4/5` (Deliverable 18)
+  and `ACC-6` (Deliverable 19); routing them to an actual person is a
+  governance action (see "Required action" column above), not blocked
+  preparatory work.
+- Identifying required financial invariants — Deliverable 4's five
+  invariants and Deliverable 10's "three distinct concerns" are already
+  written down; refining or stress-testing them on paper can continue.
+- Planning validation/regression coverage for the eventual migration (e.g.
+  drafting what a non-destructive, guarded-`down()` migration spec would
+  need to assert, following the `1720400000000-AddDirectLedgerContactIdentity`
+  precedent) — planning only, not writing the migration file.
+
+### Implementation work that remains blocked
+
+- Any `Account`/`Transfer` schema, entity, or migration — blocked on `ACC-6`
+  (FK/cascade behavior depends on counsel's answer) and `ACC-4/5` (field
+  classification must be settled before the columns are typed/encrypted
+  one way or the other).
+- Any change to `PersonLedgerService`/`DirectLedgerEntry` transaction
+  boundaries (the `ACC-2b` optional-`manager` extension) — blocked on
+  engineering sign-off (Deliverable 20); currently a proposal only.
+- Any deletion/anonymization implementation change — blocked on `ACC-6`;
+  the existing `deleteAccount` behavior must not be modified speculatively
+  ahead of counsel's determination.
+- Any security-sensitive API or data-access change for Account fields
+  (new endpoints, DTOs, logging call sites touching `displayName`/balance
+  values) — blocked on `ACC-4/5`.
+- A Decision Ledger entry or accepted ADR for any of the six approved
+  decisions — Deliverable 13 found no repository precedent for writing one
+  before implementation exists, and this round found no new reason to
+  revisit that finding.
+
+**Preparatory work is not a route around these gates.** None of the items
+in the "may continue" list produces a schema, migration, API surface, or
+behavior change — they produce plans, drafts, and reviewed-on-paper
+designs that still require the same approvals before anything is built.
+
+### Conditions required to enter implementation planning
+
+All five must clear — none is sufficient alone:
+
+1. `ACC-2a` resolved (any of A/B/C, recorded through whatever process the
+   product owner uses).
+2. `ACC-4` security decision recorded.
+3. `ACC-5` security decision recorded.
+4. `ACC-6` counsel determination recorded.
+5. `ACC-2b` engineering sign-off recorded.
+
+Only then does Deliverable 6's governance sequence (Decision Ledger
+addendum → ADR → migration design → separate Account test/parity plan →
+feature-flag registration) become the next appropriate step — and even
+then, as a new, separate governance action, not an automatic consequence
+of this document.
