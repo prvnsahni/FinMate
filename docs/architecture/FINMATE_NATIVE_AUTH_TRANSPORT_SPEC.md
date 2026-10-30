@@ -143,11 +143,11 @@ answer: if a request somehow carried *both* a cookie and the new header
 code already has a precedent for defensively rejecting an analogous
 conflict — the `AUTH_TOKEN_AMBIGUOUS` check for cookie vs. body), what
 should the server do? **Proposed for review, not approved:** extend the
-existing conflict-rejection pattern — reject with a new, equally explicit
-error code (e.g. `AUTH_TRANSPORT_AMBIGUOUS`) rather than silently picking
-one, consistent with the existing `AUTH_TOKEN_AMBIGUOUS` precedent's own
-stated reasoning ("never let two different refresh tokens silently
-succeed").
+existing conflict-rejection pattern — reject by **reusing the existing
+`AUTH_TOKEN_AMBIGUOUS` code** (corrected 2026-10-30, §12.B/Decision 4 —
+no new code is proposed) rather than silently picking one, consistent
+with the existing precedent's own stated reasoning ("never let two
+different refresh tokens silently succeed").
 
 ### 3.2 Login request/response behavior
 
@@ -162,7 +162,7 @@ succeed").
 |---|---|---|
 | Rotation mechanics | **Resolved (unchanged)** | Same Redis rotate-on-use mechanism already in `AuthService.refresh()` — `ADR-013`'s decision text explicitly says "Rotation + Redis session hashing retained." No change proposed here. |
 | Header name | **[UNRESOLVED]** | Not specified anywhere in `ADR-013`, the execution plan, or any other inspected document. **Candidate only, not approved:** `X-Refresh-Token`. |
-| Header vs. body for the *request* | **[UNRESOLVED]** | Whether the native client sends the refresh token via the new header, or continues using the existing request body field (`RefreshTokenDto.refreshToken`) while the *only* thing that changes is where the client *stores* it (Keychain/Keystore instead of `localStorage`). **This second option is simpler and requires zero backend contract change** — only a frontend/native storage change — and should be evaluated first before building new backend header-parsing logic. Flagged as the primary open question this specification surfaces. |
+| Header vs. body for the *request* | **[CORRECTED — RESOLVED, see §9 item 3 correction below]** | Previously flagged here as the primary open question. Deeper evidence (`FINMATE_DECISION_LEDGER.md` `AU-1`, **Status: LOCKED**; `FINMATE_SRS.md` `AUTH-004`, **MUST/P0**) shows this is **not open** — the header-based transport is already the locked, frozen architecture, independently of `ADR-013`'s prose. The "keep body, change storage only" option would require formally amending a LOCKED decision, not simply choosing the simpler engineering path. |
 | Access-token transport | **Resolved (unchanged)** | `Authorization: Bearer <accessToken>` on every request, identical to web — `ADR-013` does not propose changing this, only refresh-token transport. |
 
 ### 3.4 Logout and credential invalidation
@@ -388,7 +388,7 @@ started) precisely so this distinction is never collapsed into a single
 
 1. **Capability-detection precedence** when more than one transport signal could theoretically be present (§3.1).
 2. **Exact native refresh-token header name**, if a header is even the chosen mechanism (§3.3) — candidate `X-Refresh-Token` only, not approved.
-3. **Whether the backend contract needs to change for native at all**, versus the simpler option of keeping the existing body contract and only changing *client-side storage location* (§3.3) — this is the single highest-leverage open question, since resolving it toward "no backend change" would shrink this entire specification's implementation cost substantially.
+3. ~~Whether the backend contract needs to change for native at all~~ — **CORRECTED (2026-10-30), no longer open.** `FINMATE_DECISION_LEDGER.md` **`AU-1` — Dual-transport refresh** is **Status: LOCKED** and its decision text explicitly states: *"Native = refresh token in iOS Keychain / Android Keystore via Capacitor secure storage, **sent by header**."* `FINMATE_SRS.md` **`AUTH-004`** independently states the same requirement at **MUST/P0**: *"Native refresh via Keychain/Keystore **header**; backend capability-detects transport; header path never satisfiable by ambient cookie."* Keeping the existing body contract for native (no header) is therefore **not a neutral, equally-available engineering choice** — it would require formally amending a **LOCKED** Decision Ledger item and a **MUST/P0** SRS requirement, per this repository's own change-control rule ("do not silently change a LOCKED decision"). The adversarial SRS review (`FINMATE_SRS_ADVERSARIAL_REVIEW.md`, finding **F-02**) already anticipated and rejected exactly this failure mode: if native keeps using the body path, `SEC-003` ("remove refresh token from body," MUST/P0, currently **OPEN**) **can never close**, because native would remain a permanent legitimate consumer of the path being removed. **What remains genuinely unresolved is narrower:** the exact header name, the three-way (cookie/header/body) precedence rule, and the secure-storage plugin — all still correctly flagged below, none of them the top-level "which approach" question.
 4. **Whether a native-specific login response shape is needed** (§3.2).
 5. **Whether the native header path needs its own CSRF-equivalent scheme** (§3.11) — recommended default: no, but not decided.
 6. **Which Capacitor secure-storage plugin to use** (§4) — none evaluated.
@@ -403,27 +403,33 @@ started) precisely so this distinction is never collapsed into a single
 
 ## 10. Exact Next Implementation Task and Its Prerequisites
 
-**The next task is not "build BATCH-14."** It is narrower:
+**Corrected (2026-10-30):** the next task is **not** "decide whether native
+needs a header" — `AU-1` (Decision Ledger, LOCKED) and `AUTH-004` (SRS,
+MUST/P0) already decide that. The next task is narrower still:
 
-> **Resolve unresolved decision #3 above** (§9): determine whether native
-> secure-storage support requires any backend contract change at all, or
-> whether the refresh token can continue traveling in the existing request
-> body — with the *only* required change being where the native client
-> stores it (Keychain/Keystore instead of `localStorage`) and the fact that
-> it is read from/written to that store instead.
+> **Resolve the implementation-level details of the already-locked header
+> transport**: the exact header name, the three-way (cookie/header/body)
+> capability-detection precedence rule (including an explicit rejection
+> behavior for an ambiguous multi-transport request, mirroring the
+> existing `AUTH_TOKEN_AMBIGUOUS` cookie-vs-body check), and the
+> secure-storage plugin. None of these are specified by `AU-1`/`AUTH-004`
+> beyond "by header" and "never satisfiable by ambient cookie."
 
-**Why this is the correct next task, not a larger one:** if the simpler
-option resolves favorably, the entire native-header design in §3.1/§3.3
-becomes unnecessary, and the actual implementation work shrinks to a
-frontend-only change (substituting storage calls per §3.10) plus native
-project creation and plugin selection — with **zero backend code change**
-to `auth.controller.ts`. This should be decided **before** any backend
-work is scoped, to avoid building unneeded header-parsing logic.
+**Why this is the correct next task:** `AU-1`/`AUTH-004` remove the
+top-level architecture question entirely; what remains is the same kind of
+narrow, implementation-level decision set already listed in §9 (items 2,
+4-6). No backend-vs-frontend-only fork remains open to resolve first.
 
-**Prerequisites for that decision task:**
-- No native project needs to exist yet to make this decision — it is a design review, not an implementation.
-- Requires engineering judgment on whether "capability detection" in `ADR-013`'s text was intended to require a *new* signal (a header) or was describing the existing body-vs-cookie distinction extended to a third client type that simply never sends a cookie.
-- Does not require governance-owner approval to *discuss*; would require it before implementing either resolution.
+**If a backend-change-avoiding approach is still wanted:** that is now a
+request to **amend `AU-1`/`AUTH-004`**, not a default-available
+engineering option. Per this repository's own change-control rule, that
+requires a new dated Decision Ledger entry plus an ADR — a governance
+action with an identifiable cost (`SEC-003` could then never close per
+`F-02`'s already-documented failure mode), not a lighter default path.
+
+**Prerequisites:**
+- No native project needs to exist to resolve the header name/precedence/plugin questions — these are design decisions, not implementation.
+- Does not require governance-owner approval to *discuss* the implementation details of the already-locked design; would require it before implementing any of them, and would require a separate, explicit governance action if `AU-1`/`AUTH-004` amendment is pursued instead.
 
 **Prerequisites for the implementation task that follows that decision:**
 - The decision above, recorded.
@@ -435,9 +441,139 @@ work is scoped, to avoid building unneeded header-parsing logic.
 ## 11. Final Reconciliation
 
 - **CURRENT:** the web-cookie half of `BATCH-06` is fully built and tested behind a flag; the native-header half has no code; no secure-storage mechanism, plugin, or native project exists; the E2EE login/logout coupling in `AuthState` is real and must be preserved by any transport change.
-- **TARGET (per `ADR-013`/`ADR-015`, not modified by this document):** native uses Keychain/Keystore via a header-based (or possibly body-based, per §9 #3) transport, capability-detected, with the existing rotation/revocation mechanics unchanged, under a five-condition dual-emit sunset.
+- **TARGET (per `AU-1`/`AUTH-004`/`ADR-013`/`ADR-015`, not modified by this document):** native uses Keychain/Keystore via a **header-based** transport — locked, not an open choice per the 2026-10-30 correction above — capability-detected, with the existing rotation/revocation mechanics unchanged, under a five-condition dual-emit sunset.
 - **Not changed by this document:** any application code, feature flag, dependency, native project, schema, migration, API, accepted ADR, or the Decision Ledger. The Account/Balance Ledger gates (`ACC-2a`, `ACC-4`, `ACC-5`, `ACC-6`, `ACC-2b`) are untouched and unaffected.
 
 **One-line status:** Implementation-ready specification with explicitly
 flagged open design decisions; no implementation authorized by this
 document.
+
+---
+
+## 12. Proposed Native Refresh-Token Header Contract (added 2026-10-30)
+
+**PROPOSED — NOT APPROVED.** `AU-1`/`AUTH-004` already lock in that native
+uses a header; this section proposes the specific header, precedence
+rules, and behavior. Nothing here is implemented or authorized.
+
+### 12.A — Header name
+
+**No existing repository or standard specifies one.** Searched `AU-1`,
+`AUTH-004`, `ADR-013`, `ADR-015`, `ADR-021`, `auth-transport.util.ts`,
+`auth.controller.ts` — none name a header.
+
+**Candidate — PROPOSED, NOT APPROVED: `X-Refresh-Token`.**
+
+Rationale, checked against actual repository conventions:
+- Matches the existing custom-header naming pattern exactly: `x-mfa-code` (`auth.controller.ts:120`, `mfa.guard.ts:18`), `x-csrf-token` (`auth-transport.util.ts:22`), `x-correlation-id`/`x-request-id` (`http-exception.filter.ts:216-217`) — all lowercase, hyphenated, `x-`-prefixed.
+- **No collision found** with any existing header name in the codebase.
+- **CORS:** `main.ts`'s `app.enableCors({ origin: corsOrigins, credentials: true })` (verified, no `allowedHeaders` set) relies on the `cors` package's default behavior of reflecting whatever headers a preflight requests — a new custom header requires **no CORS config change**, unlike a locked-down `allowedHeaders` allowlist (which this codebase does not use).
+- **Proxy behavior:** not verified — whether a production reverse proxy/CDN passes arbitrary custom headers through is infrastructure-specific and outside this repository's code; flagged as an operational prerequisite (same category as `TRUST_PROXY`/`CORS_ORIGINS`, already documented as "deployment-specific and MUST be set by operations" in `security-config.util.ts`).
+- **Logging:** verified directly — `backend/src/app/interceptors/logging.interceptor.ts` (`logRequest`, lines ~30-60) **never logs raw request headers**; it logs only `timestamp, method, url (redacted via redactUrl), userId, ip (hashed), status, responseTime, throttleKey, limit, remaining`. A new header is **not** exposed by the existing request-logging path. (Caveat: this covers only this one interceptor — see §12.D security analysis.)
+- **Security middleware:** Helmet's CSP (`buildCspDirectives`) governs response content, not request headers — no interaction.
+
+**If this candidate is rejected, the only requirement from `AU-1`/`AUTH-004` that any replacement must satisfy is:** delivered via a header, and "never satisfiable by ambient cookie" (i.e., not something a browser auto-attaches).
+
+### 12.B — Transport Precedence and Ambiguity Handling
+
+**Correction/refinement (2026-10-30, second pass):** re-reading the
+feature-flag registry directly (`backend/src/app/platform/feature-flags.constants.ts`
+lines 23, 85-89) shows a **second, already-registered flag exists for
+exactly this purpose**: `mobile.secureStorage` (`FEATURE_MOBILE_SECURE_STORAGE`,
+default OFF, description *"BATCH-14 native secure-storage refresh
+transport"*) — distinct from `auth.dualTransport` (BATCH-06, gates the web
+cookie half only). **Proposed:** the header branch should be gated behind
+`mobile.secureStorage`, independently of `auth.dualTransport`, since the
+two batches ship on independent timelines. This means the two flags can
+each be ON/OFF independently — four combinations, not the single-flag
+model implied earlier in this document:
+
+| `auth.dualTransport` | `mobile.secureStorage` | Behavior |
+|---|---|---|
+| OFF | OFF | Legacy body only — **today's exact, unchanged behavior** |
+| ON | OFF | Cookie-or-body — **today's exact BATCH-06 behavior, unchanged** |
+| OFF | ON | **[PROPOSED]** Header-or-body — native header support ships independently of web cookie support |
+| ON | ON | **[PROPOSED]** Full three-way: header, cookie, or body |
+
+Proposed per-combination decision table, extending the **existing, verified** cookie-vs-body logic (`auth.controller.ts` lines 157-203) with a third branch:
+
+| Transports present | Proposed outcome | Basis |
+|---|---|---|
+| Cookie only (flag ON) | Cookie path (unchanged) | **Existing, verified** |
+| Body only (flag OFF, or ON with no cookie/header) | Body path (unchanged) | **Existing, verified** |
+| Header only | **[PROPOSED]** New header path: validate against `AuthService.refresh()` exactly as the other two paths already do | New, mirrors existing pattern — no change to `AuthService` itself |
+| Cookie + body, equal values | Cookie path wins silently (unchanged) | **Existing, verified** (`auth.controller.ts:173`: only errors on *mismatch*) |
+| Cookie + body, different values | `400 AUTH_TOKEN_AMBIGUOUS` (unchanged) | **Existing, verified** |
+| Header + cookie (any values) | **[PROPOSED, but flagged UNRESOLVED below]** reject outright with the existing `AUTH_TOKEN_AMBIGUOUS` code, regardless of whether values match | A legitimate single request should never carry both — unlike cookie+body (where a transitioning web client might technically still send both), a native client has no reason to ever present a cookie |
+| Header + body, equal values | **[PROPOSED]** allow, prefer header, mirroring the cookie+body precedent | Consistency with existing precedent |
+| Header + body, different values | **[PROPOSED]** `400 AUTH_TOKEN_AMBIGUOUS` — **reuse the existing code** (corrected below), not a new one | Mirrors `AUTH_TOKEN_AMBIGUOUS`'s own stated reasoning: "never let two different refresh tokens silently succeed" |
+| All three present | **[PROPOSED]** reject with `AUTH_TOKEN_AMBIGUOUS` | Same reasoning |
+| Missing/malformed (empty, wrong type) on every transport | `400 VAL_INVALID_INPUT` (unchanged) | **Existing, verified** (`auth.controller.ts:196-200`) |
+| Invalid/expired/revoked token (any transport) | `401 Unauthorized` (unchanged) | **Existing, verified** — `AuthService.refresh()` throws identically regardless of how the token arrived (`auth.service.spec.ts` lines 713, 721 already test this for the body path; the method itself does not branch on transport) |
+| Replayed (already-rotated) token | `401 Unauthorized` (unchanged) | **Existing, verified** — Redis key deleted on rotation (`auth.service.ts` ~line 484-490: `if (!storedHash) throw UnauthorizedException`) |
+
+**[UNRESOLVED — PRODUCT/SECURITY DECISION]:** whether "header + cookie, equal values" should be treated the same as the lenient cookie+body precedent (allow) or rejected outright (strict — proposed above, since a native client has no legitimate reason to ever present a cookie). This document proposes the strict reading but does not decide it.
+
+**None of this weakens the existing cookie/CSRF/rotation/ambiguity protections** — every existing branch in the table above is reproduced unchanged; only new branches are added.
+
+### 12.C — Native Capability Detection
+
+**No new "detection" primitive is proposed or needed.** The existing code already dispatches on transport *presence*, not on any claim about client type — `if (cookie present) → cookie path; else → body path` (verified, `auth.controller.ts:159-194`). Adding a header branch is the same pattern: `if (header present) → header path`, with no new concept introduced.
+
+**Explicit, load-bearing security point:** the header's presence proves **nothing** about whether the caller is a genuine Capacitor native app. Any HTTP client — a script, a malicious page issuing a cross-origin request, `curl` — can set an arbitrary header. **This is not a weakness introduced by this proposal; it is the same security model the codebase already has for the body and cookie paths**: the actual security boundary is, and remains, possession of a valid, unexpired, Redis-tracked, rotate-on-use refresh token (unchanged by this proposal). "Capability detection" in `AU-1`/`AUTH-004`'s wording means *transport-format selection*, not *client authentication* — no mechanism in this proposal, or anywhere in the existing code, authenticates "this is a native app" as a security property, and none should be assumed to.
+
+If true app-attestation (cryptographic proof of a genuine, unmodified native binary) is ever desired, that is a materially different, much larger feature (e.g. platform attestation APIs) — **out of scope for this proposal** and not implied by anything here.
+
+### 12.D — Compatibility and Migration
+
+- **Existing browser clients:** unaffected — every existing branch (flag OFF, flag ON cookie, flag ON body-fallback) is preserved verbatim (§12.B).
+- **Native migration path:** once built, native clients would send the header on `/auth/refresh` instead of (eventually) the body; `/auth/login`'s response already includes the refresh token in the body today regardless of flag state (verified, `auth.controller.ts` lines ~141-147: the dual-emit response always includes the full body payload "for legacy clients") — a native client reads it from there and stores it via secure storage, then switches to the header for subsequent refreshes. No login-response contract change is proposed.
+- **Legacy body transport:** remains supported throughout, per `ADR-015`'s dual-emit requirement — this proposal adds a branch, it does not remove any existing one.
+- **Telemetry:** not designed here (§9 item 5 remains open) — but structurally, a telemetry event fired once per request noting *which* branch of the §12.B table was taken would let the existing-but-unbuilt `AUTH-005` condition 4 ("compatibility telemetry confirms the old path is unused") eventually become checkable — specified only at the concept level, not designed in detail.
+- **Minimum-version enforcement:** not designed here (§9 item 4 remains open) — unrelated to the header contract itself; this proposal does not depend on it existing first.
+- **`AUTH-005`'s five conditions:** this proposal, if approved and implemented, would make condition 2 ("native secure-storage header refresh works") achievable for the first time — it does not by itself satisfy conditions 1, 3, 4, or 5.
+
+**No sunset date is proposed or implied.** No condition is claimed satisfied by this document.
+
+### Security Analysis (§4 of this task)
+
+| Concern | Assessment |
+|---|---|
+| Credential ambiguity / downgrade risk | Addressed by §12.B's ambiguity table — every multi-transport combination either resolves deterministically to the existing lenient-match precedent or rejects explicitly; no combination is silently decided in favor of a *weaker* transport |
+| Cookie/CSRF behavior | **Unchanged** — CSRF double-submit remains mandatory for the cookie path exactly as today; the header path is proposed to need no CSRF-equivalent, because CSRF specifically defends against a browser's *ambient* (automatic) credential attachment, which a header never has — a request forger would need to already possess the secret value to set the header, at which point CSRF-style protection adds nothing. **This reasoning is proposed, not verified against a security review.** |
+| Refresh-token rotation / replay protection | **Unchanged** — `AuthService.refresh()`'s Redis rotate-on-use mechanism (verified, lines 466-517) is transport-agnostic already; the header path reuses it exactly, with no new replay surface |
+| Token leakage via logging/proxies/error reports/telemetry | **Verified**: the existing request-logging interceptor never logs raw headers (§12.A). **Not verified**: whether any *other* logging call site (error reporting, future debug code, an upstream reverse proxy's own access log) might capture headers — flagged as a gap, not a current exposure. **Recommendation, not implemented:** if headers are ever logged by future code, no existing redaction utility (`redactUrl`, `redactSensitiveKeys`) currently covers header *names*; a `redactHeaders`-style helper would need to be added at that time, mirroring the existing `SENSITIVE_META_KEYS` pattern. |
+| Header forwarding / CORS | Default CORS config already reflects arbitrary requested headers (verified, §12.A). **Native HTTP client — re-verified 2026-10-30:** `capacitor.config.ts` has no `server`/native-bridge configuration block, `package.json` has no `@capacitor/http` or equivalent plugin, and no `CapacitorHttp` symbol is used anywhere in `frontend/src`. `AuthService` (`auth.service.ts`) uses plain Angular `HttpClient` — meaning, absent a future plugin decision, requests run through the WebView's own networking, not a native bridge. **This does not block the header decision:** unlike cookies (which `ADR-013`'s own "Problem" statement says "don't behave reliably inside a Capacitor WebView" — the reason native uses a header at all), an explicit request header set via `HttpClient.post(url, body, {headers})` is constructed by application code, not ambiently attached by the WebView — it behaves identically whether or not `CapacitorHttp` native bridging is ever enabled. **Conclusion: the native-HTTP-client selection is orthogonal to this proposal, not a prerequisite for it.** |
+| Conflicting/malformed credentials | Covered explicitly in §12.B's table; no combination is silently resolved |
+| Does the header alone prove "native"? | **No — explicitly addressed in §12.C.** Placing a token in a header does not make it secure by itself; security comes entirely from the token's own properties (rotation, Redis tracking, expiry), unchanged from today |
+
+### Test and Acceptance Matrix (§5 of this task)
+
+| Case | Supported by this proposal? | Note |
+|---|---|---|
+| Existing browser refresh (flag OFF, flag ON cookie, flag ON body-fallback) unchanged | Yes — no existing branch is modified | Re-verify via existing `auth.controller.spec.ts` suite, unchanged |
+| Valid native header refresh | Depends on §12.A (header name) being settled | New test, not yet written |
+| Missing/malformed header | Depends on §12.A | New test — proposed outcome: falls through to cookie/body check, then `VAL_INVALID_INPUT` if none present, mirroring existing empty-body handling |
+| Header + cookie conflict | Depends on §12.B's unresolved strict-vs-lenient decision | **Blocked on an unresolved decision — do not write this test until §12.B's open question is resolved** |
+| Header + body, matching/conflicting | Depends on §12.A/B | New test |
+| Ambiguous-credential rejection (reused `AUTH_TOKEN_AMBIGUOUS` code) | Depends on §12.A/B | New test *scenario*, existing error code — no new code to approve |
+| Expired/revoked/replayed token via header | Mechanically covered once §12.A exists — `AuthService.refresh()` already throws identically regardless of transport (verified) | New *test*, but **zero new service logic** — same assertions as the existing body-path tests (`auth.service.spec.ts:713,721`), just invoked via the new transport |
+| Refresh-token rotation via header | Same — `AuthService.refresh()` unchanged | New test, zero new logic |
+| Legacy body-path compatibility during migration | Already covered by existing tests; unaffected by this proposal | No new test needed |
+| Logging/telemetry redaction | Partially supported — the "headers aren't logged today" finding (§12.A) is itself testable right now if desired, independent of whether the header contract is approved | Could be written today as a regression-guard test, but is **outside this proposal's scope** to add unprompted |
+
+### Remaining Decisions (§6 of this task)
+
+1. **Header name** — candidate `X-Refresh-Token` proposed; not approved. **Owner: unassigned.**
+2. **Header+cookie precedence (strict reject vs. lenient-if-equal) and the two-flag gating structure** (`auth.dualTransport` × `mobile.secureStorage`, §12.B) — proposed, not decided. **Owner: unassigned.**
+3. **Whether CSRF-equivalent protection is needed for the header path** — proposed "no," not decided. **Owner: unassigned** (security review recommended).
+4. **Error code for credential ambiguity** — **corrected 2026-10-30:** recommend **reusing the existing `AUTH_TOKEN_AMBIGUOUS`** code (verified: no existing code already covers this exact case the way a dedicated new one would, but `AUTH_TOKEN_AMBIGUOUS`'s current message generalizes trivially; no `*AMBIGUOUS*`/`*TRANSPORT*`/`*CONFLICT*`-named code already handles the header case specifically). This is a recommendation, not approved. **Owner: unassigned.**
+5. **Native HTTP client mechanism** — **resolved as non-blocking, 2026-10-30:** confirmed unselected (no `@capacitor/http`-equivalent plugin, no `CapacitorHttp` usage, no `server` config in `capacitor.config.ts`), but shown to be orthogonal to the header contract (§12.D security table) — headers behave consistently with or without a future native-bridge plugin, unlike cookies. **No decision blocks on this item**; it remains open only for whichever *other* native capabilities (if any) genuinely need it.
+
+### Exact Changes If Approved (§8 item 8 of this task)
+
+Listed for a **future, separately authorized** implementation task — not made here:
+- `auth-transport.util.ts`: add a `REFRESH_HEADER` constant (name per decision #1) and a header-read helper, mirroring `parseCookies`'s shape.
+- `auth.controller.ts` `refresh()`/`logout()`: add the header branch per §12.B's table, gated behind `mobile.secureStorage` (already registered, no new flag), reusing the existing `AUTH_TOKEN_AMBIGUOUS` code for ambiguity rejection (no new error code to register).
+- New tests per the matrix above.
+- No change to `AuthService`, `RefreshTokenDto`, `main.ts`'s CORS config, the feature-flag registry, or any existing passing test.
