@@ -415,3 +415,209 @@ dependency installation, or native project creation authorized. Capacitor
 is recommended, not selected. Automatic SMS/notification capture is
 recommended against pursuing without dedicated legal review, based on
 dated, sourced, current platform policy.
+
+---
+
+## 15. Second-Pass Readiness Review (added 2026-10-29, continuing from commit `3581e8a`)
+
+This section re-verifies §2's claims against deeper source inspection and
+is **more precise than, not contradictory with,** the sections above.
+Nothing in §1–14 is withdrawn; two findings below sharpen it materially.
+
+### 15.1 Correction/sharpening of the BATCH-06 status
+
+§2 characterized `BATCH-06` as "not yet shipped." That remains true for the
+*native* half. **The *web* half is materially more built than that implied:**
+
+- `backend/src/app/auth/auth-transport.util.ts` (tested — `auth-transport.util.spec.ts`) implements the full cookie/CSRF design: host-only, path-scoped `REFRESH_COOKIE` (`/api/v1/auth/refresh`), CSRF double-submit cookie, `clearCookieOptions`.
+- `backend/src/app/auth/auth.controller.ts` **actually wires this in**, gated behind the `auth.dualTransport` flag (default OFF): `login` sets both cookies when ON; `refresh` reads the cookie, validates CSRF, rejects an ambiguous body/cookie mismatch (`AUTH_TOKEN_AMBIGUOUS`), rotates, and **does not return the refresh token in the body for the cookie path** (satisfies `ADR-013`'s "TARGET web" requirement); `logout` clears both cookies. When the flag is OFF, behavior is byte-for-byte the legacy body-token path.
+- **This means the web half of `BATCH-06` is code-complete and tested, one flag flip plus the execution plan's own "prod CORS verify" step away from live** — not a from-scratch build.
+- **The native-header half does not exist in code at all.** No search (`x-refresh`, `native`, or any custom header read) found any server-side native-transport logic. `BATCH-14`'s dependency on `BATCH-06` is therefore more precisely: *the web cookie half is done; the native header half — the actual prerequisite for `BATCH-14` — is unbuilt.*
+
+### 15.2 Correction/sharpening of the Document Intelligence intake maturity
+
+§6 described the existing intake as "the most mature existing hook" for
+camera capture — true, but imprecise about *what* is mature. Verified
+directly from `document-intake.controller.ts`/`document-intake.service.ts`:
+
+- The intake endpoint (`POST /document-intelligence/attachments/:attachmentId/process`) operates on an **already-uploaded, already-owned `Attachment`** — it does not accept raw bytes itself. Owner-scoping is enforced (a non-owner's attachment 404s, IDOR-safe). Gated behind `JwtAuthGuard` + `DocumentIntelligenceEnabledGuard` (`document.intelligence` flag, default OFF).
+- Two modes: `TOTAL_ONLY` ("no extraction; the caller uses the normal expense flow" — i.e. today's manual entry, unchanged) and `ITEMIZED`, which **invokes a stub extraction engine that returns an explicit "unavailable" result** — there is no working OCR/extraction behind this today, by the code's own docstring ("no finance write, no server-side decryption, no OCR").
+- The engine input is deliberately minimized (`buildExtractionInput`): only `documentRef` (the attachment id), `sourceType`, `mimeType`, `sizeBytes` — explicitly excludes encryption keys, filenames, and the uploader identity.
+- **No duplicate-detection or confirm-before-import logic exists in this service.** `findPotentialDuplicates`/"confirm-before-import" are *design* concepts in `FINMATE_DOCUMENT_INTELLIGENCE_READINESS.md`, not yet implemented code — §6 of this document already correctly deferred to that design; this is confirmation, not a contradiction.
+
+**Consequence:** camera-based receipt capture's actual incremental scope is
+smaller than it might appear — it does not need to interact with
+extraction, duplicate-detection, or any counsel-gated concern at all,
+because none of that is wired up yet regardless of source. The only new
+work is a **mobile-side capture-and-upload UX** that produces the same
+`Attachment` an existing file-picker upload would, then calls the
+existing `TOTAL_ONLY` intake path (which already works today, flag ON) —
+the user still manually enters the expense, exactly as they do with any
+uploaded receipt image today. `ITEMIZED` mode simply isn't usable yet, for
+any source, until `DOC-2`/`DOC-3` build a real engine — which is **not
+this document's or this task's scope to accelerate**.
+
+### 15.3 Dependency map
+
+```mermaid
+flowchart TD
+  B6W["BATCH-06 web cookie half\nCODE-COMPLETE, flag OFF\n(auth.controller.ts, auth-transport.util.ts)"]
+  B6N["BATCH-06 native header half\nNOT STARTED — no code found"]
+  B14["BATCH-14: secure storage, push,\ndeep links, min-version\nBLOCKED (native)"]
+  NATIVE["Native infra: npx cap add android/ios\nNOT STARTED"]
+  PLUGIN["Secure-storage Capacitor plugin\nNOT SELECTED"]
+  PWA["PWA (PRD Phase 2)\nNOT BUILT — no ngsw-config.json/manifest"]
+  P1["Mobile Phase 1 (foundation)"]
+  CAM["Camera receipt capture\nDOC-1 TOTAL_ONLY path, flag OFF\nINDEPENDENT of BATCH-06/14"]
+
+  B6W -->|"flag flip + CORS verify"| B6DONE["BATCH-06 fully done"]
+  B6N --> B6DONE
+  B6DONE --> B14
+  NATIVE --> B14
+  PLUGIN --> B14
+  B14 --> P1
+  PWA -.->|"recommended first, not a hard blocker"| P1
+  CAM -.->|"no dependency on B6/B14 at all"| P1
+```
+
+| Depends on → | Needs | Status |
+|---|---|---|
+| Mobile foundation (Phase 1, store-ready) | `BATCH-14` complete | Blocked |
+| `BATCH-14` | `BATCH-06` fully complete (web ✅ done pending flag; native ❌ not started) + native infra (`android`/`ios` projects, not created) + a selected secure-storage plugin (not selected) | Blocked |
+| `BATCH-06` web half | Flag flip (`auth.dualTransport` → ON) + prod CORS verification | Ready, unflipped |
+| `BATCH-06` native half | New engineering work — no code exists | Not started |
+| Camera receipt capture (first user-facing capability, §6/§15.2) | **Nothing above** — only the `document.intelligence` flag and a mobile upload-UX change | **Independently ready to scope** |
+| PWA (`PRD.md` Phase 2) | Nothing — `@angular/pwa` schematic has simply never been run | Not started, not technically blocking Capacitor, but shares the "finish what's already on the roadmap before layering more on top" rationale from §4 |
+
+### 15.4 Authentication and secure-storage migration plan
+
+**Current verified behavior (re-confirmed this session):**
+- Both tokens in `localStorage` when `auth.dualTransport` is OFF (today's default) — unchanged from §2.
+- Refresh is single-flight-coordinated client-side (`TokenRefreshService`) to prevent concurrent 401s from racing the rotate-on-use refresh token.
+- Backend rotates the refresh token on every `/auth/refresh` call: old Redis key (`refresh_token:{userId}:{sha256(refreshId)}`, argon2-hashed, 7-day TTL) deleted, new one issued. `revokeAllSessions`/logout delete all `refresh_token:{userId}:*` keys.
+- When `auth.dualTransport` is ON: login/refresh/logout all branch on cookie presence; CSRF double-submit is enforced for the cookie path; a body/cookie token mismatch is explicitly rejected (`AUTH_TOKEN_AMBIGUOUS`) rather than silently preferring one.
+
+**Target (`ADR-013`, unchanged by this document):** web = HttpOnly+Secure+SameSite=Lax host-only cookie; native = iOS Keychain/Android Keystore via header, capability-detected server-side, never `if (iOS)`.
+
+**Transition mechanics (`ADR-015`, unchanged by this document):** dual-emit (old body path retained) until **all five** hold: web cookie works, native header works, minimum-supported mobile version is enforced, compatibility telemetry confirms the old path is unused, and the (still-unset, `[ENGINEERING PARAMETER]`) sunset condition is met. **Rollback:** extend the dual-emit window, or re-enable body emission — both additive, no destructive step.
+
+**Recommended staged plan (not authorized — a sequencing recommendation):**
+
+| Stage | Scope | Verified readiness |
+|---|---|---|
+| A | Flip `auth.dualTransport` ON in a non-prod environment; verify the already-coded web-cookie path against the execution plan's "prod CORS verify" condition | Code exists today; this is verification work, not new engineering |
+| B | Design and build the native-header transport (server-side: accept a custom header as an alternative to the cookie, capability-detected) | **No code exists** — new backend work |
+| C | `npx cap add android`/`ios`; select and integrate a secure-storage Capacitor plugin; have the native client read/write the refresh token via that plugin instead of `localStorage`, sending it via the Stage-B header | Needs native infra + plugin selection, neither started |
+| D | Enforce minimum app version server-side; add compatibility telemetry for old-path usage | Not started |
+| E | Sunset (remove body-token emission) once all five `ADR-015` conditions hold | Gated on A–D; date is an open engineering parameter |
+
+**Regression/migration tests required (none of this is authorized to write in this task):**
+- Existing coverage found: `auth.service.spec.ts`, `auth.controller.spec.ts`, `auth-transport.util.spec.ts`, `auth-guards.spec.ts` (frontend). These already appear to cover the flag-OFF/legacy path and (per the util's own spec file) the cookie-option construction.
+- New tests needed for: native-header acceptance (Stage B, doesn't exist yet to test), end-to-end native secure-storage read/write (Stage C), min-version rejection (Stage D), telemetry emission (Stage D), and a full regression pass of login/refresh/logout/concurrent-refresh under `auth.dualTransport = ON` in a CI environment (not currently run in `.github/workflows/ci.yml`, which does not toggle feature flags).
+
+### 15.5 PWA and Capacitor sequencing
+
+**Verified:** no `@angular/pwa`/`@angular/service-worker` dependency, no
+`ngsw-config.json`, no `manifest.webmanifest`, no service-worker
+registration call anywhere in `frontend/src/app/app.config.ts` — PWA
+support is **entirely unbuilt**, confirming and re-verifying §2.
+
+**Shared prerequisite:** both PWA and Capacitor ultimately serve the same
+built Angular output (`dist/frontend/browser`, already Capacitor's
+configured `webDir`); neither technically blocks the other starting.
+
+**Sequencing recommendation (not authorized as a decision):** build the
+PWA first, or at minimum in parallel — not after Capacitor. Reasoning:
+(a) it is explicitly already on `PRD.md`'s Phase 2 (ahead of Capacitor's
+Phase 3+ in the existing roadmap's own ordering, which the `e0599a2`
+commit's message inverted without actually delivering either in full);
+(b) it is lower-risk (no native build/signing/store review surface) and
+would validate the service-worker caching strategy independently of any
+native-shell concerns; (c) it does not touch `ADR-013`/auth-transport at
+all, so it has zero dependency overlap with the `BATCH-06`/`BATCH-14`
+chain in §15.3.
+
+### 15.6 Native foundation readiness — what needs what environment
+
+| Task | Can run today (this dev environment) | Needs macOS/Xcode | Needs platform credentials |
+|---|---|---|---|
+| `npx cap add android` | Yes (Capacitor CLI + Android SDK/Gradle, cross-platform) | No | Google Play developer account only for *distribution*, not local builds |
+| `npx cap add ios` | **No** — Capacitor's iOS platform tooling and Xcode project generation require Xcode, which is macOS-only | **Yes** | Apple Developer account for *distribution*; a free account suffices for local simulator builds |
+| Android local build/run (emulator or device) | Yes | No | No |
+| iOS local build/run (simulator or device) | **No** | **Yes** | No for simulator; a provisioning profile for a physical device |
+| Environment config (`apiBaseUrl` for a mobile build) | Yes — same `environment.ts` pattern already in use | No | No |
+| API connectivity verification | Yes, once a native shell exists | No (Android) / Yes (iOS) | No |
+| Deep-link hosting files (`assetlinks.json`, `apple-app-site-association`) | Yes (static files, hosted on the existing web origin) | No | No |
+| Push notification setup | Firebase project (Android) creatable without macOS; APNs certificate/key (iOS) requires an Apple Developer account, not necessarily macOS itself for the *console* steps, but iOS testing needs macOS/Xcode | iOS testing: Yes | Both platforms: yes |
+| App signing (Android keystore) | Yes, cross-platform (`keytool`) | No | Google Play account for Play App Signing enrollment |
+| App signing (iOS) | **No** — requires Xcode/Keychain Access for certificate/provisioning-profile generation | **Yes** | Apple Developer account (paid, for distribution) |
+
+**This document does not create any native project, install the Android
+SDK, or claim access to a macOS/Xcode environment or any developer
+account — none was verified to exist.**
+
+### 15.7 First user-facing mobile capability — sharpened recommendation
+
+Per §15.2, camera-based receipt capture's scope, if pursued, should be
+**strictly bounded** to: a mobile capture UX that produces a normal
+`Attachment` (via the existing, unmodified upload path) and then calls the
+existing `TOTAL_ONLY` intake mode. Recommended acceptance criteria:
+
+1. A captured photo is stored via the **existing, unmodified** attachment-upload mechanism — no new entity, endpoint, or migration.
+2. The `document.intelligence` flag gates visibility of any new capture UI exactly as it already gates the intake endpoint.
+3. `ITEMIZED` mode is **not** exposed as a working feature in this first capability — it still returns the stub's "unavailable" result, and the UI must not imply otherwise.
+4. The user still manually confirms/enters expense details, exactly as with any uploaded receipt today — no auto-posted transaction.
+5. No existing expense, group, settlement, or P2P behavior changes.
+6. No interaction whatsoever with the five open Account-Ledger gates (`ACC-2a/4/5/6/2b`) — this capability has no code path anywhere near `Account`, `Transfer`, or `PersonLedgerService`.
+
+**Dependencies:** a native shell or a mobile browser with camera access
+(the HTML `<input type="file" accept="image/*" capture="environment">`
+attribute can prompt a device camera even without Capacitor — **not
+independently verified working on current FinMate markup this session**,
+flagged as an open item rather than assumed); the `document.intelligence`
+flag turned ON in at least a test environment.
+
+Automatic SMS and banking-notification ingestion (§5 #9/#10) remain
+deprioritized — no new evidence surfaced this session changes that
+assessment.
+
+### 15.8 Readiness Matrix
+
+| Work item | Verified current status | Dependencies | Blocking issue | Required decision/review | Acceptance criteria | Recommended next action |
+|---|---|---|---|---|---|---|
+| `BATCH-06` web cookie transport | **Code-complete**, flag OFF | None | Flag is OFF; prod CORS not yet verified (per execution plan) | Engineering sign-off to flip the flag in a test env | `auth.dualTransport=ON` passes existing + new regression tests; CORS verified in a prod-like env | Flip flag in staging, run regression, verify CORS |
+| `BATCH-06` native header transport | **Not started** | Design decision on header name/format | No code exists | Engineering design + security review (token-in-header exposure considerations) | Server accepts a native-origin header-delivered refresh token, capability-detected | Scope as new engineering work, not a flag flip |
+| Native project creation (Android) | Not started | `BATCH-06` not required to start this | None technical | Governance-owner approval to install Android SDK/Capacitor platform (per "never install a new dependency without telling the user first") | `npx cap add android` succeeds; app launches | Await explicit approval before running |
+| Native project creation (iOS) | Not started | macOS/Xcode environment (not available here — §15.6) | **Environment**, not just approval | Same approval + an actual macOS/Xcode environment | `npx cap add ios` succeeds on a macOS machine | Identify who has macOS/Xcode access before scheduling |
+| `BATCH-14` (secure storage/push/deep-links/min-version) | **Blocked (native)**, per execution plan | `BATCH-06` native half + native infra + plugin selection | All three unbuilt/unselected | Engineering scoping of the native-header half first | Tokens in native secure storage, not `localStorage`, on a running native build | Do not schedule until `BATCH-06` native half is scoped |
+| PWA (`@angular/pwa`) | **Not started** — no files exist despite a prior commit message claiming otherwise | None | None technical | Product/engineering sequencing call (§15.5) | `ngsw-config.json`/manifest exist; app installable via browser; offline shell works | Recommend running the `@angular/pwa` schematic before/alongside Capacitor work |
+| Camera receipt capture | **Independently ready to scope** (§15.7) | `document.intelligence` flag (exists, OFF); existing attachment upload (exists) | None of the usual mobile blockers apply | Product decision to prioritize; no security/counsel gate found to block the `TOTAL_ONLY` scope specifically | Per §15.7's six criteria | Scope as a frontend-only (or thin) mobile UX change; does not need to wait for `BATCH-06`/`BATCH-14` |
+| Automatic SMS/notification capture | **Deprioritized**, restrictions verified and dated (§5) | Legal/counsel review (not started) | Platform policy + no business/legal review exists | Legal/counsel + product | Not defined — gated behind the review itself | Do not schedule; revisit only after dedicated review |
+| App signing/release process | **Not started** | Native projects must exist first | No process documented anywhere in this repo | Engineering + whoever holds Apple/Google developer accounts (**[UNVERIFIED]** existence) | Signed builds producible in CI | Identify account ownership before Phase 5 planning |
+
+### 15.9 Proposed Execution Sequence
+
+1. Flip `auth.dualTransport` ON in a non-production environment; run existing regression tests; verify CORS per the execution plan's own condition. *(No native work needed; code already exists.)*
+2. In parallel: run the `@angular/pwa` schematic and build out `ngsw-config.json`/manifest (closes the already-open `PRD.md` Phase 2 item; zero dependency overlap with step 1).
+3. In parallel: scope camera-based receipt capture as a bounded, `TOTAL_ONLY`-only mobile UX change (§15.7) — independent of steps 1–2.
+4. Design and build the `BATCH-06` native-header transport (new engineering work, not yet scoped in detail by this document).
+5. Only after step 4: seek governance-owner approval to create native projects (`npx cap add android/ios`), confirming macOS/Xcode access for iOS first.
+6. Select and integrate a secure-storage Capacitor plugin; wire native token storage to the step-4 header transport — this completes `BATCH-14`'s secure-storage piece.
+7. Enforce minimum app version + compatibility telemetry (`ADR-015`'s remaining two sunset conditions).
+8. Only once all five `ADR-015` conditions hold: schedule the body-token sunset.
+9. Push notifications, deep links, and further native capabilities (§5 Phase 3) proceed only after step 6, each with its own review per §5's "no bundled approval" principle.
+10. Automatic SMS/notification capture: **not sequenced** — revisit only after a dedicated legal/counsel review, independent of this sequence.
+
+### 15.10 Unresolved Decisions (this session)
+
+- Whether to flip `auth.dualTransport` ON in any environment (step 1) — **engineering decision, not made here.**
+- Who owns/has access to a macOS/Xcode environment and to Apple Developer / Google Play accounts — **[UNVERIFIED]**, not found in this repository, needs an explicit answer before Phase 1 can be scheduled concretely.
+- Whether to prioritize the PWA schematic before, alongside, or after Capacitor work — **recommendation offered (§15.5), not decided.**
+- Whether to scope camera capture as a near-term deliverable — **recommendation offered (§15.7), not decided.**
+- The `ADR-015` sunset date — remains an open `[ENGINEERING PARAMETER]`, not addressed by this document.
+- Everything already listed in §11 remains open and is not restated here.
+
+**This section makes no code change, installs nothing, creates no native
+project, and does not modify `ADR-013`, `ADR-015`, the Decision Ledger, or
+the Account-Ledger governance documents. `ACC-2a`, `ACC-4`, `ACC-5`,
+`ACC-6`, and `ACC-2b` are untouched.**
