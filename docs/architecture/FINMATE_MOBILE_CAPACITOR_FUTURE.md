@@ -424,6 +424,14 @@ This section re-verifies §2's claims against deeper source inspection and
 is **more precise than, not contradictory with,** the sections above.
 Nothing in §1–14 is withdrawn; two findings below sharpen it materially.
 
+**Deeper companion spec:** [`FINMATE_NATIVE_AUTH_TRANSPORT_SPEC.md`](./FINMATE_NATIVE_AUTH_TRANSPORT_SPEC.md)
+takes §15.1's and §15.4's auth/secure-storage findings one level deeper —
+exact flow diagrams, the native transport contract's unresolved details,
+per-platform secure-storage requirements, the full test/acceptance
+matrices, and the precise next implementation task. This section is not
+duplicated there; read that document for anything beyond the summary
+level kept here.
+
 ### 15.1 Correction/sharpening of the BATCH-06 status
 
 §2 characterized `BATCH-06` as "not yet shipped." That remains true for the
