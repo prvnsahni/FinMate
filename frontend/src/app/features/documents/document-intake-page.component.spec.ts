@@ -67,4 +67,14 @@ describe('DocumentIntakePageComponent (DOC-4 orchestration)', () => {
     });
     expect(comp.confirmedDraft()?.amount).toBe(685);
   });
+
+  it('file input offers direct camera capture on mobile (capture=environment)', () => {
+    const fixture = TestBed.createComponent(DocumentIntakePageComponent);
+    fixture.componentInstance.onMode('ITEMIZED');
+    fixture.detectChanges();
+    const input: HTMLInputElement =
+      fixture.nativeElement.querySelector('input[type="file"]');
+    expect(input.getAttribute('capture')).toBe('environment');
+    expect(input.getAttribute('accept')).toBe('application/pdf,image/*');
+  });
 });

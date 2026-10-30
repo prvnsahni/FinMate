@@ -1,0 +1,29 @@
+{
+  "name": "FinMate",
+  "short_name": "FinMate",
+  "description": "FinMate — Smart expense tracking and group finance management",
+  "start_url": "/",
+  "display": "standalone",
+  "scope": "/",
+  "background_color": "#f8fafc",
+  "theme_color": "#f8fafc",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

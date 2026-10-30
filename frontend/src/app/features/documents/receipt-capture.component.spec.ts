@@ -95,4 +95,15 @@ describe('ReceiptCaptureComponent (DOC-3F orchestration)', () => {
     comp.onConfirmed(draft);
     expect(confirmed).toHaveBeenCalledWith(draft);
   });
+
+  it('file input offers direct camera capture on mobile (capture=environment)', () => {
+    const fixture = TestBed.createComponent(ReceiptCaptureComponent);
+    fixture.componentInstance.onMode('ITEMIZED');
+    fixture.detectChanges();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector(
+      '[data-testid="receipt-capture-file"]',
+    );
+    expect(input.getAttribute('capture')).toBe('environment');
+    expect(input.getAttribute('accept')).toBe('application/pdf,image/*');
+  });
 });
