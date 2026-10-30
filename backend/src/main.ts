@@ -6,6 +6,7 @@ import { HttpExceptionFilter } from './app/filters/http-exception.filter';
 import {
   isSwaggerEnabled,
   buildCspDirectives,
+  buildCorsOrigins,
   parseTrustProxy,
 } from './app/common/security-config.util';
 import helmet from 'helmet';
@@ -34,9 +35,7 @@ async function bootstrap() {
   );
 
   // CORS configuration
-  const corsOrigins = process.env.CORS_ORIGINS
-    ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
-    : [process.env.FRONTEND_URL || 'http://localhost:4200'];
+  const corsOrigins = buildCorsOrigins(process.env);
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
