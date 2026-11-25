@@ -1,6 +1,6 @@
-# FinMate
+# Samma
 
-FinMate is an Nx monorepo that contains:
+Samma is an Nx monorepo that contains:
 
 - `frontend`: Angular application
 - `backend`: NestJS API
@@ -343,14 +343,14 @@ This generates `manifest.webmanifest` and `ngsw-config.json` for offline support
 
 ## Zero-Knowledge Encryption & Browser Compatibility
 
-FinMate implements a zero-knowledge (ZK) client-side encryption design to guarantee that transaction details, personal notes, and goals are encrypted locally before being transmitted to the backend.
+Samma implements a zero-knowledge (ZK) client-side encryption design to guarantee that transaction details, personal notes, and goals are encrypted locally before being transmitted to the backend.
 
 ### Key Storage & Lifecycle
 
 - **Primary Storage:** The derived master `CryptoKey` and unwrapped group data keys are stored in the browser's **IndexedDB** vault as `extractable: false` keys using the browser's native **Structured Clone** mechanism. This ensures that:
   - The raw key material is never exposed to the JavaScript context.
   - Keys survive page refreshes and browser restarts.
-- **In-Memory Fallback:** If IndexedDB is blocked, full, or unavailable (e.g., in Safari Private Browsing mode, under extremely low space, or in customized WebViews), FinMate falls back to an **in-memory key cache** (`fallbackMap`).
+- **In-Memory Fallback:** If IndexedDB is blocked, full, or unavailable (e.g., in Safari Private Browsing mode, under extremely low space, or in customized WebViews), Samma falls back to an **in-memory key cache** (`fallbackMap`).
 
 ### Persistence Failure Consequences
 

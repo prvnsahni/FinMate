@@ -60,6 +60,34 @@ export function buildCspDirectives(
 }
 
 /**
+ * Environment inputs relevant to the CORS allowed-origin list. The index
+ * signature lets `process.env` be passed directly, matching `SwaggerEnv`.
+ */
+export interface CorsEnv {
+  CORS_ORIGINS?: string;
+  FRONTEND_URL?: string;
+  [key: string]: string | undefined;
+}
+
+/**
+ * Build the CORS allowed-origin list consumed by `app.enableCors({ origin })`
+ * in `main.ts`.
+ *
+ * - `CORS_ORIGINS` set to a non-empty string → comma-split, each entry
+ *   trimmed. The split is not otherwise sanitized: a stray comma (e.g.
+ *   `"a,,b"`) yields an empty-string entry rather than being filtered out —
+ *   this mirrors existing behaviour and is intentionally not changed here.
+ * - `CORS_ORIGINS` unset or an empty string → a single-origin fallback:
+ *   `FRONTEND_URL` if it is a non-empty string, otherwise
+ *   `http://localhost:4200`.
+ */
+export function buildCorsOrigins(env: CorsEnv): string[] {
+  return env.CORS_ORIGINS
+    ? env.CORS_ORIGINS.split(',').map((o) => o.trim())
+    : [env.FRONTEND_URL || 'http://localhost:4200'];
+}
+
+/**
  * SEC-W9 (trust proxy): parse the `TRUST_PROXY` env var into an Express
  * `trust proxy` setting, distinguishing trusted infrastructure from arbitrary
  * client-supplied forwarding headers.

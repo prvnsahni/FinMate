@@ -41,14 +41,14 @@ describe('PeopleService', () => {
       people: [],
     };
     service.getOverview(5).subscribe((res) => expect(res).toEqual(payload));
-    const req = httpMock.expectOne('/api/people?limit=5');
+    const req = httpMock.expectOne('/api/v1/people?limit=5');
     expect(req.request.method).toBe('GET');
     req.flush(payload);
   });
 
   it('fetches the overview without a limit when omitted', () => {
     service.getOverview().subscribe();
-    const req = httpMock.expectOne('/api/people');
+    const req = httpMock.expectOne('/api/v1/people');
     expect(req.request.method).toBe('GET');
     req.flush({
       currency: 'INR',
@@ -88,7 +88,7 @@ describe('PeopleService', () => {
       expect(res.history[0].title).toBe('Room Rent');
       done();
     });
-    const req = httpMock.expectOne('/api/people/u2');
+    const req = httpMock.expectOne('/api/v1/people/u2');
     req.flush(detail);
   });
 
@@ -101,7 +101,7 @@ describe('PeopleService', () => {
         occurredOn: '2026-08-04',
       })
       .subscribe();
-    const req = httpMock.expectOne('/api/people/u2/transactions');
+    const req = httpMock.expectOne('/api/v1/people/u2/transactions');
     expect(req.request.method).toBe('POST');
     expect(req.request.body.entryType).toBe('lend');
     req.flush({});
@@ -115,14 +115,14 @@ describe('PeopleService', () => {
         occurredOn: '2026-08-10',
       })
       .subscribe();
-    const req = httpMock.expectOne('/api/people/u2/settlements');
+    const req = httpMock.expectOne('/api/v1/people/u2/settlements');
     expect(req.request.method).toBe('POST');
     req.flush({});
   });
 
   it('DELETEs a direct transaction', () => {
     service.deleteTransaction('d1').subscribe();
-    const req = httpMock.expectOne('/api/people/transactions/d1');
+    const req = httpMock.expectOne('/api/v1/people/transactions/d1');
     expect(req.request.method).toBe('DELETE');
     req.flush({});
   });

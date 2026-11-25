@@ -1,6 +1,11 @@
 export const environment = {
   production: false,
-  apiBaseUrl: '/api',
+  // Must match the backend's real global prefix (`/api/v1`) exactly, with no
+  // dev-proxy path rewrite — a rewritten path breaks path-scoped cookies
+  // (AU-2a's refresh cookie is scoped to `/api/v1/auth/refresh`; the browser
+  // matches cookie paths against the URL IT requests, not what a proxy
+  // rewrites it to server-side). See `proxy.conf.json` (1:1 passthrough).
+  apiBaseUrl: '/api/v1',
   /**
    * Mirrors the backend `document.intelligence` flag. Gates the client-side Document
    * Intelligence UI (receipt capture / OCR / extraction review). Default OFF — when false,

@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
+import { Store } from '@ngxs/store';
 import { RecurringExpenseFormComponent } from './recurring-expense-form.component';
 import { RecurringExpensesService } from '../../services/recurring-expenses.service';
+import { AuthState } from '../../../../core/auth/auth.state';
 import { of } from 'rxjs';
 
 describe('RecurringExpenseFormComponent', () => {
@@ -13,10 +15,20 @@ describe('RecurringExpenseFormComponent', () => {
       createRecurringExpense: jest.fn().mockReturnValue(of({ id: '1' })),
       updateRecurringExpense: jest.fn().mockReturnValue(of({ id: '1' })),
     };
+    const mockStore = {
+      selectSnapshot: jest.fn((selector: unknown) =>
+        selector === AuthState.getUser
+          ? { userId: 'user-1', email: 'test@example.com' }
+          : null,
+      ),
+    };
 
     await TestBed.configureTestingModule({
       imports: [ReactiveFormsModule, RecurringExpenseFormComponent],
-      providers: [{ provide: RecurringExpensesService, useValue: spy }],
+      providers: [
+        { provide: RecurringExpensesService, useValue: spy },
+        { provide: Store, useValue: mockStore },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(RecurringExpenseFormComponent);

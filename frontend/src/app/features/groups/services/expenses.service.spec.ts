@@ -95,7 +95,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       expect(req.request.method).toBe('GET');
       req.flush({ data: mockData, meta: { totalItems: 2 } });
     });
@@ -113,7 +113,7 @@ describe('ExpensesService', () => {
         .subscribe(() => done());
 
       const req = httpMock.expectOne(
-        '/api/expenses?groupId=group-1&page=2&limit=10&categories=food,travel&startDate=2026-01-01&endDate=2026-01-31&minAmount=100',
+        '/api/v1/expenses?groupId=group-1&page=2&limit=10&categories=food,travel&startDate=2026-01-01&endDate=2026-01-31&minAmount=100',
       );
       req.flush({ data: [], meta: { totalItems: 0 } });
     });
@@ -124,7 +124,7 @@ describe('ExpensesService', () => {
         .subscribe(() => done());
 
       const req = httpMock.expectOne(
-        '/api/expenses?groupId=group-1&tagIds=milk,grocery',
+        '/api/v1/expenses?groupId=group-1&tagIds=milk,grocery',
       );
       req.flush({ data: [], meta: { totalItems: 0 } });
     });
@@ -150,7 +150,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       req.flush({ data: mockData });
     });
     it('should return placeholder text when decryption fails — never ciphertext', (done) => {
@@ -172,7 +172,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       req.flush({ data: mockData });
     });
 
@@ -195,7 +195,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       req.flush({ data: mockData });
     });
 
@@ -210,7 +210,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       req.flush({ data: mockData });
     });
   });
@@ -232,7 +232,7 @@ describe('ExpensesService', () => {
         expect(res).toEqual(tags);
         done();
       });
-      const req = httpMock.expectOne('/api/taxonomy');
+      const req = httpMock.expectOne('/api/v1/taxonomy');
       expect(req.request.method).toBe('GET');
       req.flush(tags);
     });
@@ -249,7 +249,7 @@ describe('ExpensesService', () => {
           done();
         });
       const req = httpMock.expectOne(
-        '/api/expenses/analytics/tags?groupId=group-1&startDate=2026-08-01&tagIds=grocery',
+        '/api/v1/expenses/analytics/tags?groupId=group-1&startDate=2026-08-01&tagIds=grocery',
       );
       expect(req.request.method).toBe('GET');
       req.flush(points);
@@ -270,7 +270,7 @@ describe('ExpensesService', () => {
           done();
         });
       const req = httpMock.expectOne(
-        '/api/expenses/analytics/tags-trend?groupId=group-1&startDate=2026-07-01&endDate=2026-08-31',
+        '/api/v1/expenses/analytics/tags-trend?groupId=group-1&startDate=2026-07-01&endDate=2026-08-31',
       );
       expect(req.request.method).toBe('GET');
       req.flush(points);
@@ -296,7 +296,7 @@ describe('ExpensesService', () => {
       // Wait for encryptPayload microtask to execute and request to be scheduled
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const req = httpMock.expectOne('/api/expenses');
+      const req = httpMock.expectOne('/api/v1/expenses');
       expect(req.request.method).toBe('POST');
       expect(req.request.body.title).toBe('enc:Dinner');
       req.flush({ id: 'exp-new', title: 'enc:Dinner' });
@@ -332,7 +332,7 @@ describe('ExpensesService', () => {
       // Wait for encryptPayload microtask to execute and request to be scheduled
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const req = httpMock.expectOne('/api/expenses');
+      const req = httpMock.expectOne('/api/v1/expenses');
       expect(req.request.method).toBe('POST');
       expect(req.request.body.groupKeyVersionId).toBe('v1-id');
       expect(req.request.body.title).toBe('enc:Dinner');
@@ -366,7 +366,7 @@ describe('ExpensesService', () => {
       // Wait for encryptPayload microtask to execute and request to be scheduled
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const req = httpMock.expectOne('/api/expenses');
+      const req = httpMock.expectOne('/api/v1/expenses');
       req.flush({ id: 'exp-new', title: 'enc:Test' });
 
       const resolvedExpense = await promise;
@@ -394,7 +394,7 @@ describe('ExpensesService', () => {
       // Wait for encryptPayload microtask to execute and request to be scheduled
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      const req = httpMock.expectOne('/api/expenses/exp-1');
+      const req = httpMock.expectOne('/api/v1/expenses/exp-1');
       expect(req.request.method).toBe('PATCH');
       req.flush({ id: 'exp-1', title: 'enc:Updated Dinner' });
 
@@ -414,7 +414,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses/exp-1');
+      const req = httpMock.expectOne('/api/v1/expenses/exp-1');
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
     });
@@ -428,7 +428,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses/exp-1/restore');
+      const req = httpMock.expectOne('/api/v1/expenses/exp-1/restore');
       expect(req.request.method).toBe('POST');
       req.flush({ id: 'exp-1', title: 'enc:Restored' });
     });
@@ -444,7 +444,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses/exp-1/restore');
+      const req = httpMock.expectOne('/api/v1/expenses/exp-1/restore');
       req.flush({ id: 'exp-1', title: 'cipher:text' });
     });
   });
@@ -454,7 +454,7 @@ describe('ExpensesService', () => {
     it('should call correct URL without groupId', (done) => {
       service.getMonthlyAnalytics().subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/expenses/analytics/monthly');
+      const req = httpMock.expectOne('/api/v1/expenses/analytics/monthly');
       expect(req.request.method).toBe('GET');
       req.flush([]);
     });
@@ -463,7 +463,7 @@ describe('ExpensesService', () => {
       service.getMonthlyAnalytics('group-1').subscribe(() => done());
 
       const req = httpMock.expectOne(
-        '/api/expenses/analytics/monthly?groupId=group-1',
+        '/api/v1/expenses/analytics/monthly?groupId=group-1',
       );
       req.flush([]);
     });
@@ -471,7 +471,7 @@ describe('ExpensesService', () => {
     it('should not append groupId when value is "personal"', (done) => {
       service.getMonthlyAnalytics('personal').subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/expenses/analytics/monthly');
+      const req = httpMock.expectOne('/api/v1/expenses/analytics/monthly');
       req.flush([]);
     });
   });
@@ -481,7 +481,7 @@ describe('ExpensesService', () => {
       service.getCategoryAnalytics('group-1').subscribe(() => done());
 
       const req = httpMock.expectOne(
-        '/api/expenses/analytics/categories?groupId=group-1',
+        '/api/v1/expenses/analytics/categories?groupId=group-1',
       );
       req.flush([]);
     });
@@ -493,7 +493,7 @@ describe('ExpensesService', () => {
       const formData = new FormData();
       service.importExpenses(formData).subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/import/expenses');
+      const req = httpMock.expectOne('/api/v1/import/expenses');
       expect(req.request.method).toBe('POST');
       req.flush(null);
     });
@@ -519,7 +519,7 @@ describe('ExpensesService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/expenses?groupId=group-1');
+      const req = httpMock.expectOne('/api/v1/expenses?groupId=group-1');
       req.flush({ data: [{ id: 'exp-1', title: 'cipher' }] });
     });
   });

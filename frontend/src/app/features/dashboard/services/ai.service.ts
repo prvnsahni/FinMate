@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../../environments/environment';
 
 export interface AiResponse {
   text: string;
@@ -16,7 +17,7 @@ export class AiService {
     prompt: string,
     systemInstruction?: string,
   ): Observable<AiResponse> {
-    return this.http.post<AiResponse>('/api/ai/proxy', {
+    return this.http.post<AiResponse>(`${environment.apiBaseUrl}/ai/proxy`, {
       prompt,
       systemInstruction,
     });

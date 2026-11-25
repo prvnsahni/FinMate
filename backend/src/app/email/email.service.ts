@@ -53,7 +53,7 @@ export class EmailService {
       this.configService.get<string>('RESEND_API_KEY') || null;
 
     const fromName =
-      this.configService.get<string>('MAIL_FROM_NAME') || 'Finmate';
+      this.configService.get<string>('MAIL_FROM_NAME') || 'Samma';
     // MAIL_FROM_EMAIL is canonical; FROM_EMAIL is kept as a back-compat fallback.
     // Normalize to a bare address: if a full "Name <email>" is configured here
     // by mistake, using it verbatim would produce an invalid, doubly-wrapped
@@ -97,7 +97,7 @@ export class EmailService {
     inviteUrl: string,
     inviterName: string,
   ): Promise<void> {
-    const subject = `You're invited to join "${groupName}" on FinMate`;
+    const subject = `You're invited to join "${groupName}" on Samma`;
     const html = this.render({
       title: subject,
       heading: 'Group invitation',
@@ -108,15 +108,15 @@ export class EmailService {
         )}</strong> has invited you to join the group
         <strong>${this.escape(
           groupName,
-        )}</strong> on FinMate to track and split shared expenses.</p>
+        )}</strong> on Samma to track and split shared expenses.</p>
         <p style="margin:0 0 8px;">Use the button below to accept the invitation:</p>`,
       ctaLabel: 'Join group',
       ctaUrl: inviteUrl,
       footnote:
-        "If you don't have a FinMate account yet, you'll be prompted to create one when you open the link.",
+        "If you don't have a Samma account yet, you'll be prompted to create one when you open the link.",
     });
     const text = this.text(
-      `${inviterName} has invited you to join the group "${groupName}" on FinMate.`,
+      `${inviterName} has invited you to join the group "${groupName}" on Samma.`,
       'Join the group',
       inviteUrl,
     );
@@ -127,10 +127,10 @@ export class EmailService {
     toEmail: string,
     verificationUrl: string,
   ): Promise<void> {
-    const subject = 'Verify your email — FinMate';
+    const subject = 'Verify your email — Samma';
     const html = this.render({
       title: subject,
-      heading: 'Welcome to FinMate!',
+      heading: 'Welcome to Samma!',
       bodyHtml: `
         <p style="margin:0 0 16px;">Thanks for signing up. Confirm your email
         address to activate your account and automatically link any groups you
@@ -138,10 +138,10 @@ export class EmailService {
       ctaLabel: 'Verify email',
       ctaUrl: verificationUrl,
       footnote:
-        'This link expires in 24 hours. If you did not create a FinMate account, you can safely ignore this email.',
+        'This link expires in 24 hours. If you did not create a Samma account, you can safely ignore this email.',
     });
     const text = this.text(
-      'Confirm your email address to activate your FinMate account.',
+      'Confirm your email address to activate your Samma account.',
       'Verify your email',
       verificationUrl,
     );
@@ -152,12 +152,12 @@ export class EmailService {
     toEmail: string,
     resetUrl: string,
   ): Promise<void> {
-    const subject = 'Reset your password — FinMate';
+    const subject = 'Reset your password — Samma';
     const html = this.render({
       title: subject,
       heading: 'Password reset',
       bodyHtml: `
-        <p style="margin:0 0 16px;">We received a request to reset your FinMate
+        <p style="margin:0 0 16px;">We received a request to reset your Samma
         password. Click the button below to choose a new one.</p>`,
       ctaLabel: 'Reset password',
       ctaUrl: resetUrl,
@@ -165,7 +165,7 @@ export class EmailService {
         'This link is valid for 1 hour. If you did not request a reset, you can safely ignore this email.',
     });
     const text = this.text(
-      'We received a request to reset your FinMate password.',
+      'We received a request to reset your Samma password.',
       'Reset your password',
       resetUrl,
     );
@@ -297,7 +297,7 @@ export class EmailService {
                         Roboto,Helvetica,Arial,sans-serif;">
             <tr>
               <td style="background:${brand};padding:24px 32px;">
-                <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.3px;">FinMate</span>
+                <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:0.3px;">Samma</span>
               </td>
             </tr>
             <tr>
@@ -317,7 +317,7 @@ export class EmailService {
                          font-size:12px;color:#8a8f98;line-height:1.5;">
                 Need help? Contact us at
                 <a href="mailto:${this.supportEmail}" style="color:${brand};">${this.supportEmail}</a>.<br />
-                &copy; ${new Date().getFullYear()} FinMate. You are receiving this email because an action was taken with your address.
+                &copy; ${new Date().getFullYear()} Samma. You are receiving this email because an action was taken with your address.
               </td>
             </tr>
           </table>
@@ -331,7 +331,7 @@ export class EmailService {
   /** Builds a plain-text alternative for a simple single-CTA message. */
   private text(intro: string, ctaLabel: string, ctaUrl: string): string {
     return [
-      'FinMate',
+      'Samma',
       '',
       intro,
       '',

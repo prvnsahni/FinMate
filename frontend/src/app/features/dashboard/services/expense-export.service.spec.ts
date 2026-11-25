@@ -137,7 +137,7 @@ describe('ExpenseExportService', () => {
       'xlsx',
     );
 
-    expect(filename).toBe('finmate-expenses-2026-01-01_to_2026-03-31.xlsx');
+    expect(filename).toBe('samma-expenses-2026-01-01_to_2026-03-31.xlsx');
     expect(createUrl).toHaveBeenCalled();
     expect(clickSpy).toHaveBeenCalled();
     clickSpy.mockRestore();

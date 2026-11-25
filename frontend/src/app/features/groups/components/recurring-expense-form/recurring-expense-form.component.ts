@@ -15,14 +15,14 @@ import {
   AbstractControl,
   ValidationErrors,
 } from '@angular/forms';
-import { jwtDecode } from 'jwt-decode';
+import { Store } from '@ngxs/store';
 import { RecurringExpensesService } from '../../services/recurring-expenses.service';
 import { SubmitButtonComponent } from '../../../../shared/components/submit-button/submit-button.component';
+import { AuthState } from '../../../../core/auth/auth.state';
 import {
   CreateRecurringExpenseDto,
   RecurringExpenseSplitInputDto,
   GroupMember,
-  JwtPayload,
   UpdateRecurringExpenseDto,
 } from '@finmate/data-models';
 import {
@@ -58,6 +58,7 @@ function endDateNotBeforeStart(
 export class RecurringExpenseFormComponent implements OnChanges {
   private recurringExpensesService = inject(RecurringExpensesService);
   private fb = inject(FormBuilder);
+  private store = inject(Store);
 
   currencyOptions: DropdownOption[] = [
     { value: 'USD', label: 'USD ($)' },
@@ -143,14 +144,8 @@ export class RecurringExpenseFormComponent implements OnChanges {
   }
 
   getCurrentUserId(): string | null {
-    const token = localStorage.getItem('finmate_token');
-    if (!token) return null;
-    try {
-      const decoded = jwtDecode<JwtPayload>(token);
-      return decoded.userId || null;
-    } catch {
-      return null;
-    }
+    // AU-6: the access token lives in memory only (AuthState), never localStorage.
+    return this.store.selectSnapshot(AuthState.getUser)?.userId || null;
   }
 
   get availablePayers() {

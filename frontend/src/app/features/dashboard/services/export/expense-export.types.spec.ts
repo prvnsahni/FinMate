@@ -96,7 +96,7 @@ describe('buildExportFilename', () => {
   it('builds the suggested filename from the range', () => {
     expect(
       buildExportFilename({ from: '2026-01-01', to: '2026-03-31' }, 'xlsx'),
-    ).toBe('finmate-expenses-2026-01-01_to_2026-03-31.xlsx');
+    ).toBe('samma-expenses-2026-01-01_to_2026-03-31.xlsx');
   });
 });
 

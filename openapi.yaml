@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: FinMate API
+  title: Samma API
   description: |
-    API Contract for FinMate, a Personal Finance & Lifestyle Companion.
+    API Contract for Samma, a Personal Finance & Lifestyle Companion.
     Provides endpoints for Auth, Users, Groups, Expenses, Settlements, Notes, Goals, and Import/Export.
 
     ### Versioning Strategy
@@ -179,7 +179,7 @@ paths:
                     example: 'KVKFKRCSN5RHK33O'
                   qrCodeUrl:
                     type: string
-                    example: 'otpauth://totp/FinMate:user@example.com?secret=KVKFKRCSN5RHK33O&issuer=FinMate'
+                    example: 'otpauth://totp/Samma:user@example.com?secret=KVKFKRCSN5RHK33O&issuer=Samma'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 

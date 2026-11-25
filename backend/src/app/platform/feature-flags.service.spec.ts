@@ -6,10 +6,13 @@ const configWith = (values: Record<string, string>): ConfigService =>
   ({ get: (key: string) => values[key] }) as unknown as ConfigService;
 
 describe('FeatureFlagsService (W-PLAT-01)', () => {
-  it('returns the safe default (OFF) for every flag when nothing is configured', () => {
+  it('returns the safe default for every flag when nothing is configured', () => {
     const svc = new FeatureFlagsService();
+    // AU-6 (2026-10-30): auth.dualTransport now defaults ON — the web cookie
+    // migration landed, so dual-emit cookie/body is the real default, not an
+    // opt-in. Every other flag stays OFF (the safe state).
     for (const flag of ALL_FEATURE_FLAGS) {
-      expect(svc.isEnabled(flag)).toBe(false);
+      expect(svc.isEnabled(flag)).toBe(flag === 'auth.dualTransport');
     }
   });
 

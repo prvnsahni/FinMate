@@ -644,7 +644,7 @@ describe('AuthService', () => {
 
       expect(result.secret).toHaveLength(16);
       expect(result.qrCodeUrl).toContain(
-        'otpauth://totp/FinMate:test@example.com',
+        'otpauth://totp/Samma:test@example.com',
       );
       expect(usersService.updateUser).toHaveBeenCalled();
     });

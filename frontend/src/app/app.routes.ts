@@ -40,6 +40,13 @@ export const appRoutes: Route[] = [
             (m) => m.documentsRoutes,
           ),
       },
+      {
+        path: 'roadmap',
+        loadComponent: () =>
+          import('./features/roadmap/roadmap-page.component').then(
+            (m) => m.RoadmapPageComponent,
+          ),
+      },
       // People supersedes the old Friends page; keep the path as a redirect
       // for backwards compatibility (bookmarks, existing links).
       { path: 'friends', redirectTo: 'people', pathMatch: 'full' },

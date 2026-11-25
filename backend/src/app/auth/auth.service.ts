@@ -381,7 +381,7 @@ export class AuthService {
       userAgent: context?.userAgent,
     });
 
-    const qrCodeUrl = `otpauth://totp/FinMate:${user.email}?secret=${secret}&issuer=FinMate`;
+    const qrCodeUrl = `otpauth://totp/Samma:${user.email}?secret=${secret}&issuer=Samma`;
     return {
       secret,
       qrCodeUrl,

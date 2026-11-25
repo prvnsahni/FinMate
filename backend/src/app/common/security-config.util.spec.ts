@@ -1,6 +1,7 @@
 import {
   isSwaggerEnabled,
   buildCspDirectives,
+  buildCorsOrigins,
   parseTrustProxy,
 } from './security-config.util';
 
@@ -43,6 +44,65 @@ describe('security-config.util', () => {
       expect(d.scriptSrc).toContain(`'unsafe-inline'`);
       expect(d.styleSrc).toContain(`'unsafe-inline'`);
       expect(d.imgSrc).toContain('validator.swagger.io');
+    });
+  });
+
+  describe('buildCorsOrigins (CORS)', () => {
+    it('splits a comma-separated CORS_ORIGINS list and trims each entry', () => {
+      expect(
+        buildCorsOrigins({
+          CORS_ORIGINS: ' https://a.finmate.app , https://b.finmate.app ',
+        }),
+      ).toEqual(['https://a.finmate.app', 'https://b.finmate.app']);
+    });
+
+    it('returns a single-entry array for a CORS_ORIGINS value with no comma', () => {
+      expect(buildCorsOrigins({ CORS_ORIGINS: 'https://finmate.app' })).toEqual(
+        ['https://finmate.app'],
+      );
+    });
+
+    it('falls back to FRONTEND_URL when CORS_ORIGINS is unset', () => {
+      expect(buildCorsOrigins({ FRONTEND_URL: 'https://finmate.app' })).toEqual(
+        ['https://finmate.app'],
+      );
+    });
+
+    it('falls back to the localhost default when neither var is set', () => {
+      expect(buildCorsOrigins({})).toEqual(['http://localhost:4200']);
+    });
+
+    it('treats an empty-string CORS_ORIGINS the same as unset (falls back)', () => {
+      expect(
+        buildCorsOrigins({
+          CORS_ORIGINS: '',
+          FRONTEND_URL: 'https://finmate.app',
+        }),
+      ).toEqual(['https://finmate.app']);
+    });
+
+    it('falls back to localhost when FRONTEND_URL is also an empty string', () => {
+      expect(buildCorsOrigins({ CORS_ORIGINS: '', FRONTEND_URL: '' })).toEqual([
+        'http://localhost:4200',
+      ]);
+    });
+
+    it(
+      'does not filter empty entries produced by a malformed list ' +
+        '(preserves existing behaviour exactly — not sanitized here)',
+      () => {
+        expect(buildCorsOrigins({ CORS_ORIGINS: 'a,,b' })).toEqual([
+          'a',
+          '',
+          'b',
+        ]);
+      },
+    );
+
+    it('a whitespace-only CORS_ORIGINS is truthy and is NOT treated as unset', () => {
+      // Matches the existing inline logic's truthiness check exactly: a
+      // non-empty (even if whitespace-only) string takes the split branch.
+      expect(buildCorsOrigins({ CORS_ORIGINS: '   ' })).toEqual(['']);
     });
   });
 

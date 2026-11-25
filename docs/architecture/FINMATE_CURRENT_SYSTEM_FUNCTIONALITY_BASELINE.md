@@ -299,7 +299,7 @@ The phone app is the website in a native wrapper. It works, but the mobile-speci
 
 ### Technical detail
 
-- **Capacitor config (`capacitor.config.ts`):** `appId: app.finmate.app`, `appName: FinMate`, `webDir: dist/frontend/browser`. **No plugins configured** (no secure-storage/push/deep-link config present).
+- **Capacitor config (`capacitor.config.ts`):** `appId: app.samma.app`, `appName: Samma`, `webDir: dist/frontend/browser`. **No plugins configured** (no secure-storage/push/deep-link config present).
 - **Authentication:** **same web body-token flow** — **no** Keychain/Keystore secure storage yet (TARGET AU-1).
 - **Secure storage / push / deep links / universal-app-links / offline:** **TARGET** (not implemented).
 - **WebView / API:** same origin behaviour as web via the wrapped build.

@@ -72,7 +72,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups');
+      const req = httpMock.expectOne('/api/v1/groups');
       expect(req.request.method).toBe('GET');
       req.flush({ data: [], meta: { totalItems: 0 } });
     });
@@ -85,7 +85,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups/group-1');
+      const req = httpMock.expectOne('/api/v1/groups/group-1');
       expect(req.request.method).toBe('GET');
       req.flush({ id: 'group-1', name: 'Test Group' });
     });
@@ -98,7 +98,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups/group-1/members');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/members');
       expect(req.request.method).toBe('GET');
       req.flush([{ id: 'member-1', role: 'owner' }]);
     });
@@ -112,7 +112,7 @@ describe('GroupsService', () => {
       });
 
       const req = httpMock.expectOne(
-        '/api/groups/group-1/settlements/balances',
+        '/api/v1/groups/group-1/settlements/balances',
       );
       expect(req.request.method).toBe('GET');
       req.flush({ balances: [], suggestedSettlements: [] });
@@ -145,7 +145,7 @@ describe('GroupsService', () => {
       });
 
       const req = httpMock.expectOne(
-        (r) => r.url === '/api/groups/group-1/history',
+        (r) => r.url === '/api/v1/groups/group-1/history',
       );
       expect(req.request.method).toBe('GET');
       // Paginated by default (page 1, limit 20) for infinite scroll.
@@ -158,7 +158,7 @@ describe('GroupsService', () => {
       service.getHistoryLogs('group-1', 3).subscribe(() => done());
 
       const req = httpMock.expectOne(
-        (r) => r.url === '/api/groups/group-1/history',
+        (r) => r.url === '/api/v1/groups/group-1/history',
       );
       expect(req.request.params.get('page')).toBe('3');
       req.flush({ data: [] });
@@ -172,7 +172,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups/group-1/expenses/deleted');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/expenses/deleted');
       expect(req.request.method).toBe('GET');
       req.flush({ data: [] });
     });
@@ -188,7 +188,7 @@ describe('GroupsService', () => {
         });
 
       const req = httpMock.expectOne(
-        '/api/groups/group-1/carry-forward?from=2026-06-01&to=2026-08-31',
+        '/api/v1/groups/group-1/carry-forward?from=2026-06-01&to=2026-08-31',
       );
       expect(req.request.method).toBe('GET');
       req.flush([]);
@@ -203,7 +203,7 @@ describe('GroupsService', () => {
       });
 
       const req = httpMock.expectOne(
-        '/api/groups/group-1/contributions?month=2026-06',
+        '/api/v1/groups/group-1/contributions?month=2026-06',
       );
       expect(req.request.method).toBe('GET');
       req.flush([]);
@@ -217,7 +217,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/invite-links/token-abc');
+      const req = httpMock.expectOne('/api/v1/invite-links/token-abc');
       expect(req.request.method).toBe('GET');
       req.flush({ groupName: 'Test' });
     });
@@ -230,7 +230,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups/invitations/pending');
+      const req = httpMock.expectOne('/api/v1/groups/invitations/pending');
       expect(req.request.method).toBe('GET');
       req.flush([]);
     });
@@ -246,7 +246,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups');
+      const req = httpMock.expectOne('/api/v1/groups');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(groupData);
       req.flush({ id: 'g-new', name: 'New Group' });
@@ -258,7 +258,7 @@ describe('GroupsService', () => {
       service.regenerateInviteToken('group-1').subscribe(() => done());
 
       const req = httpMock.expectOne(
-        '/api/groups/group-1/invite-link/regenerate',
+        '/api/v1/groups/group-1/invite-link/regenerate',
       );
       expect(req.request.method).toBe('POST');
       req.flush({ id: 'group-1' });
@@ -269,7 +269,7 @@ describe('GroupsService', () => {
     it('should join a group via invite token', (done) => {
       service.joinGroup('invite-token-123').subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/join/invite-token-123');
+      const req = httpMock.expectOne('/api/v1/groups/join/invite-token-123');
       expect(req.request.method).toBe('POST');
       req.flush({ id: 'member-new' });
     });
@@ -281,7 +281,7 @@ describe('GroupsService', () => {
 
       service.inviteMember('group-1', payload).subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/group-1/members');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/members');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(payload);
       req.flush({ id: 'member-new' });
@@ -296,7 +296,7 @@ describe('GroupsService', () => {
         .updateContributions('group-1', payload as any)
         .subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/group-1/contributions');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/contributions');
       expect(req.request.method).toBe('POST');
       req.flush([]);
     });
@@ -309,7 +309,7 @@ describe('GroupsService', () => {
         done();
       });
 
-      const req = httpMock.expectOne('/api/groups/group-1/close-month');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/close-month');
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ ledgerMonth: '2026-06' });
       req.flush({ nextLedgerMonth: '2026-07', carryForwardExpenseCount: 2 });
@@ -323,7 +323,7 @@ describe('GroupsService', () => {
 
       service.updateGroup('group-1', groupData as any).subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/group-1');
+      const req = httpMock.expectOne('/api/v1/groups/group-1');
       expect(req.request.method).toBe('PATCH');
       expect(req.request.body).toEqual(groupData);
       req.flush({ id: 'group-1', name: 'Updated Name' });
@@ -338,7 +338,7 @@ describe('GroupsService', () => {
         .updateMember('group-1', 'member-1', payload)
         .subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/group-1/members/member-1');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/members/member-1');
       expect(req.request.method).toBe('PATCH');
       expect(req.request.body).toEqual(payload);
       req.flush({ id: 'member-1', role: 'admin' });
@@ -350,7 +350,7 @@ describe('GroupsService', () => {
     it('should remove a member from a group', (done) => {
       service.removeMember('group-1', 'member-1').subscribe(() => done());
 
-      const req = httpMock.expectOne('/api/groups/group-1/members/member-1');
+      const req = httpMock.expectOne('/api/v1/groups/group-1/members/member-1');
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
     });

@@ -1,7 +1,10 @@
 import { HttpInterceptorFn, HttpErrorResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { Store } from '@ngxs/store';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { TokenRefreshService } from '../auth/token-refresh.service';
+import { AuthState } from '../auth/auth.state';
+import { isNativeAuthTransport } from '../platform/auth-transport';
 
 /**
  * Attaches the access token to outgoing requests and transparently recovers
@@ -10,14 +13,29 @@ import { TokenRefreshService } from '../auth/token-refresh.service';
  * across all concurrent 401s — then retries the original request. If the
  * refresh fails, that service clears the session and redirects to Login, so
  * here we simply propagate the error.
+ *
+ * Web (AU-6): the access token is read from in-memory state, never
+ * `localStorage`. Every request carries `withCredentials: true` so the
+ * browser attaches the HttpOnly refresh/CSRF cookies on auth calls — a no-op
+ * elsewhere, since those cookies are path-scoped to `/api/v1/auth*` only.
+ *
+ * Native (interim pre-AU-6 scheme — see `isNativeAuthTransport`): byte-for-byte
+ * the original behavior — the access token still comes from `AuthState` (which
+ * now mirrors `localStorage` on native, see `auth.state.ts`), but
+ * `withCredentials` is never set, since native has no cookie to send and the
+ * pre-AU-6 behavior never set it either (`AU-7`/`ADR-013`: cookies don't work
+ * reliably in a Capacitor WebView, so native doesn't rely on them at all).
  */
 export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
   const tokenRefresh = inject(TokenRefreshService);
-  const token = localStorage.getItem('finmate_token');
+  const store = inject(Store);
+  const token = store.selectSnapshot(AuthState.getToken);
+  const useCredentials = !isNativeAuthTransport();
 
-  const authReq = token
-    ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })
-    : req;
+  const authReq = req.clone({
+    ...(token ? { setHeaders: { Authorization: `Bearer ${token}` } } : {}),
+    ...(useCredentials ? { withCredentials: true } : {}),
+  });
 
   return next(authReq).pipe(
     catchError((error) => {
@@ -36,6 +54,7 @@ export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
             next(
               req.clone({
                 setHeaders: { Authorization: `Bearer ${accessToken}` },
+                ...(useCredentials ? { withCredentials: true } : {}),
               }),
             ),
           ),

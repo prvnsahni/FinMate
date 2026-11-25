@@ -1,10 +1,12 @@
 import {
   ApplicationConfig,
+  isDevMode,
   provideBrowserGlobalErrorListeners,
   provideZoneChangeDetection,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideServiceWorker } from '@angular/service-worker';
 import { appRoutes } from './app.routes';
 import { optimisticLockInterceptor } from './core/interceptors/optimistic-lock.interceptor';
 import { jwtInterceptor } from './core/interceptors/jwt.interceptor';
@@ -47,5 +49,13 @@ export const appConfig: ApplicationConfig = {
       useClass: PasswordUnlockProvider,
       multi: true,
     },
+    // Asset caching only (ngsw-config.json has no dataGroups) — no API
+    // response, including auth or financial data, is ever cached by the
+    // service worker. Registered a few seconds after load so it never
+    // delays the initial render, and disabled outside production builds.
+    provideServiceWorker('ngsw-worker.js', {
+      enabled: !isDevMode(),
+      registrationStrategy: 'registerWhenStable:30000',
+    }),
   ],
 };

@@ -20,7 +20,6 @@ import {
 } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { jwtDecode } from 'jwt-decode';
 import {
   DuplicateExpenseMatch,
   ExpensesService,
@@ -31,11 +30,11 @@ import { SubmitButtonComponent } from '../../../../shared/components/submit-butt
 import {
   ExpenseSplitInputDto,
   GroupMember,
-  JwtPayload,
   UpdateExpenseDto,
   UserSearchResult,
 } from '@finmate/data-models';
 import { Store } from '@ngxs/store';
+import { AuthState } from '../../../../core/auth/auth.state';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import {
   GroupKeyService,
@@ -789,14 +788,8 @@ export class CreateExpenseModalComponent implements OnChanges {
   }
 
   getCurrentUserId(): string | null {
-    const token = localStorage.getItem('finmate_token');
-    if (!token) return null;
-    try {
-      const decoded = jwtDecode<JwtPayload>(token);
-      return decoded.userId || null;
-    } catch {
-      return null;
-    }
+    // AU-6: the access token lives in memory only (AuthState), never localStorage.
+    return this.store.selectSnapshot(AuthState.getUser)?.userId || null;
   }
 
   /**

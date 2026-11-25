@@ -29,15 +29,38 @@ export class AuthService {
     return this.http.post<RegisterResponse>(`${this.baseUrl}/register`, data);
   }
 
-  logout(refreshToken: string): Observable<void> {
+  /**
+   * Logout. Web (AU-6): no body — the refresh cookie identifies the session.
+   * Native (interim, pre-AU-6 scheme — see `isNativeAuthTransport`): pass the
+   * body-stored refresh token, exactly as before the cookie migration.
+   */
+  logout(refreshToken?: string): Observable<void> {
     this.encryptionService.clearKey();
-    return this.http.post<void>(`${this.baseUrl}/logout`, { refreshToken });
+    return this.http.post<void>(
+      `${this.baseUrl}/logout`,
+      refreshToken ? { refreshToken } : {},
+    );
   }
 
-  refresh(refreshToken: string): Observable<RefreshTokenResponse> {
-    return this.http.post<RefreshTokenResponse>(`${this.baseUrl}/refresh`, {
-      refreshToken,
-    });
+  /**
+   * Refresh. Web (AU-6): no body token — the HttpOnly refresh cookie carries
+   * it; `csrfToken` is the value echoed back from the previous login/refresh
+   * response, required for the CSRF double-submit check. Native (interim,
+   * pre-AU-6 scheme): pass the body-stored refresh token instead, exactly as
+   * before the cookie migration — no CSRF header is sent or needed for that path.
+   */
+  refresh(
+    opts: {
+      csrfToken?: string | null;
+      refreshToken?: string;
+    } = {},
+  ): Observable<RefreshTokenResponse> {
+    const { csrfToken, refreshToken } = opts;
+    return this.http.post<RefreshTokenResponse>(
+      `${this.baseUrl}/refresh`,
+      refreshToken ? { refreshToken } : {},
+      csrfToken ? { headers: { 'X-CSRF-Token': csrfToken } } : {},
+    );
   }
 
   getMe(): Observable<CurrentUserResponse> {

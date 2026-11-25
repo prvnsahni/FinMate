@@ -27,13 +27,18 @@ export interface JwtPayload {
 
 export interface LoginResponse {
   accessToken: string;
-  refreshToken: string;
+  /** Absent/ignored on web once the client reads the HttpOnly cookie instead (AU-6). */
+  refreshToken?: string;
+  /** Present only when `auth.dualTransport` is ON — echoed back on the next refresh. */
+  csrfToken?: string;
   user: PublicUser;
 }
 
 export interface RefreshTokenResponse {
   accessToken: string;
-  refreshToken: string;
+  /** Omitted on the cookie-transport refresh response — the rotated cookie carries it instead. */
+  refreshToken?: string;
+  csrfToken?: string;
 }
 
 export interface CurrentUserResponse {

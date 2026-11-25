@@ -23,6 +23,7 @@
         <input
           type="file"
           accept="application/pdf,image/*"
+          capture="environment"
           (change)="onFile($event)"
           data-testid="receipt-capture-file"
           class="block mt-1 text-sm"
