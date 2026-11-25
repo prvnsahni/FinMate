@@ -1443,7 +1443,7 @@ describe('CreateExpenseModalComponent', () => {
       fixture.detectChanges();
       const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
       expect(text).toContain('Contact');
-      expect(text).toContain('not a FinMate member of this group');
+      expect(text).toContain('not a Samma member of this group');
     });
   });
 

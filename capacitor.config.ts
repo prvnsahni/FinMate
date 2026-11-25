@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'app.finmate.app',
-  appName: 'FinMate',
+  appId: 'app.samma.app',
+  appName: 'Samma',
   webDir: 'dist/frontend/browser',
 };
 

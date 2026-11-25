@@ -1,7 +1,7 @@
 {
-  "name": "FinMate",
-  "short_name": "FinMate",
-  "description": "FinMate — Smart expense tracking and group finance management",
+  "name": "Samma",
+  "short_name": "Samma",
+  "description": "Samma — Smart expense tracking and group finance management",
   "start_url": "/",
   "display": "standalone",
   "scope": "/",

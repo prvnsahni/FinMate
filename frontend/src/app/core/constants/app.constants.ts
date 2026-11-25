@@ -1,4 +1,4 @@
-export const APP_NAME = 'FinMate';
+export const APP_NAME = 'Samma';
 
 /**
  * Day of the *following* month, inclusive, until which the previous month's
