@@ -71,7 +71,7 @@ describe('RecurringExpensesService', () => {
       done();
     });
 
-    const req = httpMock.expectOne('/api/recurring-expenses?groupId=group-1');
+    const req = httpMock.expectOne('/api/v1/recurring-expenses?groupId=group-1');
     expect(req.request.method).toBe('GET');
     // responseInterceptor unwraps { success, data } → the array before the
     // service sees it, so the service receives the bare array (not { data }).
@@ -97,7 +97,7 @@ describe('RecurringExpensesService', () => {
     // let those settle before asserting the request.
     await new Promise((r) => setTimeout(r, 0));
 
-    const req = httpMock.expectOne('/api/recurring-expenses');
+    const req = httpMock.expectOne('/api/v1/recurring-expenses');
     expect(req.request.method).toBe('POST');
     // Interceptor-unwrapped body is the template object itself. The old
     // `map(res => res.data)` turned this into undefined and rejected the save.

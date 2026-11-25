@@ -36,7 +36,7 @@ describe('FriendsService', () => {
       expect(friends).toEqual(dummyFriends);
     });
 
-    const req = httpMock.expectOne('/api/friends');
+    const req = httpMock.expectOne('/api/v1/friends');
     expect(req.request.method).toBe('GET');
     req.flush(dummyFriends);
   });
@@ -50,7 +50,7 @@ describe('FriendsService', () => {
     });
 
     const req = httpMock.expectOne(
-      `/api/users/search?query=${encodeURIComponent(query)}`,
+      `/api/v1/users/search?query=${encodeURIComponent(query)}`,
     );
     expect(req.request.method).toBe('GET');
     req.flush(dummyUsers);

@@ -22,7 +22,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CreateExpenseModalComponent } from '../../components/create-expense-modal/create-expense-modal.component';
 import { RecurringExpenseFormComponent } from '../../components/recurring-expense-form/recurring-expense-form.component';
 import { RecurringExpensesService } from '../../services/recurring-expenses.service';
-import { jwtDecode } from 'jwt-decode';
 import { FormsModule } from '@angular/forms';
 import { AnalyticsChartsComponent } from '../../components/analytics-charts/analytics-charts.component';
 import { ConfirmModalComponent } from '../../../../shared/components/confirm-modal/confirm-modal.component';
@@ -40,6 +39,7 @@ import {
   DropdownOption,
 } from '../../../../shared/components/dropdown/dropdown.component';
 import { Store } from '@ngxs/store';
+import { AuthState } from '../../../../core/auth/auth.state';
 import { ClientEncryptionService } from '../../../../core/services/encryption.service';
 import { GroupKeyService } from '../../../../core/services/group-key.service';
 import {
@@ -68,7 +68,6 @@ import {
   simplifyLedgerDebts,
   GroupContributionResponse,
   GroupMember,
-  JwtPayload,
 } from '@finmate/data-models';
 
 import {
@@ -1921,14 +1920,8 @@ export class GroupDetailComponent implements OnInit, AfterViewInit {
   }
 
   getCurrentUserId(): string | null {
-    const token = localStorage.getItem('finmate_token');
-    if (!token) return null;
-    try {
-      const decoded = jwtDecode<JwtPayload>(token);
-      return decoded.userId || null;
-    } catch {
-      return null;
-    }
+    // AU-6: the access token lives in memory only (AuthState), never localStorage.
+    return this.store.selectSnapshot(AuthState.getUser)?.userId || null;
   }
 
   getUserName(userId: string | null | undefined): string {

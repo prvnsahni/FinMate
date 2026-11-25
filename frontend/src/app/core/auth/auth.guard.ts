@@ -1,28 +1,37 @@
 import { inject } from '@angular/core';
 import { Router, CanActivateFn } from '@angular/router';
 import { Store } from '@ngxs/store';
+import { map } from 'rxjs/operators';
 import { AuthState } from './auth.state';
-import { hasActiveSession } from './token.util';
+import { isTokenValid } from './token.util';
+import { TokenRefreshService } from './token-refresh.service';
 
 /**
- * Guards every protected route. Access is allowed when the access token is
- * still valid, or when it has expired but a valid refresh token can silently
- * renew it (the HTTP interceptor performs the refresh on the first request).
- * Otherwise the user is redirected to Login with a returnUrl, and the route is
- * never rendered — no protected screen flashes for an unauthenticated user.
+ * Guards every protected route. Access is allowed when the in-memory access
+ * token is still valid. Otherwise (most commonly: a fresh page load, since
+ * AU-6 keeps the access token in memory only and it does not survive a
+ * reload) one silent, cookie-based refresh is attempted before concluding
+ * there is no session — mirroring what the HTTP interceptor would otherwise
+ * discover on the first request, just done proactively so no protected
+ * screen flashes before a redirect.
  */
 export const authGuard: CanActivateFn = (_route, state) => {
   const store = inject(Store);
   const router = inject(Router);
+  const tokenRefresh = inject(TokenRefreshService);
 
   const accessToken = store.selectSnapshot(AuthState.getToken);
-  const refreshToken = store.selectSnapshot(AuthState.getRefreshToken);
-
-  if (hasActiveSession(accessToken, refreshToken)) {
+  if (isTokenValid(accessToken)) {
     return true;
   }
 
-  return router.createUrlTree(['/auth/login'], {
-    queryParams: { returnUrl: state.url },
-  });
+  return tokenRefresh.trySilentRefresh().pipe(
+    map((ok) =>
+      ok
+        ? true
+        : router.createUrlTree(['/auth/login'], {
+            queryParams: { returnUrl: state.url },
+          }),
+    ),
+  );
 };

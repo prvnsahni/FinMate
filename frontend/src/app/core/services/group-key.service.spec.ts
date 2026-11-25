@@ -74,7 +74,7 @@ describe('GroupKeyService', () => {
     const promise = service.getGroupKeyForEncryption('group-1');
     await tick();
 
-    const req = httpMock.expectOne('/api/groups/group-1/keys/me');
+    const req = httpMock.expectOne('/api/v1/groups/group-1/keys/me');
     expect(req.request.method).toBe('GET');
     req.flush({
       wrappedKey: 'wrapped:key',
@@ -103,7 +103,7 @@ describe('GroupKeyService', () => {
     await tick();
 
     const post = httpMock.expectOne(
-      (r) => r.url === '/api/groups/group-1/keys' && r.method === 'POST',
+      (r) => r.url === '/api/v1/groups/group-1/keys' && r.method === 'POST',
     );
     expect(post.request.body).toEqual({
       keys: [{ userId: 'user-1', wrappedKey: 'rsa-wrapped' }],
@@ -111,7 +111,7 @@ describe('GroupKeyService', () => {
     post.flush({});
     await tick();
 
-    const versionReq = httpMock.expectOne('/api/groups/group-1/keys/me');
+    const versionReq = httpMock.expectOne('/api/v1/groups/group-1/keys/me');
     versionReq.flush({
       groupKeyVersionId: 'v1',
       wrappedKey: 'rsa-wrapped',
@@ -132,7 +132,7 @@ describe('GroupKeyService', () => {
     const promise = service.ensureGroupKey('group-1');
     await tick();
 
-    httpMock.expectOne('/api/groups/group-1/keys/me').flush({
+    httpMock.expectOne('/api/v1/groups/group-1/keys/me').flush({
       wrappedKey: 'legacy:symmetric',
       groupKeyVersionId: 'v1',
       hasActiveKeys: true,
@@ -142,7 +142,7 @@ describe('GroupKeyService', () => {
     // The migration is fire-and-forget; drain its re-wrap POST.
     await tick();
     const migratePost = httpMock.expectOne(
-      (r) => r.url === '/api/groups/group-1/keys' && r.method === 'POST',
+      (r) => r.url === '/api/v1/groups/group-1/keys' && r.method === 'POST',
     );
     expect(migratePost.request.body).toEqual({
       keys: [{ userId: 'user-1', wrappedKey: 'rsa-migrated' }],

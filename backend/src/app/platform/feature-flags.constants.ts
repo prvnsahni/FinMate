@@ -36,14 +36,15 @@ export interface FeatureFlagDef {
 }
 
 /**
- * All defaults are OFF (the safe state). Note: `auth.dualTransport` will default
- * ON *when BATCH-06 lands* (dual-emit must be on during the transition); it is
- * OFF here only because no auth-transport code reads it yet.
+ * All defaults are OFF (the safe state) except where noted. `auth.dualTransport`
+ * now defaults ON (AU-6, 2026-10-30): the web cookie-authentication migration
+ * landed, so the dual-emit cookie/body behavior is the real default — the web
+ * client no longer reads/writes a body-stored refresh token at all.
  */
 export const FEATURE_FLAGS: Record<FeatureFlag, FeatureFlagDef> = {
   'auth.dualTransport': {
     envKey: 'FEATURE_AUTH_DUAL_TRANSPORT',
-    default: false,
+    default: true,
     description: 'BATCH-06 auth cookie/header dual-emit transition',
   },
   'enc.p2pNoteE2EE': {

@@ -35,15 +35,12 @@ describe('CreateExpenseModalComponent', () => {
   let mockEncryptionService: any;
 
   beforeEach(async () => {
-    // Mock localStorage for JWT token
+    // AU-6: the access token lives only in AuthState (in-memory), never
+    // localStorage — this mock value feeds the Store mock below, not Storage.
     const mockToken =
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
       btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com' })) +
       '.signature';
-    jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key) => {
-      if (key === 'finmate_token') return mockToken;
-      return null;
-    });
 
     mockExpensesService = {
       createExpense: jest.fn().mockReturnValue(of({ id: 'exp-new' })),
@@ -88,7 +85,7 @@ describe('CreateExpenseModalComponent', () => {
         .mockImplementation((selector: (state: any) => unknown) =>
           selector({
             token: mockToken,
-            refreshToken: null,
+            csrfToken: null,
             user: { email: 'test@example.com', userId: 'user-1' },
             persistenceWarning: null,
           }),
