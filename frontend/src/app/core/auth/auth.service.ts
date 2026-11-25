@@ -49,10 +49,12 @@ export class AuthService {
    * pre-AU-6 scheme): pass the body-stored refresh token instead, exactly as
    * before the cookie migration — no CSRF header is sent or needed for that path.
    */
-  refresh(opts: {
-    csrfToken?: string | null;
-    refreshToken?: string;
-  } = {}): Observable<RefreshTokenResponse> {
+  refresh(
+    opts: {
+      csrfToken?: string | null;
+      refreshToken?: string;
+    } = {},
+  ): Observable<RefreshTokenResponse> {
     const { csrfToken, refreshToken } = opts;
     return this.http.post<RefreshTokenResponse>(
       `${this.baseUrl}/refresh`,

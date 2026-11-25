@@ -127,7 +127,9 @@ export interface AuthStateModel {
     // session cookie exists. The CSRF token alone IS restored on web (see the
     // comment above `CSRF_STORAGE_KEY`) — without it, that silent refresh
     // could never pass the CSRF check.
-    token: isNativeAuthTransport() ? localStorage.getItem('finmate_token') : null,
+    token: isNativeAuthTransport()
+      ? localStorage.getItem('finmate_token')
+      : null,
     csrfToken: isNativeAuthTransport() ? null : readStoredCsrfToken(),
     refreshToken: isNativeAuthTransport()
       ? localStorage.getItem('finmate_refresh_token')
@@ -186,10 +188,7 @@ export class AuthState {
           // AuthStateModel.refreshToken doc above for why.
           localStorage.setItem('finmate_token', result.accessToken);
           if (result.refreshToken) {
-            localStorage.setItem(
-              'finmate_refresh_token',
-              result.refreshToken,
-            );
+            localStorage.setItem('finmate_refresh_token', result.refreshToken);
           }
           ctx.patchState({
             token: result.accessToken,

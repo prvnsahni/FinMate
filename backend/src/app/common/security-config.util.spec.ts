@@ -57,15 +57,15 @@ describe('security-config.util', () => {
     });
 
     it('returns a single-entry array for a CORS_ORIGINS value with no comma', () => {
-      expect(
-        buildCorsOrigins({ CORS_ORIGINS: 'https://finmate.app' }),
-      ).toEqual(['https://finmate.app']);
+      expect(buildCorsOrigins({ CORS_ORIGINS: 'https://finmate.app' })).toEqual(
+        ['https://finmate.app'],
+      );
     });
 
     it('falls back to FRONTEND_URL when CORS_ORIGINS is unset', () => {
-      expect(
-        buildCorsOrigins({ FRONTEND_URL: 'https://finmate.app' }),
-      ).toEqual(['https://finmate.app']);
+      expect(buildCorsOrigins({ FRONTEND_URL: 'https://finmate.app' })).toEqual(
+        ['https://finmate.app'],
+      );
     });
 
     it('falls back to the localhost default when neither var is set', () => {
@@ -82,9 +82,9 @@ describe('security-config.util', () => {
     });
 
     it('falls back to localhost when FRONTEND_URL is also an empty string', () => {
-      expect(
-        buildCorsOrigins({ CORS_ORIGINS: '', FRONTEND_URL: '' }),
-      ).toEqual(['http://localhost:4200']);
+      expect(buildCorsOrigins({ CORS_ORIGINS: '', FRONTEND_URL: '' })).toEqual([
+        'http://localhost:4200',
+      ]);
     });
 
     it(

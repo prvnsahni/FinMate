@@ -17,7 +17,11 @@ test.describe('AU-6 cookie authentication (real browser)', () => {
     const email = `e2e-auth-migration-${Date.now()}@example.com`;
     const password = 'TestPassw0rd!234';
 
-    await auth.register(page, { displayName: 'Auth Migration Check', email, password });
+    await auth.register(page, {
+      displayName: 'Auth Migration Check',
+      email,
+      password,
+    });
     await auth.login(page, { email, password });
 
     // --- 1. No token persisted to localStorage/sessionStorage ---
@@ -36,9 +40,14 @@ test.describe('AU-6 cookie authentication (real browser)', () => {
       'finmate_refresh_token',
     );
     const cookies = await context.cookies();
-    const refreshCookie = cookies.find((c) => c.name === 'finmate_refresh_token');
+    const refreshCookie = cookies.find(
+      (c) => c.name === 'finmate_refresh_token',
+    );
     const csrfCookie = cookies.find((c) => c.name === 'finmate_csrf');
-    expect(refreshCookie, 'refresh cookie must be set after login').toBeTruthy();
+    expect(
+      refreshCookie,
+      'refresh cookie must be set after login',
+    ).toBeTruthy();
     expect(refreshCookie?.httpOnly).toBe(true);
     expect(refreshCookie?.sameSite).toBe('Lax');
     expect(csrfCookie?.httpOnly).toBe(true);
@@ -59,7 +68,10 @@ test.describe('AU-6 cookie authentication (real browser)', () => {
     );
     await page.reload();
     const refreshResponse = await refreshResponsePromise;
-    expect(refreshResponse.status(), 'the silent refresh after reload must succeed').toBe(201);
+    expect(
+      refreshResponse.status(),
+      'the silent refresh after reload must succeed',
+    ).toBe(201);
     await new DashboardPage(page).expectLoaded();
     expect(page.url()).not.toContain('/auth/login');
 

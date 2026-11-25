@@ -71,7 +71,9 @@ describe('RecurringExpensesService', () => {
       done();
     });
 
-    const req = httpMock.expectOne('/api/v1/recurring-expenses?groupId=group-1');
+    const req = httpMock.expectOne(
+      '/api/v1/recurring-expenses?groupId=group-1',
+    );
     expect(req.request.method).toBe('GET');
     // responseInterceptor unwraps { success, data } → the array before the
     // service sees it, so the service receives the bare array (not { data }).

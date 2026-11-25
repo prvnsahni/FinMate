@@ -147,9 +147,7 @@ describe('AuthState', () => {
           'secret',
           'a@finmate.app',
         );
-        expect(cryptoSession.ensureCryptoContext).toHaveBeenCalledWith(
-          'login',
-        );
+        expect(cryptoSession.ensureCryptoContext).toHaveBeenCalledWith('login');
         expect(groupKeyService.getMyAsymmetricKeys).toHaveBeenCalled();
       });
 

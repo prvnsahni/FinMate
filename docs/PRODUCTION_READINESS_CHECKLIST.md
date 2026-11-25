@@ -1,7 +1,7 @@
 # FinMate Production Readiness Checklist
 
 **Reconciled against actual repository evidence — 2026-10-30 (WP-08).** Only
-items with direct evidence gathered *this session* are checked. Every other
+items with direct evidence gathered _this session_ are checked. Every other
 item is annotated with its actual status rather than left ambiguous.
 Status key: **[VERIFIED]** = evidence gathered this session (cited) ·
 **[NOT TESTED]** = no evidence either way, not run this session ·

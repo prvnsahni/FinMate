@@ -53,9 +53,7 @@ export class TokenRefreshService {
     this.loggedOutForCurrentCycle = false;
 
     if (isNativeAuthTransport()) {
-      const refreshToken = this.store.selectSnapshot(
-        AuthState.getRefreshToken,
-      );
+      const refreshToken = this.store.selectSnapshot(AuthState.getRefreshToken);
       if (!isTokenValid(refreshToken)) {
         // No valid refresh token to even attempt a call with — unambiguous,
         // same as a 401 from the server (restores the pre-AU-6 short-circuit

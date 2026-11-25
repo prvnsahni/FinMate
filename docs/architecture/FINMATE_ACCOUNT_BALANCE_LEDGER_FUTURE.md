@@ -24,26 +24,26 @@ created, split across `ExpenseSplit` rows, and settled via `Settlement` /
 module computes a running balance.
 
 The brief's cash/bank/credit-card requirements are not addable as a field on
-`Expense`. They require answering: does money *move between accounts* (a
-`Transfer`, not an `Expense`), and does a credit-card *purchase* increase a
-liability while the later *payment* decreases it without creating a second
+`Expense`. They require answering: does money _move between accounts_ (a
+`Transfer`, not an `Expense`), and does a credit-card _purchase_ increase a
+liability while the later _payment_ decreases it without creating a second
 expense? Answering this wrong corrupts spend totals (double-counting) — which is
 exactly the failure mode `AGENT_RULES.md`'s Architecture Governance section exists
 to prevent being decided silently.
 
 ## 2. Repository Reconciliation
 
-| Area | CURRENT verified reality | Account/Balance implication |
-|---|---|---|
-| Expense model | `Expense` + `ExpenseSplit` + `ExpensePayment`; `amountTotal`/`category`/`expenseDate` plaintext Zone 2 (server-readable for calc); `title`/`description` E2EE Zone 1a. No `accountId`, no balance field anywhere. | A new Account concept cannot reuse `Expense` as its ledger — it needs its own entity or must attach to `Expense` without redefining what `Expense` means. |
-| P2P / lending | `DirectLedgerEntry` (`User` XOR `Contact` per side, ADR-025) already represents money-owed-between-people, immutable, read-time claim/merge resolution. | Lending/borrowing (brief §7) is **already solved** at the person level. An Account model must not duplicate this — a cash loan to a Contact should debit a `CashAccount` AND create/rely on the existing `DirectLedgerEntry`, not reinvent P2P. |
-| Settlements | `SettlementsService.calculateGroupBalances` is the **sole** authoritative balance calculator (FIN-002/ADR-017); `simplifyLedgerDebts` operates on opaque keys. | Any new balance math (account running balances) is a **separate** calculator from FIN-002's group-settlement math. They must not be merged into one function — different domains (who-owes-whom vs. how-much-is-in-this-account). |
-| Document Intelligence | `document-intelligence/engine` already has an extraction engine, `rule-based-classification-engine.ts`, adapters, and a `reconciliation.ts` stub (receipt-scoped today). | This is the nearest reusable scaffold for the brief's §3–§5/§9/§11 message-capture pipeline — a separate concern from the Account model itself, but likely the eventual **producer** of account-affecting events. |
-| Encryption zones | Zone 1 (client E2EE: titles/notes) vs Zone 2 (plaintext-but-protected, server-readable for calculation: amounts/categories/dates) per `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md`. | An `Account.balance`/`Account.name` ("HDFC Savings", "Wallet") needs an explicit zone assignment — likely Zone 2 (server must compute running balances) with the account *label* possibly Zone 1 if treated as sensitive free text. Not decided here. |
-| GOV-1 (additive baseline) | `ADR-001`: existing functionality must not be broken; new domains are additive. | An Account model must be **additive** — existing `Expense`/`Settlement`/`DirectLedgerEntry` behavior stays byte-for-byte unchanged; `expenseDate`/`amountTotal` etc. are not repurposed. |
-| Deletion (DEL-1) | Financial rows are anonymize-in-place, never row-DELETEd (`ADR-019`). | A new `Account`/`Transfer` entity inherits the same constraint — no hard deletes of balance-affecting history. |
-| Feature flags | Flag registry exists (e.g. `document.intelligence`); no `accounts.*` flag exists. | A new Account surface should ship behind a default-OFF flag, consistent with how Document Intelligence was gated. |
-| OpenAPI | No `accounts`/`transfers` path exists in `openapi.yaml`. | Any endpoints below are conceptual/TARGET examples only. |
+| Area                      | CURRENT verified reality                                                                                                                                                                                          | Account/Balance implication                                                                                                                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Expense model             | `Expense` + `ExpenseSplit` + `ExpensePayment`; `amountTotal`/`category`/`expenseDate` plaintext Zone 2 (server-readable for calc); `title`/`description` E2EE Zone 1a. No `accountId`, no balance field anywhere. | A new Account concept cannot reuse `Expense` as its ledger — it needs its own entity or must attach to `Expense` without redefining what `Expense` means.                                                                                             |
+| P2P / lending             | `DirectLedgerEntry` (`User` XOR `Contact` per side, ADR-025) already represents money-owed-between-people, immutable, read-time claim/merge resolution.                                                           | Lending/borrowing (brief §7) is **already solved** at the person level. An Account model must not duplicate this — a cash loan to a Contact should debit a `CashAccount` AND create/rely on the existing `DirectLedgerEntry`, not reinvent P2P.       |
+| Settlements               | `SettlementsService.calculateGroupBalances` is the **sole** authoritative balance calculator (FIN-002/ADR-017); `simplifyLedgerDebts` operates on opaque keys.                                                    | Any new balance math (account running balances) is a **separate** calculator from FIN-002's group-settlement math. They must not be merged into one function — different domains (who-owes-whom vs. how-much-is-in-this-account).                     |
+| Document Intelligence     | `document-intelligence/engine` already has an extraction engine, `rule-based-classification-engine.ts`, adapters, and a `reconciliation.ts` stub (receipt-scoped today).                                          | This is the nearest reusable scaffold for the brief's §3–§5/§9/§11 message-capture pipeline — a separate concern from the Account model itself, but likely the eventual **producer** of account-affecting events.                                     |
+| Encryption zones          | Zone 1 (client E2EE: titles/notes) vs Zone 2 (plaintext-but-protected, server-readable for calculation: amounts/categories/dates) per `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md`.                         | An `Account.balance`/`Account.name` ("HDFC Savings", "Wallet") needs an explicit zone assignment — likely Zone 2 (server must compute running balances) with the account _label_ possibly Zone 1 if treated as sensitive free text. Not decided here. |
+| GOV-1 (additive baseline) | `ADR-001`: existing functionality must not be broken; new domains are additive.                                                                                                                                   | An Account model must be **additive** — existing `Expense`/`Settlement`/`DirectLedgerEntry` behavior stays byte-for-byte unchanged; `expenseDate`/`amountTotal` etc. are not repurposed.                                                              |
+| Deletion (DEL-1)          | Financial rows are anonymize-in-place, never row-DELETEd (`ADR-019`).                                                                                                                                             | A new `Account`/`Transfer` entity inherits the same constraint — no hard deletes of balance-affecting history.                                                                                                                                        |
+| Feature flags             | Flag registry exists (e.g. `document.intelligence`); no `accounts.*` flag exists.                                                                                                                                 | A new Account surface should ship behind a default-OFF flag, consistent with how Document Intelligence was gated.                                                                                                                                     |
+| OpenAPI                   | No `accounts`/`transfers` path exists in `openapi.yaml`.                                                                                                                                                          | Any endpoints below are conceptual/TARGET examples only.                                                                                                                                                                                              |
 
 ## 3. Options
 
@@ -144,20 +144,20 @@ A credit-card purchase: `Expense` created as today (`amountTotal`, split, etc.)
 with `liabilityAccountId` pointing at the card `Account`; the card `Account`'s
 balance is `sum(liability Expenses) - sum(Transfers of type credit_card_payment
 into it)`. No change to how `Expense` is summed for existing spend reports —
-reports keep summing `Expense` exactly as now; `Account` balance is a *second*,
+reports keep summing `Expense` exactly as now; `Account` balance is a _second_,
 independent read, never fed back into `SettlementsService`/FIN-002.
 
 ## 6. Open questions (per-topic classification, house convention)
 
-| Topic | Classification |
-|---|---|
-| Build Option A now vs. defer (Option C) | **[PRODUCT DECISION REQUIRED]** |
-| Encryption zone for `Account.displayName`/`openingBalance` | **[PRODUCT DECISION REQUIRED]**, informed by `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md` |
-| Cash discrepancy reconciliation cadence/flow (brief §6.4 Q-A) | **[PRODUCT DECISION REQUIRED]** — explicitly unresolved in the source brief too |
-| Whether a lending `Transfer` must also create a `DirectLedgerEntry` automatically, or require the user to do both | **[PRODUCT DECISION REQUIRED]** |
-| Deletion/DEL-1 extension to `Account`/`Transfer` | **[COUNSEL REQUIRED]** (same gate pattern as DEL-1/P2P-CNT-4) |
-| Feature flag name/default | **[ENGINEERING PARAMETER]** |
-| Second balance calculator's test/parity gate (equivalent of FIN-002 for Accounts) | **[ENGINEERING PARAMETER]**, but required before any Account math ships |
+| Topic                                                                                                             | Classification                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Build Option A now vs. defer (Option C)                                                                           | **[PRODUCT DECISION REQUIRED]**                                                                 |
+| Encryption zone for `Account.displayName`/`openingBalance`                                                        | **[PRODUCT DECISION REQUIRED]**, informed by `FINMATE_DATA_CLASSIFICATION_ENCRYPTION_MATRIX.md` |
+| Cash discrepancy reconciliation cadence/flow (brief §6.4 Q-A)                                                     | **[PRODUCT DECISION REQUIRED]** — explicitly unresolved in the source brief too                 |
+| Whether a lending `Transfer` must also create a `DirectLedgerEntry` automatically, or require the user to do both | **[PRODUCT DECISION REQUIRED]**                                                                 |
+| Deletion/DEL-1 extension to `Account`/`Transfer`                                                                  | **[COUNSEL REQUIRED]** (same gate pattern as DEL-1/P2P-CNT-4)                                   |
+| Feature flag name/default                                                                                         | **[ENGINEERING PARAMETER]**                                                                     |
+| Second balance calculator's test/parity gate (equivalent of FIN-002 for Accounts)                                 | **[ENGINEERING PARAMETER]**, but required before any Account math ships                         |
 
 ## 7. Final Reconciliation
 
